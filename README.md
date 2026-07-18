@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo_dark.png">
-    <img src="docs/assets/logo_light.png" alt="Trace" width="200">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo.png">
+    <img src="docs/assets/logo.png" alt="Trace" width="300">
   </picture>
 </p>
 
