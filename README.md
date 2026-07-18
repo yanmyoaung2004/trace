@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo_dark.png">
-    <img src="docs/assets/logo_light.png" alt="InnoIgniterAI" width="600">
+    <img src="docs/assets/logo_light.png" alt="InnoIgniterAI" width="200">
   </picture>
 </p>
 
@@ -252,8 +252,6 @@ go test ./... -bench=. -benchmem # run benchmarks
 ```
 
 ---
-
-
 
 ## Documentation
 
