@@ -29,6 +29,9 @@ intel/*.db
 # Data
 .innoigniter/
 
+# Search cache
+.firecrawl/
+
 # Stray test artifacts
 internal/response/start
 internal/response/stop
