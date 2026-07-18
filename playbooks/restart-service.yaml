@@ -8,7 +8,7 @@ steps:
     action: restart_service
     params:
       name: ${input.name}
-  - agent: host
+  - agent: dispatch
     action: synthesize_report
     params:
       investigation_id: ${investigation.id}

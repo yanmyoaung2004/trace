@@ -1,27 +1,27 @@
-package host_test
+package dispatch_test
 
 import (
 	"context"
 	"strings"
 	"testing"
 
-	"github.com/yanmyoaung2004/trace/internal/host"
+	"github.com/yanmyoaung2004/trace/internal/dispatch"
 	"github.com/yanmyoaung2004/trace/internal/playbook"
 )
 
-func setupHost(t *testing.T) *host.Agent {
+func setupDispatch(t *testing.T) *dispatch.Agent {
 	pbEngine := playbook.New()
 	if err := pbEngine.LoadBuiltin(); err != nil {
 		t.Fatalf("load builtin: %v", err)
 	}
-	return host.New(pbEngine)
+	return dispatch.New(pbEngine)
 }
 
 func TestClassifyIntentTek(t *testing.T) {
-	hostAgent := setupHost(t)
+	dispatchAgent := setupDispatch(t)
 	ctx := context.Background()
 
-	output, err := hostAgent.Execute(ctx, map[string]any{
+	output, err := dispatchAgent.Execute(ctx, map[string]any{
 		"action": "classify_intent",
 		"query":  "check this file for malware",
 	})
@@ -36,10 +36,10 @@ func TestClassifyIntentTek(t *testing.T) {
 }
 
 func TestClassifyIntentWithHashFlag(t *testing.T) {
-	hostAgent := setupHost(t)
+	dispatchAgent := setupDispatch(t)
 	ctx := context.Background()
 
-	output, err := hostAgent.Execute(ctx, map[string]any{
+	output, err := dispatchAgent.Execute(ctx, map[string]any{
 		"action": "classify_intent",
 		"query":  "analyze this",
 		"hash":   "abc123",
@@ -55,10 +55,10 @@ func TestClassifyIntentWithHashFlag(t *testing.T) {
 }
 
 func TestClassifyIntentWithTechnique(t *testing.T) {
-	hostAgent := setupHost(t)
+	dispatchAgent := setupDispatch(t)
 	ctx := context.Background()
 
-	output, err := hostAgent.Execute(ctx, map[string]any{
+	output, err := dispatchAgent.Execute(ctx, map[string]any{
 		"action":    "classify_intent",
 		"query":     "mitre technique",
 		"technique": "T1566",
@@ -74,10 +74,10 @@ func TestClassifyIntentWithTechnique(t *testing.T) {
 }
 
 func TestSynthesizeReportEmpty(t *testing.T) {
-	hostAgent := setupHost(t)
+	dispatchAgent := setupDispatch(t)
 	ctx := context.Background()
 
-	output, err := hostAgent.Execute(ctx, map[string]any{
+	output, err := dispatchAgent.Execute(ctx, map[string]any{
 		"action":  "synthesize_report",
 		"results": map[string]any{},
 		"intent":  "test intent",
@@ -98,10 +98,10 @@ func TestSynthesizeReportEmpty(t *testing.T) {
 }
 
 func TestSynthesizeReportWithResults(t *testing.T) {
-	hostAgent := setupHost(t)
+	dispatchAgent := setupDispatch(t)
 	ctx := context.Background()
 
-	output, err := hostAgent.Execute(ctx, map[string]any{
+	output, err := dispatchAgent.Execute(ctx, map[string]any{
 		"action":  "synthesize_report",
 		"results": map[string]any{
 			"detection.yara_scan": map[string]any{
@@ -132,10 +132,10 @@ func TestSynthesizeReportWithResults(t *testing.T) {
 }
 
 func TestConfidenceCalculation(t *testing.T) {
-	hostAgent := setupHost(t)
+	dispatchAgent := setupDispatch(t)
 	ctx := context.Background()
 
-	output, err := hostAgent.Execute(ctx, map[string]any{
+	output, err := dispatchAgent.Execute(ctx, map[string]any{
 		"action": "calculate_confidence",
 		"results": map[string]any{
 			"detection.yara_scan": map[string]any{
@@ -164,10 +164,10 @@ func TestConfidenceCalculation(t *testing.T) {
 }
 
 func TestConfidenceLow(t *testing.T) {
-	hostAgent := setupHost(t)
+	dispatchAgent := setupDispatch(t)
 	ctx := context.Background()
 
-	output, err := hostAgent.Execute(ctx, map[string]any{
+	output, err := dispatchAgent.Execute(ctx, map[string]any{
 		"action": "calculate_confidence",
 		"results": map[string]any{
 			"detection.hash_lookup": map[string]any{
@@ -187,10 +187,10 @@ func TestConfidenceLow(t *testing.T) {
 }
 
 func TestPlanInvestigation(t *testing.T) {
-	hostAgent := setupHost(t)
+	dispatchAgent := setupDispatch(t)
 	ctx := context.Background()
 
-	output, err := hostAgent.Execute(ctx, map[string]any{
+	output, err := dispatchAgent.Execute(ctx, map[string]any{
 		"action": "plan_investigation",
 		"intent": "check file hash",
 		"hash":   "abc123",
@@ -206,10 +206,10 @@ func TestPlanInvestigation(t *testing.T) {
 }
 
 func TestUnknownAction(t *testing.T) {
-	hostAgent := setupHost(t)
+	dispatchAgent := setupDispatch(t)
 	ctx := context.Background()
 
-	_, err := hostAgent.Execute(ctx, map[string]any{
+	_, err := dispatchAgent.Execute(ctx, map[string]any{
 		"action": "nonexistent",
 	})
 	if err == nil {

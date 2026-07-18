@@ -24,12 +24,12 @@ Rather than replacing security analysts, it acts as an AI teammate capable of pe
                       │
               Natural Language Query
                       │
-                Host Agent
+                Dispatch Agent
         (Planner / Orchestrator)
                       │
      ┌────────────────┴───────────────┐
      │                                │
-Knowledge Agent                Detection Agent
+Archive Agent                Sift Agent
      │                                │
 Threat Intelligence         Malware Analysis
 MITRE ATT&CK                VirusTotal
@@ -49,9 +49,9 @@ The platform follows an **orchestrated multi-agent architecture** rather than as
 
 # Core Components
 
-## 1. Host Agent
+## 1. Dispatch Agent
 
-The Host Agent is the brain of the system.
+The Dispatch Agent is the brain of the system.
 
 Its responsibilities include:
 
@@ -68,21 +68,21 @@ User asks:
 
 > "Analyze this suspicious executable and tell me if it belongs to any known malware family."
 
-Instead of answering directly, the Host Agent decides:
+Instead of answering directly, the Dispatch Agent decides:
 
-1. Send file to Detection Agent
+1. Send file to Sift Agent
 2. Request VirusTotal report
-3. Ask Knowledge Agent about malware family
+3. Ask Archive Agent about malware family
 4. Merge results
 5. Produce explanation
 
-The Host Agent behaves like an AI project manager rather than a security expert.
+The Dispatch Agent behaves like an AI project manager rather than a security expert.
 
 ---
 
-# 2. Knowledge Agent
+# 2. Archive Agent
 
-The Knowledge Agent specializes in information retrieval and reasoning.
+The Archive Agent specializes in information retrieval and reasoning.
 
 It is responsible for:
 
@@ -105,9 +105,9 @@ Instead of raw LLM knowledge, it grounds answers using authoritative sources and
 
 ---
 
-# 3. Detection Agent
+# 3. Sift Agent
 
-The Detection Agent focuses on technical security analysis.
+The Sift Agent focuses on technical security analysis.
 
 Responsibilities include:
 
@@ -195,7 +195,7 @@ This reduces repetitive manual investigation.
 
 # Threat Intelligence Layer
 
-The Knowledge Agent enriches alerts using multiple sources.
+The Archive Agent enriches alerts using multiple sources.
 
 Examples include:
 
@@ -291,10 +291,10 @@ Suppose an analyst asks:
 
 The execution might proceed as follows:
 
-1. **Host Agent** identifies it as a phishing investigation.
-2. **Detection Agent** extracts URLs, attachments, and indicators, then performs malware and reputation analysis.
-3. **Knowledge Agent** retrieves threat intelligence, maps tactics to MITRE ATT&CK, and gathers relevant background.
-4. **Host Agent** correlates the evidence, assesses confidence, and produces a structured investigation report with recommended actions.
+1. **Dispatch Agent** identifies it as a phishing investigation.
+2. **Sift Agent** extracts URLs, attachments, and indicators, then performs malware and reputation analysis.
+3. **Archive Agent** retrieves threat intelligence, maps tactics to MITRE ATT&CK, and gathers relevant background.
+4. **Dispatch Agent** correlates the evidence, assesses confidence, and produces a structured investigation report with recommended actions.
 
 ---
 
@@ -313,12 +313,12 @@ Trace is closer to:
 ```
 User
   ↓
-Host Agent
+Dispatch Agent
   ↓
 Planner
   ↓
-Knowledge Agent
-Detection Agent
+Archive Agent
+Sift Agent
   ↓
 Threat Intelligence
 ML Models

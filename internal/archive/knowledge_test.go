@@ -1,4 +1,4 @@
-package knowledge_test
+package archive_test
 
 import (
 	"context"
@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	"github.com/yanmyoaung2004/trace/internal/db"
-	"github.com/yanmyoaung2004/trace/internal/knowledge"
+	"github.com/yanmyoaung2004/trace/internal/archive"
 )
 
-func setupKnowledge(t *testing.T) *knowledge.Agent {
+func setupArchive(t *testing.T) *archive.Agent {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "test.db")
 	database, err := db.Open(dbPath)
@@ -18,16 +18,16 @@ func setupKnowledge(t *testing.T) *knowledge.Agent {
 	}
 	t.Cleanup(func() { database.Close() })
 
-	mitreDB, err := knowledge.LoadMitreSeed()
+	mitreDB, err := archive.LoadMitreSeed()
 	if err != nil {
 		t.Fatalf("load mitre: %v", err)
 	}
 
-	return knowledge.New(database.DB, mitreDB)
+	return archive.New(database.DB, mitreDB)
 }
 
 func TestMitreLookup(t *testing.T) {
-	agent := setupKnowledge(t)
+	agent := setupArchive(t)
 	ctx := context.Background()
 
 	output, err := agent.Execute(ctx, map[string]any{
@@ -47,7 +47,7 @@ func TestMitreLookup(t *testing.T) {
 }
 
 func TestMitreLookupMissing(t *testing.T) {
-	agent := setupKnowledge(t)
+	agent := setupArchive(t)
 	ctx := context.Background()
 
 	output, err := agent.Execute(ctx, map[string]any{
@@ -64,7 +64,7 @@ func TestMitreLookupMissing(t *testing.T) {
 }
 
 func TestCveLookupBadID(t *testing.T) {
-	agent := setupKnowledge(t)
+	agent := setupArchive(t)
 	ctx := context.Background()
 
 	output, err := agent.Execute(ctx, map[string]any{
@@ -81,7 +81,7 @@ func TestCveLookupBadID(t *testing.T) {
 }
 
 func TestIocEnrichHash(t *testing.T) {
-	agent := setupKnowledge(t)
+	agent := setupArchive(t)
 	ctx := context.Background()
 
 	output, err := agent.Execute(ctx, map[string]any{
@@ -103,7 +103,7 @@ func TestIocEnrichHash(t *testing.T) {
 }
 
 func TestIocEnrichIOC(t *testing.T) {
-	agent := setupKnowledge(t)
+	agent := setupArchive(t)
 	ctx := context.Background()
 
 	output, err := agent.Execute(ctx, map[string]any{
@@ -125,7 +125,7 @@ func TestIocEnrichIOC(t *testing.T) {
 }
 
 func TestMalwareLookup(t *testing.T) {
-	agent := setupKnowledge(t)
+	agent := setupArchive(t)
 	ctx := context.Background()
 
 	output, err := agent.Execute(ctx, map[string]any{
@@ -140,7 +140,7 @@ func TestMalwareLookup(t *testing.T) {
 		t.Fatalf("expected mimikatz, got %v", output["name"])
 	}
 
-	mappings, ok := output["mitre_mapping"].([]*knowledge.Technique)
+	mappings, ok := output["mitre_mapping"].([]*archive.Technique)
 	if !ok || len(mappings) == 0 {
 		return
 	}

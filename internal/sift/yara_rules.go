@@ -1,4 +1,4 @@
-package detection
+package sift
 
 var defaultRules = []YaraRule{
 	initYaraRule("EICAR_Test", "any",

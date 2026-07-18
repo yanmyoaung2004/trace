@@ -34,7 +34,7 @@ Examples:
 			}
 
 			if playbookName == "" {
-				intentOutput, err := app.hostAgent.Execute(ctx, agent.Input{
+				intentOutput, err := app.dispatchAgent.Execute(ctx, agent.Input{
 					"action": "classify_intent",
 					"query":  query,
 				})
@@ -48,7 +48,7 @@ Examples:
 					"intent":   query,
 					"playbook": playbookName,
 				}
-				planOutput, err := app.hostAgent.Execute(ctx, planInput)
+				planOutput, err := app.dispatchAgent.Execute(ctx, planInput)
 				if err == nil {
 					if p, ok := planOutput["parameters"].(map[string]any); ok {
 						for k, v := range p {
@@ -80,7 +80,7 @@ Examples:
 				return fmt.Errorf("execute playbook: %w", err)
 			}
 
-			reportOutput, err := app.hostAgent.Execute(ctx, agent.Input{
+			reportOutput, err := app.dispatchAgent.Execute(ctx, agent.Input{
 				"action":          "synthesize_report",
 				"results":         results,
 				"investigation_id": inv.ID,

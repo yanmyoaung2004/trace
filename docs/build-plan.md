@@ -19,9 +19,9 @@ trace/
 ├── internal/
 │   ├── agent/        # Agent interface
 │   ├── playbook/     # Playbook engine
-│   ├── host/         # Host Agent
-│   ├── knowledge/    # Knowledge Agent
-│   ├── detection/    # Detection Agent
+│   ├── dispatch/     # Dispatch Agent
+│   ├── archive/      # Archive Agent
+│   ├── sift/         # Sift Agent
 │   ├── siem/         # SIEM engine
 │   ├── db/           # SQLite schema + queries
 │   ├── taskqueue/    # Task queue
@@ -93,7 +93,7 @@ type Capability struct {
 
 ---
 
-## Phase 3 — Knowledge Agent (days 15–21)
+## Phase 3 — Archive Agent (days 15–21)
 
 **Goal**: Enrich indicators with MITRE ATT&CK, CVE context, and threat intel.
 
@@ -112,7 +112,7 @@ type Capability struct {
 
 ---
 
-## Phase 4 — Detection Agent (days 22–28)
+## Phase 4 — Sift Agent (days 22–28)
 
 **Goal**: Analyze files and URLs locally before reaching for cloud APIs.
 
@@ -132,7 +132,7 @@ type Capability struct {
 
 ---
 
-## Phase 5 — Host Agent (days 29–35)
+## Phase 5 — Dispatch Agent (days 29–35)
 
 **Goal**: Single command to investigate anything — intent parsing, playbook matching, report generation. **MVP complete.**
 
@@ -168,7 +168,7 @@ type Capability struct {
   - Match conditions: field equality, regex, numeric comparison, CIDR matching
   - Windowed correlation: "5 failed logins from same source IP in 60 seconds"
   - Suppression: same alert max once per N minutes per source
-  - Action: create alert → feed to Host Agent → trigger playbook
+  - Action: create alert → feed to Dispatch Agent → trigger playbook
 - Alert schema: ID, title, severity, MITRE mapping, event IDs, evidence JSON, timestamp
 - SIEM enable/disable via config flag (opt-in)
 
@@ -266,9 +266,9 @@ type Capability struct {
 | 0 — Scaffold         | 2 days     | 2 days      | Repo, build, CI                    |
 | 1 — Foundation       | 5 days     | 7 days      | Backbone, CLI, agent interface     |
 | 2 — Playbook engine  | 7 days     | 14 days     | DAG runner, playbook library       |
-| 3 — Knowledge Agent  | 7 days     | 21 days     | MITRE, CVE, intel enrichment       |
-| 4 — Detection Agent  | 7 days     | 28 days     | YARA, PE, VT analysis              |
-| **5 — Host Agent**   | **7 days** | **35 days** | **MVP — end-to-end investigation** |
+| 3 — Archive Agent  | 7 days     | 21 days     | MITRE, CVE, intel enrichment       |
+| 4 — Sift Agent  | 7 days     | 28 days     | YARA, PE, VT analysis              |
+| **5 — Dispatch Agent**   | **7 days** | **35 days** | **MVP — end-to-end investigation** |
 | 6 — SIEM engine      | 14 days    | 49 days     | Log ingestion + rules              |
 | 7 — Response actions | 7 days     | 56 days     | SOAR loop closed                   |
 | 8 — Plugins          | 7 days     | 63 days     | Extensibility                      |

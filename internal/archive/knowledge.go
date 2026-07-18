@@ -1,4 +1,4 @@
-package knowledge
+package archive
 
 import (
 	"context"
@@ -30,7 +30,7 @@ func (a *Agent) WithWebSearch(apiKey string) *Agent {
 	return a
 }
 
-func (a *Agent) Name() string { return "knowledge" }
+func (a *Agent) Name() string { return "archive" }
 
 func (a *Agent) Capabilities() []agent.Capability {
 	return []agent.Capability{

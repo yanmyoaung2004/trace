@@ -17,13 +17,13 @@ steps:
     params:
       indicator: ${input.ip}
     optional: true
-  - agent: detection
+  - agent: sift
     action: vt_lookup
     params:
       indicator: ${input.ip}
     optional: true
     timeout: 30s
-  - agent: knowledge
+  - agent: archive
     action: ioc_enrich
     params:
       ioc: ${input.ip}

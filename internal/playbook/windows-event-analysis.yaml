@@ -11,22 +11,22 @@ triggers:
   - 1116
   - 4740
 steps:
-  - agent: knowledge
+  - agent: archive
     action: ioc_enrich
     params:
       ioc: ${input.ioc}
     optional: true
-  - agent: knowledge
+  - agent: archive
     action: mitre_lookup
     params:
       technique: ${input.technique}
     optional: true
-  - agent: knowledge
+  - agent: archive
     action: web_search
     params:
       query: Windows Event ${input.event_id} ${input.event_description} security
     optional: true
-  - agent: detection
+  - agent: sift
     action: hash_lookup
     params:
       hash: ${input.hash}

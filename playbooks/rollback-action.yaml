@@ -8,7 +8,7 @@ steps:
     action: rollback
     params:
       action_id: ${input.action_id}
-  - agent: host
+  - agent: dispatch
     action: synthesize_report
     params:
       investigation_id: ${investigation.id}

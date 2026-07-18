@@ -24,7 +24,7 @@ func TestEnqueue(t *testing.T) {
 	q := setupQueue(t)
 	ctx := context.Background()
 
-	task, err := q.Enqueue(ctx, "inv-1", "detection", "hash_lookup", map[string]any{"hash": "abc123"})
+	task, err := q.Enqueue(ctx, "inv-1", "sift", "hash_lookup", map[string]any{"hash": "abc123"})
 	if err != nil {
 		t.Fatalf("Enqueue failed: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestClaim(t *testing.T) {
 	q := setupQueue(t)
 	ctx := context.Background()
 
-	_, err := q.Enqueue(ctx, "inv-1", "detection", "hash_lookup", map[string]any{"hash": "abc"})
+	_, err := q.Enqueue(ctx, "inv-1", "sift", "hash_lookup", map[string]any{"hash": "abc"})
 	if err != nil {
 		t.Fatalf("Enqueue failed: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestComplete(t *testing.T) {
 	q := setupQueue(t)
 	ctx := context.Background()
 
-	task, err := q.Enqueue(ctx, "inv-1", "detection", "hash_lookup", map[string]any{})
+	task, err := q.Enqueue(ctx, "inv-1", "sift", "hash_lookup", map[string]any{})
 	if err != nil {
 		t.Fatalf("Enqueue failed: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestFail(t *testing.T) {
 	q := setupQueue(t)
 	ctx := context.Background()
 
-	task, err := q.Enqueue(ctx, "inv-1", "detection", "hash_lookup", map[string]any{})
+	task, err := q.Enqueue(ctx, "inv-1", "sift", "hash_lookup", map[string]any{})
 	if err != nil {
 		t.Fatalf("Enqueue failed: %v", err)
 	}
@@ -110,8 +110,8 @@ func TestClaimReturnsOldestFirst(t *testing.T) {
 	q := setupQueue(t)
 	ctx := context.Background()
 
-	q.Enqueue(ctx, "inv-1", "detection", "a", map[string]any{})
-	q.Enqueue(ctx, "inv-2", "detection", "b", map[string]any{})
+	q.Enqueue(ctx, "inv-1", "sift", "a", map[string]any{})
+	q.Enqueue(ctx, "inv-2", "sift", "b", map[string]any{})
 
 	t1, _ := q.Claim(ctx)
 	t2, _ := q.Claim(ctx)

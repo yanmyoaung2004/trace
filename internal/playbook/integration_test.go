@@ -209,9 +209,9 @@ func TestExecutorStepValidation(t *testing.T) {
 }
 
 var validAgents = map[string]bool{
-	"detection":  true,
-	"knowledge":  true,
-	"host":       true,
+	"sift":       true,
+	"archive":    true,
+	"dispatch":   true,
 	"response":   true,
 	"notifier":   true,
 	"splunk":     true,

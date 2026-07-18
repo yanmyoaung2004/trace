@@ -9,7 +9,7 @@ steps:
     action: quarantine_file
     params:
       path: ${input.path}
-  - agent: host
+  - agent: dispatch
     action: synthesize_report
     params:
       investigation_id: ${investigation.id}

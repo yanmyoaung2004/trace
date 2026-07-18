@@ -8,20 +8,20 @@ triggers:
   - pe
   - analyze file
 steps:
-  - agent: detection
+  - agent: sift
     action: hash_lookup
     params:
       hash: ${input.hash}
     optional: true
-  - agent: detection
+  - agent: sift
     action: yara_scan
     params:
       path: ${input.path}
-  - agent: detection
+  - agent: sift
     action: pe_analyze
     params:
       path: ${input.path}
-  - agent: knowledge
+  - agent: archive
     action: ioc_enrich
     params:
       ioc: ${input.hash}

@@ -5,22 +5,22 @@ triggers:
   - check hash
   - sha256
 steps:
-  - agent: detection
+  - agent: sift
     action: hash_lookup
     params:
       hash: ${input.hash}
-  - agent: detection
+  - agent: sift
     action: yara_scan
     params:
       path: ${input.path}
     optional: true
-  - agent: detection
+  - agent: sift
     action: vt_lookup
     params:
       hash: ${input.hash}
     timeout: 30s
     optional: true
-  - agent: knowledge
+  - agent: archive
     action: ioc_enrich
     params:
       ioc: ${input.hash}

@@ -7,27 +7,27 @@ triggers:
   - spam
   - suspicious email
 steps:
-  - agent: detection
+  - agent: sift
     action: vt_lookup
     params:
       indicator: ${input.sender_ip}
     optional: true
-  - agent: detection
+  - agent: sift
     action: hash_lookup
     params:
       hash: ${input.attachment_hash}
     optional: true
-  - agent: knowledge
+  - agent: archive
     action: ioc_enrich
     params:
       ioc: ${input.sender_domain}
     optional: true
-  - agent: knowledge
+  - agent: archive
     action: ioc_enrich
     params:
       ioc: ${input.attachment_hash}
     optional: true
-  - agent: knowledge
+  - agent: archive
     action: web_search
     params:
       query: ${input.subject} email phishing

@@ -7,12 +7,12 @@ Wazuh is a dependency with a server cluster and agents for every endpoint. Inste
 - **Ingestion** — file watcher for local logs (`/var/log/`, Windows Event Log API), syslog listener, and a pluggable receiver interface for custom sources
 - **Parsing & normalization** — decoder framework that maps raw logs (syslog, JSON, EVTX, CSV) to a unified event schema
 - **Rule engine** — real-time correlation rules with windowed matching (e.g., "5 failed logins in 60s from same source IP"). Rules are YAML, user-editable
-- **Alerting** — rules produce alerts with severity, MITRE mapping, and structured evidence. Alerts feed directly into the Host Agent for investigation
+- **Alerting** — rules produce alerts with severity, MITRE mapping, and structured evidence. Alerts feed directly into the Dispatch Agent for investigation
 
 The SIEM engine is a plugin that can be swapped or disabled. No Wazuh server to maintain, no agents to deploy across the fleet. Log sources declare themselves — the engine adapts.
 
 ```
-Log Source ──► Decoder ──► Normalized Event ──► Rule Engine ──► Alert ──► Host Agent
+Log Source ──► Decoder ──► Normalized Event ──► Rule Engine ──► Alert ──► Dispatch Agent
 ```
 
 ## 2. SOAR — built as playbooks + agent orchestration

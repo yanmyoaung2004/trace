@@ -5,7 +5,7 @@ triggers:
   - mitre
   - attack
 steps:
-  - agent: knowledge
+  - agent: archive
     action: mitre_lookup
     params:
       technique: ${input.technique}

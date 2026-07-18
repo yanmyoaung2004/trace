@@ -7,22 +7,22 @@ triggers:
   - startup
   - persistence
 steps:
-  - agent: knowledge
+  - agent: archive
     action: ioc_enrich
     params:
       ioc: ${input.registry_key}
     optional: true
-  - agent: knowledge
+  - agent: archive
     action: mitre_lookup
     params:
       technique: ${input.technique}
     optional: true
-  - agent: knowledge
+  - agent: archive
     action: web_search
     params:
       query: ${input.registry_key} malware persistence
     optional: true
-  - agent: detection
+  - agent: sift
     action: hash_lookup
     params:
       hash: ${input.hash}

@@ -9,17 +9,17 @@ triggers:
   - check url
   - phishing
 steps:
-  - agent: knowledge
+  - agent: archive
     action: ioc_enrich
     params:
       ioc: ${input.domain}
-  - agent: detection
+  - agent: sift
     action: vt_lookup
     params:
       indicator: ${input.domain}
     optional: true
     timeout: 30s
-  - agent: knowledge
+  - agent: archive
     action: web_search
     params:
       query: ${input.domain} threat intelligence

@@ -178,10 +178,10 @@ See [docs/cli-reference.md](docs/cli-reference.md) for the full CLI reference wi
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                         Host Agent                          │
+│                       Dispatch Agent                         │
 │       Intent Classification → Playbook Matching → Report    │
 ├──────────┬───────────┬───────────┬───────────┬──────────────┤
-│Detection │ Knowledge │ Response  │ SIEM      │ Plugins      │
+│  Sift    │  Archive  │ Response  │ SIEM      │ Plugins      │
 │ YARA     │ MITRE     │ block IP  │ log       │ external .so │
 │ PE       │ CVE       │ quarantine│ decode    │ loader       │
 │ VT       │ intel     │ kill      │ rules     │              │

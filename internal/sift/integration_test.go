@@ -1,4 +1,4 @@
-package detection
+package sift
 
 import (
 	"context"
@@ -54,8 +54,8 @@ func TestAgentCapabilities(t *testing.T) {
 func TestAgentName(t *testing.T) {
 	db := testDB(t)
 	a := New(db, "")
-	if a.Name() != "detection" {
-		t.Errorf("Name() = %q, want %q", a.Name(), "detection")
+	if a.Name() != "sift" {
+		t.Errorf("Name() = %q, want %q", a.Name(), "sift")
 	}
 }
 

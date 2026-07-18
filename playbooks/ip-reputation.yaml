@@ -6,12 +6,12 @@ triggers:
   - reputation
   - check ip
 steps:
-  - agent: detection
+  - agent: sift
     action: vt_lookup
     params:
       indicator: ${input.ip}
     optional: true
-  - agent: knowledge
+  - agent: archive
     action: ioc_enrich
     params:
       ioc: ${input.ip}

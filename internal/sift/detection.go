@@ -1,4 +1,4 @@
-package detection
+package sift
 
 import (
 	"context"
@@ -30,7 +30,7 @@ func New(cacheDB *sql.DB, vtAPIKey string) *Agent {
 	}
 }
 
-func (a *Agent) Name() string { return "detection" }
+func (a *Agent) Name() string { return "sift" }
 
 func (a *Agent) Capabilities() []agent.Capability {
 	return []agent.Capability{

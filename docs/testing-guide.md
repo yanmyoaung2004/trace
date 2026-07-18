@@ -72,7 +72,7 @@ go test ./internal/playbook/... -run TestExecutorConditional -v
 
 ---
 
-## Phase 3 — Knowledge Agent
+## Phase 3 — Archive Agent
 
 ```powershell
 # MITRE technique lookup
@@ -112,7 +112,7 @@ Expected: MITRE DB loading, search, sub-technique lookup, IOC enrichment with ca
 
 ---
 
-## Phase 4 — Detection Agent
+## Phase 4 — Sift Agent
 
 ```powershell
 # YARA scan on a file (use a test file)
@@ -146,7 +146,7 @@ go test ./internal/detection/... -v -count=1
 
 ---
 
-## Phase 5 — Host Agent (MVP)
+## Phase 5 — Dispatch Agent (MVP)
 
 ```powershell
 # Full end-to-end: file analysis with automatic playbook selection

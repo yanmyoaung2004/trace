@@ -1,13 +1,13 @@
-package knowledge_test
+package archive_test
 
 import (
 	"testing"
 
-	"github.com/yanmyoaung2004/trace/internal/knowledge"
+	"github.com/yanmyoaung2004/trace/internal/archive"
 )
 
 func TestMitreDBSearch(t *testing.T) {
-	db, err := knowledge.LoadMitreSeed()
+	db, err := archive.LoadMitreSeed()
 	if err != nil {
 		t.Fatalf("LoadMitreSeed failed: %v", err)
 	}
@@ -22,7 +22,7 @@ func TestMitreDBSearch(t *testing.T) {
 }
 
 func TestMitreDBSearchBySubtechnique(t *testing.T) {
-	db, _ := knowledge.LoadMitreSeed()
+	db, _ := archive.LoadMitreSeed()
 
 	t1 := db.GetByID("T1566.001")
 	if t1 == nil {
@@ -34,7 +34,7 @@ func TestMitreDBSearchBySubtechnique(t *testing.T) {
 }
 
 func TestMitreDBSearchByKeyword(t *testing.T) {
-	db, _ := knowledge.LoadMitreSeed()
+	db, _ := archive.LoadMitreSeed()
 
 	results := db.Search("phishing")
 	if len(results) == 0 {
@@ -43,7 +43,7 @@ func TestMitreDBSearchByKeyword(t *testing.T) {
 }
 
 func TestMitreDBGetByTactic(t *testing.T) {
-	db, _ := knowledge.LoadMitreSeed()
+	db, _ := archive.LoadMitreSeed()
 
 	results := db.GetByTactic("initial-access")
 	if len(results) == 0 {
@@ -52,7 +52,7 @@ func TestMitreDBGetByTactic(t *testing.T) {
 }
 
 func TestMitreDBMissing(t *testing.T) {
-	db, _ := knowledge.LoadMitreSeed()
+	db, _ := archive.LoadMitreSeed()
 
 	t1 := db.GetByID("T9999")
 	if t1 != nil {

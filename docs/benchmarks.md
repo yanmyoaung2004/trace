@@ -6,7 +6,7 @@ Platform: Windows, amd64, Go 1.26.4
 
 ---
 
-## Detection Agent
+## Sift Agent
 
 | Benchmark | Iterations | ns/op | B/op | allocs/op |
 |---|---|---|---|---|

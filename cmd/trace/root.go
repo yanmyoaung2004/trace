@@ -9,15 +9,15 @@ import (
 
 	"github.com/yanmyoaung2004/trace/internal/config"
 	"github.com/yanmyoaung2004/trace/internal/db"
-	"github.com/yanmyoaung2004/trace/internal/detection"
-	"github.com/yanmyoaung2004/trace/internal/host"
+	"github.com/yanmyoaung2004/trace/internal/sift"
+	"github.com/yanmyoaung2004/trace/internal/dispatch"
 	"github.com/yanmyoaung2004/trace/internal/integration/abuseipdb"
 	"github.com/yanmyoaung2004/trace/internal/integration/elastic"
 	"github.com/yanmyoaung2004/trace/internal/integration/notifier"
 	"github.com/yanmyoaung2004/trace/internal/integration/otx"
 	"github.com/yanmyoaung2004/trace/internal/integration/splunk"
 	"github.com/yanmyoaung2004/trace/internal/investigation"
-	"github.com/yanmyoaung2004/trace/internal/knowledge"
+	"github.com/yanmyoaung2004/trace/internal/archive"
 	"github.com/yanmyoaung2004/trace/internal/playbook"
 	"github.com/yanmyoaung2004/trace/internal/plugin"
 	"github.com/yanmyoaung2004/trace/internal/plugins/exporter"
@@ -37,7 +37,7 @@ type App struct {
 	invManager  *investigation.Manager
 	logWriter   *investigation.LogWriter
 	taskQueue   *taskqueue.Queue
-	hostAgent   *host.Agent
+	dispatchAgent   *dispatch.Agent
 	telemetry   *telemetry.Telemetry
 }
 
@@ -74,7 +74,7 @@ func (a *App) initPlaybooks() error {
 func (a *App) initRegistry() error {
 	a.registry = plugin.NewRegistry()
 
-	a.registry.Register(detection.New(a.sqlDB, a.cfg.VTAPIKey))
+	a.registry.Register(sift.New(a.sqlDB, a.cfg.VTAPIKey))
 	a.registry.Register(response.New(a.sqlDB))
 	a.registry.Register(exporter.New(a.sqlDB))
 	a.registry.Register(notifier.New())
@@ -83,21 +83,21 @@ func (a *App) initRegistry() error {
 	a.registry.Register(splunk.New())
 	a.registry.Register(elastic.New())
 
-	a.hostAgent = host.New(a.playbooks)
+	a.dispatchAgent = dispatch.New(a.playbooks)
 	if a.cfg.LLMURL != "" && a.cfg.LLMAPIKey != "" {
-		a.hostAgent.WithPlanner(a.cfg.LLMProvider, a.cfg.LLMURL, a.cfg.LLMAPIKey)
+		a.dispatchAgent.WithPlanner(a.cfg.LLMProvider, a.cfg.LLMURL, a.cfg.LLMAPIKey)
 	}
-	a.registry.Register(a.hostAgent)
+	a.registry.Register(a.dispatchAgent)
 
-	mitreDB, err := knowledge.LoadMitreSeed()
+	mitreDB, err := archive.LoadMitreSeed()
 	if err != nil {
 		return fmt.Errorf("load mitre seed: %w", err)
 	}
-	knowledgeAgent := knowledge.New(a.sqlDB, mitreDB)
+	archiveAgent := archive.New(a.sqlDB, mitreDB)
 	if a.cfg.WebSearchKey != "" {
-		knowledgeAgent.WithWebSearch(a.cfg.WebSearchKey)
+		archiveAgent.WithWebSearch(a.cfg.WebSearchKey)
 	}
-	a.registry.Register(knowledgeAgent)
+	a.registry.Register(archiveAgent)
 
 	extDir := filepath.Join(filepath.Dir(a.cfg.DBPath), "plugins")
 	extAgents, err := plugin.LoadDir(extDir)

@@ -1,4 +1,4 @@
-package host
+package dispatch
 
 import (
 	"bytes"
@@ -33,7 +33,7 @@ func (a *Agent) WithPlanner(provider, url, apiKey string) *Agent {
 	return a
 }
 
-func (a *Agent) Name() string { return "host" }
+func (a *Agent) Name() string { return "dispatch" }
 
 func (a *Agent) Capabilities() []agent.Capability {
 	return []agent.Capability{

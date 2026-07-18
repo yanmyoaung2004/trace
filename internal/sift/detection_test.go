@@ -1,4 +1,4 @@
-package detection_test
+package sift_test
 
 import (
 	"context"
@@ -8,10 +8,10 @@ import (
 	"testing"
 
 	"github.com/yanmyoaung2004/trace/internal/db"
-	"github.com/yanmyoaung2004/trace/internal/detection"
+	"github.com/yanmyoaung2004/trace/internal/sift"
 )
 
-func setupDetection(t *testing.T) *detection.Agent {
+func setupSift(t *testing.T) *sift.Agent {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "test.db")
 	database, err := db.Open(dbPath)
@@ -19,7 +19,7 @@ func setupDetection(t *testing.T) *detection.Agent {
 		t.Fatalf("db open: %v", err)
 	}
 	t.Cleanup(func() { database.Close() })
-	return detection.New(database.DB, "")
+	return sift.New(database.DB, "")
 }
 
 func writeTestFile(t *testing.T, name, content string) string {
@@ -32,7 +32,7 @@ func writeTestFile(t *testing.T, name, content string) string {
 }
 
 func TestYaraScanEICAR(t *testing.T) {
-	agent := setupDetection(t)
+	agent := setupSift(t)
 	ctx := context.Background()
 
 	eicar := "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
@@ -65,7 +65,7 @@ func TestYaraScanEICAR(t *testing.T) {
 }
 
 func TestYaraScanNoMatch(t *testing.T) {
-	agent := setupDetection(t)
+	agent := setupSift(t)
 	ctx := context.Background()
 
 	path := writeTestFile(t, "clean.txt", "hello world this is a clean file")
@@ -85,7 +85,7 @@ func TestYaraScanNoMatch(t *testing.T) {
 }
 
 func TestYaraScanMissingFile(t *testing.T) {
-	agent := setupDetection(t)
+	agent := setupSift(t)
 	ctx := context.Background()
 
 	output, err := agent.Execute(ctx, map[string]any{
@@ -102,7 +102,7 @@ func TestYaraScanMissingFile(t *testing.T) {
 }
 
 func TestYaraScanSuspiciousPowerShell(t *testing.T) {
-	agent := setupDetection(t)
+	agent := setupSift(t)
 	ctx := context.Background()
 
 	suspicious := "powershell -enc SQBFAFgA"
@@ -123,7 +123,7 @@ func TestYaraScanSuspiciousPowerShell(t *testing.T) {
 }
 
 func TestPEAnalyzeNonPE(t *testing.T) {
-	agent := setupDetection(t)
+	agent := setupSift(t)
 	ctx := context.Background()
 
 	path := writeTestFile(t, "test.txt", "not a PE file")
@@ -146,7 +146,7 @@ func TestPEAnalyzeRealPE(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("PE analysis test requires Windows")
 	}
-	agent := setupDetection(t)
+	agent := setupSift(t)
 	ctx := context.Background()
 
 	path := "C:\\Windows\\System32\\notepad.exe"
@@ -183,7 +183,7 @@ func TestPEAnalyzeRealPE(t *testing.T) {
 }
 
 func TestHashLookup(t *testing.T) {
-	agent := setupDetection(t)
+	agent := setupSift(t)
 	ctx := context.Background()
 
 	output, err := agent.Execute(ctx, map[string]any{
@@ -201,7 +201,7 @@ func TestHashLookup(t *testing.T) {
 }
 
 func TestHashLookupUnknown(t *testing.T) {
-	agent := setupDetection(t)
+	agent := setupSift(t)
 	ctx := context.Background()
 
 	output, err := agent.Execute(ctx, map[string]any{
@@ -219,7 +219,7 @@ func TestHashLookupUnknown(t *testing.T) {
 }
 
 func TestVTLookupNoKey(t *testing.T) {
-	agent := setupDetection(t)
+	agent := setupSift(t)
 	ctx := context.Background()
 
 	output, err := agent.Execute(ctx, map[string]any{
@@ -247,7 +247,7 @@ func TestEntropyCalculation(t *testing.T) {
 	}
 	path = writeTestFile(t, "high_entropy.bin", string(highEntropy))
 
-	agent := setupDetection(t)
+	agent := setupSift(t)
 	ctx := context.Background()
 
 	output, err := agent.Execute(ctx, map[string]any{

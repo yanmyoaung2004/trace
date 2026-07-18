@@ -32,7 +32,7 @@ func newReportCmd() *cobra.Command {
 				results["log_events"] = string(data)
 			}
 
-			reportOutput, err := app.hostAgent.Execute(ctx, agent.Input{
+			reportOutput, err := app.dispatchAgent.Execute(ctx, agent.Input{
 				"action":           "synthesize_report",
 				"results":          results,
 				"investigation_id": inv.ID,

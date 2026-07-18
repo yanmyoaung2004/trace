@@ -9,7 +9,7 @@ steps:
     action: kill_process
     params:
       name: ${input.name}
-  - agent: host
+  - agent: dispatch
     action: synthesize_report
     params:
       investigation_id: ${investigation.id}

@@ -17,11 +17,11 @@ triggers:
   - hash
   - sha256
 steps:
-  - agent: detection
+  - agent: sift
     action: hash_lookup
     params:
       hash: ${input.hash}
-  - agent: host
+  - agent: dispatch
     action: synthesize_report
 `
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
@@ -43,8 +43,8 @@ steps:
 	if len(pb.Steps) != 2 {
 		t.Fatalf("expected 2 steps, got %d", len(pb.Steps))
 	}
-	if pb.Steps[0].Agent != "detection" {
-		t.Fatalf("expected agent detection, got %s", pb.Steps[0].Agent)
+	if pb.Steps[0].Agent != "sift" {
+		t.Fatalf("expected agent sift, got %s", pb.Steps[0].Agent)
 	}
 }
 

@@ -6,9 +6,9 @@ Greenfield project — no code, no build system, no tests yet. The sole source o
 
 Orchestrated multi-agent cybersecurity platform. Architecture from `docs/product.md`:
 
-- **Host Agent** (planner/orchestrator) — intent parsing, task decomposition, response synthesis
-- **Knowledge Agent** — threat intel, MITRE ATT&CK, CVE, web search, malware families, RAG
-- **Detection Agent** — malware analysis (PE, static/dynamic), VirusTotal, custom ML/DL models
+- **Dispatch Agent** (planner/orchestrator) — intent parsing, task decomposition, response synthesis
+- **Archive Agent** — threat intel, MITRE ATT&CK, CVE, web search, malware families, RAG
+- **Sift Agent** — malware analysis (PE, static/dynamic), VirusTotal, custom ML/DL models
 - **SIEM integration** via Wazuh (endpoint monitoring, log collection, intrusion detection)
 - **A2A + MCP-style** agent communication, shared file server for large artifacts
 - **Multilingual**: English + Myanmar

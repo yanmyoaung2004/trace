@@ -106,7 +106,7 @@ type Agent interface {
 }
 ```
 
-New detection capabilities ship as separate plugins (shared libraries or compiled-in). The Host Agent discovers available agents at startup via capabilities manifest. Swap or add agents without changing the orchestrator.
+New detection capabilities ship as separate plugins (shared libraries or compiled-in). The Dispatch Agent discovers available agents at startup via capabilities manifest. Swap or add agents without changing the orchestrator.
 
 ### 4. SQLite as everything
 
@@ -155,7 +155,7 @@ Agents exchange references to shared files, not raw payloads in JSON:
     cve_details.json
 ```
 
-The Host Agent writes the request. Detection Agent reads it, writes results. Host Agent reads results when ready. No agent waits synchronously on another. This naturally supports async, retry, and partial results.
+The Dispatch Agent writes the request. Sift Agent reads it, writes results. Dispatch Agent reads results when ready. No agent waits synchronously on another. This naturally supports async, retry, and partial results.
 
 ### 6. Append-only investigation log
 
@@ -208,7 +208,7 @@ All updates are signed. Rollback via .trace update --version <prev>`.
 ## SIEM — two modes
 
 **Mode 1: Native SIEM engine** (self-contained)
-File watcher for local logs, syslog listener, decoder framework for normalization, real-time YAML rule engine with windowed correlation, alert generation feeding into the Host Agent. All in-process, no separate server.
+File watcher for local logs, syslog listener, decoder framework for normalization, real-time YAML rule engine with windowed correlation, alert generation feeding into the Dispatch Agent. All in-process, no separate server.
 
 **Mode 2: SIEM connector plugin** (external)
 Ingest alerts from existing SIEM systems (Splunk, Elastic, Wazuh, Sentinel) via plugins. The edge node becomes an enrichment and analysis layer on top of whatever SIEM the user already runs. Incoming alerts trigger the same playbook engine. The SIEM plugin interface is: auth, query, receive alert, write back result.
