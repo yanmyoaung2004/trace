@@ -9,7 +9,7 @@ Global flags: `-c, --config string` — path to config file (optional)
 First-run setup wizard.
 
 ```
-innoigniter init
+trace init
 ```
 
 Prompts for VT API key, LLM provider URL+key, web search key, SIEM enable, telemetry opt-in.
@@ -22,16 +22,16 @@ Creates `~/.trace/config.json`. All prompts are skippable.
 Start the investigation daemon.
 
 ```
-innoigniter serve [flags]
+trace serve [flags]
 ```
 
-| Flag | Default | Description |
-|---|---|---|
-| `--siem` | `false` | Enable SIEM log monitoring |
-| `--syslog-addr` | `:514` | Syslog listener address |
-| `--log-dir` | | Directories to watch for log files |
-| `--export` | | Start HTML report server (e.g. `:8081`) |
-| `--server-addr` | | Central server address for edge sync (e.g. `http://host:8080`) |
+| Flag            | Default | Description                                                    |
+| --------------- | ------- | -------------------------------------------------------------- |
+| `--siem`        | `false` | Enable SIEM log monitoring                                     |
+| `--syslog-addr` | `:514`  | Syslog listener address                                        |
+| `--log-dir`     |         | Directories to watch for log files                             |
+| `--export`      |         | Start HTML report server (e.g. `:8081`)                        |
+| `--server-addr` |         | Central server address for edge sync (e.g. `http://host:8080`) |
 
 Starts task worker loop (claims + executes tasks from DB), optional SIEM engine,
 optional report exporter, optional edge sync client.
@@ -43,14 +43,14 @@ optional report exporter, optional edge sync client.
 Start in central server mode with web dashboard and sync API.
 
 ```
-innoigniter server [flags]
+trace server [flags]
 ```
 
-| Flag | Default | Description |
-|---|---|---|
+| Flag          | Default | Description                  |
+| ------------- | ------- | ---------------------------- |
 | `--http-addr` | `:8080` | HTTP API + dashboard address |
-| `--tls-cert` | | TLS certificate file path |
-| `--tls-key` | | TLS private key file path |
+| `--tls-cert`  |         | TLS certificate file path    |
+| `--tls-key`   |         | TLS private key file path    |
 
 Edge nodes connect via `serve --server-addr`. Dashboard at `http://<addr>/`.
 
@@ -61,19 +61,20 @@ Edge nodes connect via `serve --server-addr`. Dashboard at `http://<addr>/`.
 Run a security investigation.
 
 ```
-innoigniter investigate [query] [flags]
+trace investigate [query] [flags]
 ```
 
-| Flag | Description |
-|---|---|
-| `-p, --playbook` | Playbook name to run (skips intent classification) |
-| `--param` | Parameters for the playbook (`key=value`, repeatable) |
+| Flag             | Description                                           |
+| ---------------- | ----------------------------------------------------- |
+| `-p, --playbook` | Playbook name to run (skips intent classification)    |
+| `--param`        | Parameters for the playbook (`key=value`, repeatable) |
 
 Examples:
+
 ```
-innoigniter investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
-innoigniter investigate --playbook file-analysis --param path=/tmp/malware.exe
-innoigniter investigate --playbook domain-reputation --param domain=evil.com
+trace investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+trace investigate --playbook file-analysis --param path=/tmp/malware.exe
+trace investigate --playbook domain-reputation --param domain=evil.com
 ```
 
 Intent classification auto-selects playbook by keyword matching (hash, file, ip, domain, etc.).
@@ -85,7 +86,7 @@ Intent classification auto-selects playbook by keyword matching (hash, file, ip,
 View a single investigation's status.
 
 ```
-innoigniter status <investigation-id>
+trace status <investigation-id>
 ```
 
 Returns ID, status, intent, playbook, confidence, created/updated timestamps.
@@ -97,12 +98,12 @@ Returns ID, status, intent, playbook, confidence, created/updated timestamps.
 List recent investigations.
 
 ```
-innoigniter history [flags]
+trace history [flags]
 ```
 
-| Flag | Default | Description |
-|---|---|---|
-| `-n, --limit` | `20` | Number of investigations to show |
+| Flag          | Default | Description                      |
+| ------------- | ------- | -------------------------------- |
+| `-n, --limit` | `20`    | Number of investigations to show |
 
 ---
 
@@ -111,11 +112,11 @@ innoigniter history [flags]
 Regenerate an investigation report.
 
 ```
-innoigniter report <investigation-id> [flags]
+trace report <investigation-id> [flags]
 ```
 
-| Flag | Description |
-|---|---|
+| Flag           | Description              |
+| -------------- | ------------------------ |
 | `-o, --output` | Save report to file path |
 
 ---
@@ -125,7 +126,7 @@ innoigniter report <investigation-id> [flags]
 Manage HITL (human-in-the-loop) approval requests.
 
 ```
-innoigniter approval <subcommand>
+trace approval <subcommand>
 ```
 
 Subcommands:
@@ -142,7 +143,7 @@ Subcommands:
 Manage external agent plugins.
 
 ```
-innoigniter plugin <subcommand>
+trace plugin <subcommand>
 ```
 
 Subcommands:
@@ -161,7 +162,7 @@ Plugins are stored in `~/.trace/plugins/` and loaded on next restart.
 Update Trace or its data.
 
 ```
-innoigniter update <subcommand>
+trace update <subcommand>
 ```
 
 Subcommands:
@@ -181,14 +182,14 @@ Signature files (`.sig`) are checked if present.
 Generate a self-signed TLS certificate and RSA key (development use).
 
 ```
-innoigniter genkey [flags]
+trace genkey [flags]
 ```
 
-| Flag | Default | Description |
-|---|---|---|
-| `--host` | `localhost` | Certificate hostname or IP |
-| `--out` | `~/.trace/tls` | Output directory |
-| `--bits` | `2048` | RSA key size in bits |
+| Flag     | Default        | Description                |
+| -------- | -------------- | -------------------------- |
+| `--host` | `localhost`    | Certificate hostname or IP |
+| `--out`  | `~/.trace/tls` | Output directory           |
+| `--bits` | `2048`         | RSA key size in bits       |
 
 Outputs `cert.pem` and `key.pem`. Use with `server --tls-cert --tls-key`.
 
@@ -199,12 +200,13 @@ Outputs `cert.pem` and `key.pem`. Use with `server --tls-cert --tls-key`.
 Generate shell autocompletion scripts.
 
 ```
-innoigniter completion <bash|zsh|fish|powershell>
+trace completion <bash|zsh|fish|powershell>
 ```
 
 Example (powershell):
+
 ```powershell
-innoigniter completion powershell | Out-String | Invoke-Expression
+trace completion powershell | Out-String | Invoke-Expression
 ```
 
 ---
@@ -214,5 +216,5 @@ innoigniter completion powershell | Out-String | Invoke-Expression
 Print version information.
 
 ```
-innoigniter version
+trace version
 ```

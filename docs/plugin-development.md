@@ -44,24 +44,24 @@ go build -buildmode=plugin -o my-plugin.so .
 ## Installing
 
 ```bash
-innoigniter plugin install https://example.com/plugins/my-plugin.so
+trace plugin install https://example.com/plugins/my-plugin.so
 ```
 
 Restart the daemon to load it:
 
 ```bash
-innoigniter serve
+trace serve
 ```
 
 The plugin appears in .trace plugin list`.
 
 ## Capabilities
 
-| Method | Returns |
-|---|---|
-| `Name()` | Unique agent identifier |
-| `Capabilities()` | List of supported actions with input/output schemas |
-| `Execute(ctx, input)` | Execute an action, return output or error |
+| Method                | Returns                                             |
+| --------------------- | --------------------------------------------------- |
+| `Name()`              | Unique agent identifier                             |
+| `Capabilities()`      | List of supported actions with input/output schemas |
+| `Execute(ctx, input)` | Execute an action, return output or error           |
 
 ## Distribution
 

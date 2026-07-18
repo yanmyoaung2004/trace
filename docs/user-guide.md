@@ -69,6 +69,7 @@ docker compose up server
 ```
 
 The wizard prompts for:
+
 - **VirusTotal API key** — hash/URL/IP lookups (free tier: 500/day)
 - **LLM provider** — for intent classification (optional)
 - **Web search key** — threat intel web searches (optional)
@@ -94,7 +95,7 @@ $env:INNO_OTX_API_KEY = "your-otx-key"
 ### By natural language
 
 ```powershell
-innoigniter investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+trace investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
 ```
 
 The intent classifier recognizes "check hash" and runs the `hash-lookup` playbook.
@@ -102,17 +103,17 @@ The intent classifier recognizes "check hash" and runs the `hash-lookup` playboo
 ### By explicit playbook
 
 ```powershell
-innoigniter investigate --playbook file-analysis --param path=C:\Windows\System32\notepad.exe
-innoigniter investigate --playbook domain-reputation --param domain=evil.com
-innoigniter investigate --playbook ip-enrich --param ip=185.220.101.24
+trace investigate --playbook file-analysis --param path=C:\Windows\System32\notepad.exe
+trace investigate --playbook domain-reputation --param domain=evil.com
+trace investigate --playbook ip-enrich --param ip=185.220.101.24
 ```
 
 ### Investigation history
 
 ```powershell
-innoigniter history
-innoigniter status <investigation-id>
-innoigniter report <investigation-id>
+trace history
+trace status <investigation-id>
+trace report <investigation-id>
 ```
 
 ---
@@ -148,12 +149,12 @@ Every investigation produces a markdown report with:
 
 ### Confidence scoring
 
-| Score | Meaning |
-|---|---|
+| Score   | Meaning                                          |
+| ------- | ------------------------------------------------ |
 | 90-100% | Highly likely malicious (multiple sources agree) |
-| 70-89% | Likely malicious (one strong source) |
-| 40-69% | Suspicious (some indicators present) |
-| <40% | Inconclusive (no strong signals) |
+| 70-89%  | Likely malicious (one strong source)             |
+| 40-69%  | Suspicious (some indicators present)             |
+| <40%    | Inconclusive (no strong signals)                 |
 
 ---
 
@@ -161,27 +162,27 @@ Every investigation produces a markdown report with:
 
 ### Available playbooks
 
-| Playbook | What it does | Best for |
-|---|---|---|
-| `hash-lookup` | Check hash vs cache + YARA + VT + intel | File hash triage |
-| `file-analysis` | Hash + YARA + PE metadata + intel | Malware sample analysis |
-| `ip-reputation` | VT lookup + IOC enrichment | IP address triage |
-| `domain-reputation` | IOC enrich + VT + web search | Domain/URL triage |
-| `ip-enrich` | AbuseIPDB + OTX + VT + IOC | Deep IP enrichment |
-| `email-analysis` | Sender IP → hash → domain → web search | Phishing email analysis |
-| `network-scan` | Multi-indicator network analysis | Network threat hunting |
-| `log-analysis` | YARA + hash + IOC + MITRE + CVE | Log event analysis |
-| `windows-event-analysis` | IOC enrich + MITRE + web search + hash | Windows event triage |
-| `registry-check` | Registry key + MITRE + web search + hash | Persistence detection |
-| `mitre-lookup` | MITRE ATT&CK technique details | Threat intelligence |
-| `cve-lookup` | CVE severity, CVSS, affected products | Vulnerability response |
-| `block-ip` | Firewall rule via netsh/iptables | Immediate containment |
-| `quarantine-file` | Move to restricted directory | File containment |
-| `kill-process` | Terminate by name or PID | Process containment |
-| `restart-service` | Restart system service | Service recovery |
-| `rollback-action` | Undo previous response action | Mistake recovery |
-| `slack-notify` | Send alert to Slack webhook | Team notification |
-| `discord-notify` | Send alert to Discord webhook | Team notification |
+| Playbook                 | What it does                             | Best for                |
+| ------------------------ | ---------------------------------------- | ----------------------- |
+| `hash-lookup`            | Check hash vs cache + YARA + VT + intel  | File hash triage        |
+| `file-analysis`          | Hash + YARA + PE metadata + intel        | Malware sample analysis |
+| `ip-reputation`          | VT lookup + IOC enrichment               | IP address triage       |
+| `domain-reputation`      | IOC enrich + VT + web search             | Domain/URL triage       |
+| `ip-enrich`              | AbuseIPDB + OTX + VT + IOC               | Deep IP enrichment      |
+| `email-analysis`         | Sender IP → hash → domain → web search   | Phishing email analysis |
+| `network-scan`           | Multi-indicator network analysis         | Network threat hunting  |
+| `log-analysis`           | YARA + hash + IOC + MITRE + CVE          | Log event analysis      |
+| `windows-event-analysis` | IOC enrich + MITRE + web search + hash   | Windows event triage    |
+| `registry-check`         | Registry key + MITRE + web search + hash | Persistence detection   |
+| `mitre-lookup`           | MITRE ATT&CK technique details           | Threat intelligence     |
+| `cve-lookup`             | CVE severity, CVSS, affected products    | Vulnerability response  |
+| `block-ip`               | Firewall rule via netsh/iptables         | Immediate containment   |
+| `quarantine-file`        | Move to restricted directory             | File containment        |
+| `kill-process`           | Terminate by name or PID                 | Process containment     |
+| `restart-service`        | Restart system service                   | Service recovery        |
+| `rollback-action`        | Undo previous response action            | Mistake recovery        |
+| `slack-notify`           | Send alert to Slack webhook              | Team notification       |
+| `discord-notify`         | Send alert to Discord webhook            | Team notification       |
 
 ### How playbooks work
 
@@ -211,6 +212,7 @@ steps:
 ```
 
 Key features:
+
 - **`optional: true`** — step failure doesn't block the playbook
 - **`timeout`** — per-step deadline (e.g. `30s`, `5m`)
 - **`if`** — conditional execution: `'${result.detection.yara_scan.count} != "0"'`
@@ -218,12 +220,12 @@ Key features:
 
 ### Variable interpolation
 
-| Pattern | Resolves to |
-|---|---|
-| `${input.hash}` | Investigation input parameter |
-| `${input.path}` | File path from input |
-| `${result.agent.action.key}` | Output from a previous step |
-| `${outputs.agent.action.key}` | Same as result |
+| Pattern                       | Resolves to                   |
+| ----------------------------- | ----------------------------- |
+| `${input.hash}`               | Investigation input parameter |
+| `${input.path}`               | File path from input          |
+| `${result.agent.action.key}`  | Output from a previous step   |
+| `${outputs.agent.action.key}` | Same as result                |
 
 ---
 
@@ -233,27 +235,27 @@ Key features:
 
 ```powershell
 # Watch directories + listen on syslog
-innoigniter serve --siem --log-dir C:\Logs --syslog-addr :514
+trace serve --siem --log-dir C:\Logs --syslog-addr :514
 ```
 
 ### Built-in detection rules (16 total)
 
-| Rule | Event | Severity |
-|---|---|---|
-| `MULTIPLE_FAILED_LOGINS` | 5 auth failures in 60s | 4 |
-| `FAILED_LOGIN_BRUTE` | 20 auth failures in 60s | 5 |
-| `HTTP_5XX_ERROR` | Server error | 3 |
-| `HTTP_4XX_BURST` | 10 client errors in 60s | 2 |
-| `SUSPICIOUS_PROCESS` | Suspicious process | 4 |
-| `WINDOWS_EVENT_4625_BURST` | 5 failed logons | 4 |
-| `WIN_POWERSHELL_4104` | PowerShell script block | 3 |
-| `WIN_SCHEDULED_TASK_4698` | Scheduled task created | 4 |
-| `WIN_SERVICE_INSTALL_7045` | New service installed | 4 |
-| `WIN_DEFENDER_1116` | Defender detected malware | 5 |
-| `WIN_PROCESS_4688_CREATION` | Process created | 2 |
-| `WIN_REGISTRY_PERSISTENCE` | Registry changed | 3 |
-| `WIN_RDP_LOGIN_4625` | RDP failed login | 3 |
-| `WIN_ACCOUNT_LOCKOUT_4740` | Account locked out | 3 |
+| Rule                        | Event                     | Severity |
+| --------------------------- | ------------------------- | -------- |
+| `MULTIPLE_FAILED_LOGINS`    | 5 auth failures in 60s    | 4        |
+| `FAILED_LOGIN_BRUTE`        | 20 auth failures in 60s   | 5        |
+| `HTTP_5XX_ERROR`            | Server error              | 3        |
+| `HTTP_4XX_BURST`            | 10 client errors in 60s   | 2        |
+| `SUSPICIOUS_PROCESS`        | Suspicious process        | 4        |
+| `WINDOWS_EVENT_4625_BURST`  | 5 failed logons           | 4        |
+| `WIN_POWERSHELL_4104`       | PowerShell script block   | 3        |
+| `WIN_SCHEDULED_TASK_4698`   | Scheduled task created    | 4        |
+| `WIN_SERVICE_INSTALL_7045`  | New service installed     | 4        |
+| `WIN_DEFENDER_1116`         | Defender detected malware | 5        |
+| `WIN_PROCESS_4688_CREATION` | Process created           | 2        |
+| `WIN_REGISTRY_PERSISTENCE`  | Registry changed          | 3        |
+| `WIN_RDP_LOGIN_4625`        | RDP failed login          | 3        |
+| `WIN_ACCOUNT_LOCKOUT_4740`  | Account locked out        | 3        |
 
 ### SIEM alert → playbook auto-trigger
 
@@ -286,20 +288,21 @@ The platform ships with known malware hashes and indicators:
 
 ### External feeds
 
-| Feed | Free tier | API key | Command |
-|---|---|---|---|
-| VirusTotal | 500/day | `INNO_VT_API_KEY` | Auto-used in playbooks |
-| AbuseIPDB | 1000/day | `INNO_ABUSEIPDB_KEY` | `ip-enrich` playbook |
-| AlienVault OTX | Unlimited | `INNO_OTX_API_KEY` | `ip-enrich` playbook |
+| Feed           | Free tier | API key              | Command                |
+| -------------- | --------- | -------------------- | ---------------------- |
+| VirusTotal     | 500/day   | `INNO_VT_API_KEY`    | Auto-used in playbooks |
+| AbuseIPDB      | 1000/day  | `INNO_ABUSEIPDB_KEY` | `ip-enrich` playbook   |
+| AlienVault OTX | Unlimited | `INNO_OTX_API_KEY`   | `ip-enrich` playbook   |
 
 ### Multi-feed enrichment
 
 ```powershell
 # Enrich an IP with ALL sources
-innoigniter investigate --playbook ip-enrich --param ip=185.220.101.24
+trace investigate --playbook ip-enrich --param ip=185.220.101.24
 ```
 
 This checks the IP against:
+
 1. AbuseIPDB (confidence score + report count)
 2. AlienVault OTX (pulse count)
 3. VirusTotal (if API key configured)
@@ -314,7 +317,7 @@ This checks the IP against:
 ### Block an IP
 
 ```powershell
-innoigniter investigate --playbook block-ip --param ip=10.0.0.5
+trace investigate --playbook block-ip --param ip=10.0.0.5
 ```
 
 On Windows: adds firewall rule via `netsh advfirewall`.
@@ -324,7 +327,7 @@ On macOS: adds rule via `pfctl`.
 ### Quarantine a file
 
 ```powershell
-innoigniter investigate --playbook quarantine-file --param path=C:\Users\admin\malware.exe
+trace investigate --playbook quarantine-file --param path=C:\Users\admin\malware.exe
 ```
 
 Moves file to `%TEMP%.trace-quarantine\`.
@@ -332,14 +335,14 @@ Moves file to `%TEMP%.trace-quarantine\`.
 ### Kill a process
 
 ```powershell
-innoigniter investigate --playbook kill-process --param name=malware.exe
+trace investigate --playbook kill-process --param name=malware.exe
 ```
 
 ### Rollback
 
 ```powershell
 # List recent action IDs from DB, then:
-innoigniter investigate --playbook rollback-action --param action_id=<action-id>
+trace investigate --playbook rollback-action --param action_id=<action-id>
 ```
 
 ### Human-in-the-loop approval
@@ -347,9 +350,9 @@ innoigniter investigate --playbook rollback-action --param action_id=<action-id>
 For playbooks with `wait: analyst_approval`:
 
 ```powershell
-innoigniter approval pending
-innoigniter approval approve <investigation-id>
-innoigniter approval deny <investigation-id>
+trace approval pending
+trace approval approve <investigation-id>
+trace approval deny <investigation-id>
 ```
 
 ---
@@ -359,10 +362,11 @@ innoigniter approval deny <investigation-id>
 ### Start the server
 
 ```powershell
-innoigniter server --http-addr :8080
+trace server --http-addr :8080
 ```
 
 Opens dashboard at `http://localhost:8080`:
+
 - Investigation list with status filter
 - Search by IOC, intent, or ID
 - Investigation detail with full report
@@ -371,10 +375,11 @@ Opens dashboard at `http://localhost:8080`:
 ### Add edge nodes (Windows endpoints)
 
 ```powershell
-innoigniter serve --server-addr http://server-hostname:8080
+trace serve --server-addr http://server-hostname:8080
 ```
 
 Edge nodes:
+
 - Register automatically with the server
 - Heartbeat every 30 seconds
 - Push investigations to server in real-time
@@ -384,11 +389,11 @@ Edge nodes:
 
 When the same IOC (e.g., a malware hash) is seen on 2+ edges:
 
-| Nodes | Confidence | Meaning |
-|---|---|---|
-| 1 | 0.5 | Single sighting |
-| 2 | 0.75 | Possible campaign |
-| 3+ | 0.9 | Confirmed campaign |
+| Nodes | Confidence | Meaning            |
+| ----- | ---------- | ------------------ |
+| 1     | 0.5        | Single sighting    |
+| 2     | 0.75       | Possible campaign  |
+| 3+    | 0.9        | Confirmed campaign |
 
 Dashboard → Correlations tab shows all cross-node IOCs.
 
@@ -398,16 +403,16 @@ Dashboard → Correlations tab shows all cross-node IOCs.
 
 ### Common issues
 
-| Symptom | Likely cause | Fix |
-|---|---|---|
-| `VT API key not configured` | No VirusTotal key | Set `$env:INNO_VT_API_KEY` |
-| `path is required` | Missing parameter | Use `--param path=...` |
-| `playbook not found` | Typo in name | Run .trace plugin list` to see available playbooks |
-| `connection refused` on server sync | Server not running | Start .trace server` first |
-| Investigation stuck on `running` | Task worker not started | Start .trace serve` |
-| `The requested operation requires elevation` | Admin rights needed | Run PowerShell as Administrator |
-| `abuseipdb rate limited` | Free tier exceeded | Wait 1 minute or upgrade API key |
-| DB locked errors | Multiple concurrent writes | Reduce concurrent investigations |
+| Symptom                                      | Likely cause               | Fix                                                |
+| -------------------------------------------- | -------------------------- | -------------------------------------------------- |
+| `VT API key not configured`                  | No VirusTotal key          | Set `$env:INNO_VT_API_KEY`                         |
+| `path is required`                           | Missing parameter          | Use `--param path=...`                             |
+| `playbook not found`                         | Typo in name               | Run .trace plugin list` to see available playbooks |
+| `connection refused` on server sync          | Server not running         | Start .trace server` first                         |
+| Investigation stuck on `running`             | Task worker not started    | Start .trace serve`                                |
+| `The requested operation requires elevation` | Admin rights needed        | Run PowerShell as Administrator                    |
+| `abuseipdb rate limited`                     | Free tier exceeded         | Wait 1 minute or upgrade API key                   |
+| DB locked errors                             | Multiple concurrent writes | Reduce concurrent investigations                   |
 
 ### Logs
 
@@ -447,19 +452,19 @@ Link: http://evil-phish.com/payload
 **Step 2 — Investigate the sender domain**
 
 ```powershell
-innoigniter investigate --playbook domain-reputation --param domain=evil-phish.com
+trace investigate --playbook domain-reputation --param domain=evil-phish.com
 ```
 
 **Step 3 — Investigate the sender IP**
 
 ```powershell
-innoigniter investigate --playbook ip-enrich --param ip=185.220.101.24
+trace investigate --playbook ip-enrich --param ip=185.220.101.24
 ```
 
 **Step 4 — Run email analysis**
 
 ```powershell
-innoigniter investigate --playbook email-analysis `
+trace investigate --playbook email-analysis `
   --param sender_ip=185.220.101.24 `
   --param sender_domain=evil-phish.com `
   --param subject="Urgent: Invoice Past Due" `
@@ -469,13 +474,13 @@ innoigniter investigate --playbook email-analysis `
 **Step 5 — If malicious indicator found, quarantine**
 
 ```powershell
-innoigniter investigate --playbook quarantine-file --param path=C:\Downloads\invoice-2024-07-18.docm
+trace investigate --playbook quarantine-file --param path=C:\Downloads\invoice-2024-07-18.docm
 ```
 
 **Step 6 — Notify the team**
 
 ```powershell
-innoigniter investigate --playbook slack-notify `
+trace investigate --playbook slack-notify `
   --param webhook_url=https://hooks.slack.com/services/... `
   --param title="Phishing campaign detected" `
   --param message="evil-phish.com | 185.220.101.24 | attachment quarantined"
@@ -484,8 +489,8 @@ innoigniter investigate --playbook slack-notify `
 **Step 7 — Check history and report**
 
 ```powershell
-innoigniter history
-innoigniter report <investigation-id>
+trace history
+trace report <investigation-id>
 ```
 
 ### Scenario: Windows endpoint showing signs of compromise
@@ -505,7 +510,7 @@ SIEM ALERT: [4] New service installed (Event 7045)
 **Step 2 — Investigate the service**
 
 ```powershell
-innoigniter investigate --playbook windows-event-analysis `
+trace investigate --playbook windows-event-analysis `
   --param event_id=7045 `
   --param event_description="unknown service installed" `
   --param technique=T1543.003
@@ -514,7 +519,7 @@ innoigniter investigate --playbook windows-event-analysis `
 **Step 3 — Check for persistence (registry)**
 
 ```powershell
-innoigniter investigate --playbook registry-check `
+trace investigate --playbook registry-check `
   --param registry_key=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run `
   --param technique=T1547.001
 ```
@@ -522,25 +527,25 @@ innoigniter investigate --playbook registry-check `
 **Step 4 — Analyze any dropped files**
 
 ```powershell
-innoigniter investigate --playbook file-analysis --param path=C:\Windows\Temp\svchost.exe
+trace investigate --playbook file-analysis --param path=C:\Windows\Temp\svchost.exe
 ```
 
 **Step 5 — Kill the malicious process**
 
 ```powershell
-innoigniter investigate --playbook kill-process --param name=svchost.exe
+trace investigate --playbook kill-process --param name=svchost.exe
 ```
 
 **Step 6 — Block the attacker IP**
 
 ```powershell
-innoigniter investigate --playbook block-ip --param ip=185.220.101.24
+trace investigate --playbook block-ip --param ip=185.220.101.24
 ```
 
 **Step 7 — Generate full report**
 
 ```powershell
-innoigniter report <investigation-id> -o breach-report.md
+trace report <investigation-id> -o breach-report.md
 ```
 
 ---

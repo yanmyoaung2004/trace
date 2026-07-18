@@ -14,7 +14,7 @@
 - `intel/` — bundled SQLite DB with MITRE + CVE seed data
 
 ```
-innoigniter/
+trace/
 ├── cmd.trace/main.go
 ├── internal/
 │   ├── agent/        # Agent interface
@@ -81,6 +81,7 @@ type Capability struct {
 - Playbook library directory auto-loaded at startup
 
 **Built-in playbooks**:
+
 - `hash-lookup` — check hash against cache + YARA + VT
 - `file-analysis` — extract PE metadata, YARA scan, VT lookup
 - `ip-reputation` — check IP against cache + VT + threat intel
@@ -172,12 +173,13 @@ type Capability struct {
 - SIEM enable/disable via config flag (opt-in)
 
 **Built-in rules**:
+
 - Multiple failed logins (SSH, RDP, Windows Event 4625)
 - Suspicious process execution (cmd.exe spawning PowerShell, rundll32, regsvr32)
 - File changes in sensitive directories (/etc, %SYSTEMROOT%)
 - Known-bad hash detection via YARA on new files
 
-**Verification**: .trace serve --siem` starts file watcher, decodes log, detects 5 auth failures from same IP, creates alert, triggers `ip-reputation` playbook.
+**Verification**: .trace serve --siem`starts file watcher, decodes log, detects 5 auth failures from same IP, creates alert, triggers`ip-reputation` playbook.
 
 ---
 
@@ -197,7 +199,7 @@ type Capability struct {
 - HITL approval: playbook step with `wait: analyst_approval` blocks until analyst confirms or denies
 - CLI: .trace approval pending`, `approve <id>`, `deny <id>`
 
-**Verification**: Phishing playbook runs → detection extracts malicious domains → playbook pauses → .trace approval pending` → sees domain block request → `approve` → Response Agent blocks via iptables.
+**Verification**: Phishing playbook runs → detection extracts malicious domains → playbook pauses → .trace approval pending`→ sees domain block request →`approve` → Response Agent blocks via iptables.
 
 ---
 
@@ -212,7 +214,7 @@ type Capability struct {
   - LLM provider: OpenAI GPT-4 → implement `Planner` interface
   - Threat intel feed: STIX/TAXII → fetch → normalize → merge into local intel DB
   - Exporter: HTML report → serve as local web page
-- .trace plugin install <name>` — download plugin binary to `~/.trace/plugins/`
+- .trace plugin install <name>`— download plugin binary to`~/.trace/plugins/`
 - .trace plugin list` — show installed + their capabilities
 
 **Verification**: .trace plugin install inno-splunk` → SIEM connector appears in capabilities → Splunk alerts trigger investigations.
@@ -259,16 +261,16 @@ type Capability struct {
 
 ## Timeline
 
-| Phase | Duration | Cumulative | Delivers |
-|---|---|---|---|
-| 0 — Scaffold | 2 days | 2 days | Repo, build, CI |
-| 1 — Foundation | 5 days | 7 days | Backbone, CLI, agent interface |
-| 2 — Playbook engine | 7 days | 14 days | DAG runner, playbook library |
-| 3 — Knowledge Agent | 7 days | 21 days | MITRE, CVE, intel enrichment |
-| 4 — Detection Agent | 7 days | 28 days | YARA, PE, VT analysis |
-| **5 — Host Agent** | **7 days** | **35 days** | **MVP — end-to-end investigation** |
-| 6 — SIEM engine | 14 days | 49 days | Log ingestion + rules |
-| 7 — Response actions | 7 days | 56 days | SOAR loop closed |
-| 8 — Plugins | 7 days | 63 days | Extensibility |
-| 9 — Central server | 14 days | 77 days | Team deployment |
-| 10 — Polish | 7 days | 84 days | Production readiness |
+| Phase                | Duration   | Cumulative  | Delivers                           |
+| -------------------- | ---------- | ----------- | ---------------------------------- |
+| 0 — Scaffold         | 2 days     | 2 days      | Repo, build, CI                    |
+| 1 — Foundation       | 5 days     | 7 days      | Backbone, CLI, agent interface     |
+| 2 — Playbook engine  | 7 days     | 14 days     | DAG runner, playbook library       |
+| 3 — Knowledge Agent  | 7 days     | 21 days     | MITRE, CVE, intel enrichment       |
+| 4 — Detection Agent  | 7 days     | 28 days     | YARA, PE, VT analysis              |
+| **5 — Host Agent**   | **7 days** | **35 days** | **MVP — end-to-end investigation** |
+| 6 — SIEM engine      | 14 days    | 49 days     | Log ingestion + rules              |
+| 7 — Response actions | 7 days     | 56 days     | SOAR loop closed                   |
+| 8 — Plugins          | 7 days     | 63 days     | Extensibility                      |
+| 9 — Central server   | 14 days    | 77 days     | Team deployment                    |
+| 10 — Polish          | 7 days     | 84 days     | Production readiness               |

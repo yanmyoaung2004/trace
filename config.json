@@ -1,11 +1,11 @@
 {
-  "db_path": "D:\\Projects_And_Learning\\AI\\InnoIgniterAI\\dev\\.innoigniter\\innoigniter.db",
-  "log_dir": "D:\\Projects_And_Learning\\AI\\InnoIgniterAI\\dev\\.innoigniter\\logs",
-  "playbook_dir": "D:\\Projects_And_Learning\\AI\\InnoIgniterAI\\dev\\.innoigniter\\playbooks",
+  "db_path": "D:\\Projects_And_Learning\\AI\\Trace\\dev\\.trace\\trace.db",
+  "log_dir": "D:\\Projects_And_Learning\\AI\\Trace\\dev\\.trace\\logs",
+  "playbook_dir": "D:\\Projects_And_Learning\\AI\\Trace\\dev\\.trace\\playbooks",
 
   "siem": {
     "enabled": true,
-    "log_dir": "D:\\Projects_And_Learning\\AI\\InnoIgniterAI\\dev\\logs",
+    "log_dir": "D:\\Projects_And_Learning\\AI\\Trace\\dev\\logs",
     "syslog_addr": ":9514"
   },
 
@@ -15,4 +15,3 @@
   "llm_api_key": "",
   "web_search_key": ""
 }
-
