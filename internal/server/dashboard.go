@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/yanmyoaung2004/trace/internal/locale"
 )
 
 type DashboardDataProvider interface {
@@ -135,38 +137,38 @@ func (dh *DashboardHandler) index(w http.ResponseWriter, r *http.Request) {
 
 	var b strings.Builder
 	b.WriteString(`<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>Trace Server</title>
+<title>` + locale.T("dashboard_title") + `</title>
 <style>` + pageStyle + `</style></head><body>
 <div class="header">
-<h1>Trace Server</h1>
+<h1>` + locale.T("dashboard_title") + `</h1>
 <div class="header-right">
-<span class="auto-refresh"><span class="dot"></span>Live</span>
-<div class="nav"><a href="/" class="active">Dashboard</a><a href="/correlations">Correlations</a></div>
+<span class="auto-refresh"><span class="dot"></span>` + locale.T("dashboard_auto_refresh") + `</span>
+<div class="nav"><a href="/" class="active">` + locale.T("dashboard_investigations") + `</a><a href="/correlations">` + locale.T("dashboard_correlations") + `</a></div>
 </div></div>
 
 <div class="stats">
-<div class="stat"><div class="stat-value">` + fmt.Sprintf("%d", total) + `</div><div class="stat-label">Investigations</div>` +
+<div class="stat"><div class="stat-value">` + fmt.Sprintf("%d", total) + `</div><div class="stat-label">` + locale.T("dashboard_investigations") + `</div>` +
 		confBar(complPct, complCount) + `</div>
-<div class="stat"><div class="stat-value">` + fmt.Sprintf("%d", len(nodes)) + `</div><div class="stat-label">Nodes</div></div>
+<div class="stat"><div class="stat-value">` + fmt.Sprintf("%d", len(nodes)) + `</div><div class="stat-label">` + locale.T("dashboard_nodes") + `</div></div>
 <div class="stat"><div class="stat-value">` + fmt.Sprintf("%d", len(corrs)) + `</div><div class="stat-label">Cross-node IOCs</div></div>
-<div class="stat"><div class="stat-value" style="color:` + statusColor(complCount, failCount, runCount) + `">` + fmt.Sprintf("%d", complCount) + ` ✓ / ` + fmt.Sprintf("%d", failCount) + ` ✗</div><div class="stat-label">Completed / Failed</div></div>
+<div class="stat"><div class="stat-value" style="color:` + statusColor(complCount, failCount, runCount) + `">` + fmt.Sprintf("%d", complCount) + ` ✓ / ` + fmt.Sprintf("%d", failCount) + ` ✗</div><div class="stat-label">` + locale.T("dashboard_completed") + ` / ` + locale.T("dashboard_failed") + `</div></div>
 </div>
 
 <form class="search-box" action="/" method="get">
-<input type="text" name="q" placeholder="Search by IOC, intent, or investigation ID..." value="` + html.EscapeString(search) + `">
-<button type="submit">Search</button>
+<input type="text" name="q" placeholder="` + locale.T("dashboard_search_placeholder") + `" value="` + html.EscapeString(search) + `">
+<button type="submit">` + locale.T("dashboard_search") + `</button>
 </form>
 
 <div class="filters" id="filterBar">
-<a href="/" class="filter-btn` + filterClass("", statusFilter) + `">All</a>
-<a href="/?status=completed" class="filter-btn` + filterClass("completed", statusFilter) + `">Completed</a>
-<a href="/?status=running" class="filter-btn` + filterClass("running", statusFilter) + `">Running</a>
-<a href="/?status=failed" class="filter-btn` + filterClass("failed", statusFilter) + `">Failed</a>
-<a href="/?status=pending" class="filter-btn` + filterClass("pending", statusFilter) + `">Pending</a>
+<a href="/" class="filter-btn` + filterClass("", statusFilter) + `">` + locale.T("dashboard_all") + `</a>
+<a href="/?status=completed" class="filter-btn` + filterClass("completed", statusFilter) + `">` + locale.T("dashboard_completed") + `</a>
+<a href="/?status=running" class="filter-btn` + filterClass("running", statusFilter) + `">` + locale.T("dashboard_running") + `</a>
+<a href="/?status=failed" class="filter-btn` + filterClass("failed", statusFilter) + `">` + locale.T("dashboard_failed") + `</a>
+<a href="/?status=pending" class="filter-btn` + filterClass("pending", statusFilter) + `">` + locale.T("dashboard_pending") + `</a>
 </div>
 
-<h2>Investigations</h2>
-<table><thead><tr><th>ID</th><th>Edge</th><th>Status</th><th>Intent</th><th>Confidence</th><th>Created</th></tr></thead><tbody>`)
+<h2>` + locale.T("dashboard_investigations") + `</h2>
+<table><thead><tr><th>` + locale.T("dashboard_id") + `</th><th>` + locale.T("dashboard_edge") + `</th><th>` + locale.T("dashboard_status") + `</th><th>` + locale.T("dashboard_intent") + `</th><th>` + locale.T("dashboard_confidence") + `</th><th>` + locale.T("dashboard_created") + `</th></tr></thead><tbody>`)
 
 	for _, inv := range invs {
 		conf := "—"
@@ -263,7 +265,7 @@ func (dh *DashboardHandler) detail(w http.ResponseWriter, r *http.Request) {
 
 	var b strings.Builder
 	b.WriteString(`<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>Investigation — ` + html.EscapeString(inv.ID[:12]) + `</title>
+<title>` + locale.T("dashboard_detail") + ` — ` + html.EscapeString(inv.ID[:12]) + `</title>
 <style>` + pageStyle + `
 body { max-width: 960px; margin: 0 auto; }
 .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-top: 20px; }
@@ -273,22 +275,22 @@ body { max-width: 960px; margin: 0 auto; }
 .report { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-top: 16px; white-space: pre-wrap; font-family: monospace; font-size: 0.85em; line-height: 1.6; }
 .tag { display: inline-block; background: rgba(88,166,255,0.1); color: #58a6ff; padding: 2px 8px; border-radius: 4px; font-size: 0.8em; margin: 2px; }
 </style></head><body>
-<div class="header"><h1>Investigation ` + html.EscapeString(inv.ID[:12]) + `</h1>
-<a href="/">← Dashboard</a></div>
+<div class="header"><h1>` + locale.T("dashboard_detail") + ` ` + html.EscapeString(inv.ID[:12]) + `</h1>
+<a href="/">` + locale.T("dashboard_back") + `</a></div>
 
 <div class="card">
-<div class="field"><span class="label">ID</span>` + html.EscapeString(inv.ID) + `</div>
-<div class="field"><span class="label">Edge</span>` + html.EscapeString(inv.SourceEdge) + `</div>
-<div class="field"><span class="label">Status</span><span class="badge badge-` + inv.Status + `">` + html.EscapeString(inv.Status) + `</span></div>
-<div class="field"><span class="label">Intent</span>` + html.EscapeString(inv.Intent) + `</div>
-<div class="field"><span class="label">Playbook</span>` + html.EscapeString(inv.Playbook) + `</div>
-<div class="field"><span class="label">Confidence</span>` + conf + `</div>
-<div class="field"><span class="label">Created</span>` + html.EscapeString(inv.CreatedAt) + `</div>
-<div class="field"><span class="label">Updated</span>` + html.EscapeString(inv.UpdatedAt) + `</div>
+<div class="field"><span class="label">` + locale.T("dashboard_id") + `</span>` + html.EscapeString(inv.ID) + `</div>
+<div class="field"><span class="label">` + locale.T("dashboard_edge") + `</span>` + html.EscapeString(inv.SourceEdge) + `</div>
+<div class="field"><span class="label">` + locale.T("dashboard_status") + `</span><span class="badge badge-` + inv.Status + `">` + html.EscapeString(inv.Status) + `</span></div>
+<div class="field"><span class="label">` + locale.T("dashboard_intent") + `</span>` + html.EscapeString(inv.Intent) + `</div>
+<div class="field"><span class="label">` + locale.T("dashboard_playbook") + `</span>` + html.EscapeString(inv.Playbook) + `</div>
+<div class="field"><span class="label">` + locale.T("dashboard_confidence") + `</span>` + conf + `</div>
+<div class="field"><span class="label">` + locale.T("dashboard_created") + `</span>` + html.EscapeString(inv.CreatedAt) + `</div>
+<div class="field"><span class="label">` + locale.T("dashboard_updated") + `</span>` + html.EscapeString(inv.UpdatedAt) + `</div>
 </div>`)
 
 	if len(inv.Indicators) > 0 {
-		b.WriteString(`<div class="card"><h2>Indicators</h2>`)
+		b.WriteString(`<div class="card"><h2>` + locale.T("dashboard_indicators") + `</h2>`)
 		for _, ind := range inv.Indicators {
 			b.WriteString(`<span class="tag"><code>` + html.EscapeString(ind) + `</code></span> `)
 		}
@@ -296,19 +298,21 @@ body { max-width: 960px; margin: 0 auto; }
 	}
 
 	if inv.Report != "" {
-		b.WriteString(`<div class="card"><h2>Full Report</h2><div class="report">` + html.EscapeString(inv.Report) + `</div></div>`)
+		b.WriteString(`<div class="card"><h2>` + locale.T("dashboard_full_report") + `</h2><div class="report">` + html.EscapeString(inv.Report) + `</div></div>`)
 	}
 
-	b.WriteString(`<div class="card"><h2>Investigation Timeline</h2>
-<div id="timeline"><p style="color:#8b949e;">Loading...</p></div>
+	b.WriteString(`<div class="card"><h2>` + locale.T("dashboard_timeline") + `</h2>
+<div id="timeline"><p style="color:#8b949e;">` + locale.T("dashboard_timeline_loading") + `</p></div>
 </div>
 
 <script>
+var _tlEmpty = ` + jsStr(locale.T("dashboard_timeline_empty")) + `;
+var _tlFailed = ` + jsStr(locale.T("dashboard_timeline_failed")) + `;
 fetch('/api/v1/timeline/` + inv.ID + `')
   .then(r => r.json())
   .then(events => {
     var html = '';
-    if (events.length === 0) { html = '<p style="color:#8b949e;">No timeline events.</p>'; }
+    if (events.length === 0) { html = '<p style="color:#8b949e;">' + _tlEmpty + '</p>'; }
     else {
       events.forEach(function(e) {
         var ts = e.ts ? e.ts.substring(0, 19).replace('T', ' ') : '--';
@@ -326,7 +330,7 @@ fetch('/api/v1/timeline/` + inv.ID + `')
     }
     document.getElementById('timeline').innerHTML = html;
   })
-  .catch(function() { document.getElementById('timeline').innerHTML = '<p style="color:#f85149;">Failed to load timeline.</p>'; });
+  .catch(function() { document.getElementById('timeline').innerHTML = '<p style="color:#f85149;">' + _tlFailed + '</p>'; });
 </script>` + "\n")
 
 	b.WriteString(`</body></html>`)
@@ -418,6 +422,10 @@ func confBar(pct float64, count int) string {
 		clr = "#f85149"
 	}
 	return fmt.Sprintf(`<div class="stat-bar"><div class="stat-bar-fill" style="width:%.0f%%;background:%s"></div></div>`, pct, clr)
+}
+
+func jsStr(s string) string {
+	return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"`
 }
 
 func confBarVisual(conf float64) string {
