@@ -50,6 +50,37 @@ func newUpdateCmd() *cobra.Command {
 		},
 	})
 
+	cmd.AddCommand(&cobra.Command{
+		Use:   "rollback",
+		Short: "Roll back to the previous binary version",
+		Long:  `Restores the .bak backup created by 'trace update self'.`,
+		RunE: func(cmdCobra *cobra.Command, args []string) error {
+			selfPath, err := os.Executable()
+			if err != nil {
+				return fmt.Errorf("get executable path: %w", err)
+			}
+
+			backupPath := selfPath + ".bak"
+			if _, err := os.Stat(backupPath); os.IsNotExist(err) {
+				return fmt.Errorf("no backup found at %s", backupPath)
+			}
+
+			if err := os.Rename(selfPath, selfPath+".rollbak"); err != nil {
+				return fmt.Errorf("move current binary: %w", err)
+			}
+
+			if err := os.Rename(backupPath, selfPath); err != nil {
+				os.Rename(selfPath+".rollbak", selfPath)
+				return fmt.Errorf("restore backup: %w", err)
+			}
+
+			os.Remove(selfPath + ".rollbak")
+			fmt.Println("Rolled back to previous version.")
+			fmt.Println("Restart the service to use the previous version.")
+			return nil
+		},
+	})
+
 	return cmd
 }
 

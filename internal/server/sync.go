@@ -26,15 +26,49 @@ func (h *SyncHandler) WithLogDir(dir string) *SyncHandler {
 }
 
 func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/api/v1/register", h.handleRegister)
-	mux.HandleFunc("/api/v1/heartbeat", h.handleHeartbeat)
-	mux.HandleFunc("/api/v1/push", h.handlePush)
-	mux.HandleFunc("/api/v1/nodes", h.handleNodes)
-	mux.HandleFunc("/api/v1/investigations/", h.handleInvestigationByID)
-	mux.HandleFunc("/api/v1/investigations", h.handleInvestigations)
-	mux.HandleFunc("/api/v1/correlations", h.handleCorrelations)
-	mux.HandleFunc("/api/v1/timeline/", h.handleTimeline)
+	protected := func(handler http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			apiKey := r.URL.Query().Get("api_key")
+			if apiKey == "" {
+				if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+					apiKey = strings.TrimPrefix(auth, "Bearer ")
+				}
+			}
+			if apiKey != "" {
+				if userID, role, err := h.manager.Authenticate(r.Context(), apiKey); err == nil && userID != "" {
+					ctx := context.WithValue(r.Context(), ctxKeyRole, role)
+					r = r.WithContext(ctx)
+					handler(w, r)
+					return
+				}
+			}
+			writeError(w, http.StatusUnauthorized, "unauthorized — provide api_key query param or Authorization: Bearer <key>")
+		}
+	}
+
+	readOnly := func(handler http.HandlerFunc) http.HandlerFunc {
+		return protected(func(w http.ResponseWriter, r *http.Request) {
+			handler(w, r)
+		})
+	}
+
+	mux.HandleFunc("/api/v1/register", protected(h.handleRegister))
+	mux.HandleFunc("/api/v1/heartbeat", protected(h.handleHeartbeat))
+	mux.HandleFunc("/api/v1/push", protected(h.handlePush))
+	mux.HandleFunc("/api/v1/nodes", readOnly(h.handleNodes))
+	mux.HandleFunc("/api/v1/investigations/", readOnly(h.handleInvestigationByID))
+	mux.HandleFunc("/api/v1/investigations", readOnly(h.handleInvestigations))
+	mux.HandleFunc("/api/v1/correlations", readOnly(h.handleCorrelations))
+	mux.HandleFunc("/api/v1/timeline/", readOnly(h.handleTimeline))
+
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
 }
+
+type contextKey string
+
+const ctxKeyRole contextKey = "role"
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -226,10 +260,6 @@ func ServeHTTP(opts ServeOptions, mgr *ServerManager, dashboard DashboardDataPro
 
 	dashboardHandler := NewDashboardHandler(dashboard)
 	dashboardHandler.RegisterRoutes(mux)
-
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-	})
 
 	srv := &http.Server{
 		Addr:              opts.ListenAddr,

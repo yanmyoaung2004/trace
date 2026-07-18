@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -323,6 +324,22 @@ func (m *ServerManager) CreateUser(ctx context.Context, email, passwordHash, rol
 		return "", fmt.Errorf("create user: %w", err)
 	}
 	return id, nil
+}
+
+func (m *ServerManager) SeedDefaultUser(ctx context.Context) error {
+	var count int
+	m.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM server_users`).Scan(&count)
+	if count > 0 {
+		return nil
+	}
+	_, err := m.db.ExecContext(ctx,
+		`INSERT INTO server_users (id, email, password_hash, role, api_key) VALUES (?, ?, ?, ?, ?)`,
+		uuid.New().String(), "admin@trace.local", "", "admin", "trace-dev-key")
+	if err != nil {
+		return fmt.Errorf("seed default user: %w", err)
+	}
+	log.Printf("[server] created default admin user (api_key: trace-dev-key)")
+	return nil
 }
 
 func (m *ServerManager) Authenticate(ctx context.Context, apiKey string) (string, string, error) {

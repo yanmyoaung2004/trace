@@ -19,6 +19,9 @@ func RunServer(cfg *config.Config, database *db.DB, invMgr *investigation.Manage
 	if err := mgr.Migrate(); err != nil {
 		return fmt.Errorf("server migrate: %w", err)
 	}
+	if err := mgr.SeedDefaultUser(context.Background()); err != nil {
+		log.Printf("[server] seed user warning: %v", err)
+	}
 
 	httpAddr := cfg.Server.HTTPAddr
 	if httpAddr == "" {

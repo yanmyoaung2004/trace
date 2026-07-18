@@ -23,8 +23,17 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: Lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m --disable=all --enable=gosec,misspell,unparam,prealloc
+
       - name: Build
         run: go build -o .trace ./cmd/trace
 
       - name: Test
         run: go test ./... -short -count=1 -p 2
+
+      - name: Fuzz (short)
+        run: go test ./internal/siem/... -fuzz=FuzzAutoDecoder -fuzztime=10s

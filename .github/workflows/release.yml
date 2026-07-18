@@ -31,17 +31,33 @@ jobs:
 
       - name: Generate checksums
         run: |
-          sha256sum.trace-* > checksums.txt
+          sha256sum trace-* > checksums.txt
           cat checksums.txt
+
+      - name: Sign binaries
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        if: env.GPG_PRIVATE_KEY != ''
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import 2>/dev/null
+          for f in trace-*; do
+            gpg --batch --pinentry-mode=loopback --passphrase "$GPG_PASSPHRASE" --detach-sign --armor "$f"
+          done
 
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-           .trace-linux-amd64
-           .trace-linux-arm64
-           .trace-darwin-amd64
-           .trace-darwin-arm64
-           .trace-windows-amd64.exe
-            checksums.txt
+           trace-linux-amd64
+           trace-linux-arm64
+           trace-darwin-amd64
+           trace-darwin-arm64
+           trace-windows-amd64.exe
+           checksums.txt
+           trace-linux-amd64.asc
+           trace-linux-arm64.asc
+           trace-darwin-amd64.asc
+           trace-darwin-arm64.asc
+           trace-windows-amd64.exe.asc
           generate_release_notes: true
