@@ -6,12 +6,10 @@
 </p>
 
 <p align="center">
-  <a href="#"><img src="https://img.shields.io/badge/Build-passing-3fb950?style=for-the-badge&logo=go" alt="Build"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="License"></a>
-  <a href="#"><img src="https://img.shields.io/badge/Go-1.26-00ADD8?style=for-the-badge&logo=go" alt="Go 1.26"></a>
-  <a href="#"><img src="https://img.shields.io/badge/platform-Windows%20|%20Linux%20|%20macOS-8A2BE2?style=for-the-badge" alt="Platforms"></a>
-  <a href="#"><img src="https://img.shields.io/badge/37%20tests-passing-3fb950?style=for-the-badge" alt="Tests"></a>
-  <a href="#"><img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="MIT"></a>
+  <img src="https://img.shields.io/badge/Build-passing-3fb950?style=for-the-badge&logo=go" alt="Build">
+  <img src="https://img.shields.io/badge/Go-1.26-00ADD8?style=for-the-badge&logo=go" alt="Go 1.26">
+  <img src="https://img.shields.io/badge/platform-Windows%20|%20Linux%20|%20macOS-8A2BE2?style=for-the-badge" alt="Platforms">
+  <img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="MIT">
 </p>
 
 <p align="center">
@@ -35,21 +33,21 @@
 
 ## Features
 
-| Capability | Description |
-|---|---|
-| **Threat Triage** | Investigate hashes, files, IPs, domains, emails, and network indicators with a single command |
-| **YARA + PE Analysis** | Built-in YARA engine with real malware rules; full PE parser (sections, imports, entropy) |
-| **SIEM Monitoring** | File watcher, syslog (UDP/TCP), 6 log decoders, 16 correlation rules with auto-triggered playbooks |
-| **Intel Enrichment** | Built-in IOC database (18 entries) + AbuseIPDB, AlienVault OTX, VirusTotal integrations |
-| **MITRE ATT&CK** | Offline technique lookup, CVE searching via NVD API |
-| **SOAR Actions** | Block IP (firewall), quarantine files, kill processes, restart services — with full rollback |
-| **Human-in-the-Loop** | Playbook steps can pause for analyst approval before executing actions |
-| **Central Server** | Team dashboard with investigation list, search, detail views, cross-node IOC correlation |
-| **Edge Sync** | Distributed deployment — edge nodes push investigations to central server |
-| **Notifications** | Slack and Discord webhook alerts for automated incident notification |
-| **Plugin System** | Extend with external `.so` plugins loaded at runtime |
-| **TLS Support** | Built-in HTTPS with self-signed certificate generation for production deployments |
-| **Docker Ready** | Multi-stage Dockerfile + docker-compose for one-command deployment |
+| Capability             | Description                                                                                        |
+| ---------------------- | -------------------------------------------------------------------------------------------------- |
+| **Threat Triage**      | Investigate hashes, files, IPs, domains, emails, and network indicators with a single command      |
+| **YARA + PE Analysis** | Built-in YARA engine with real malware rules; full PE parser (sections, imports, entropy)          |
+| **SIEM Monitoring**    | File watcher, syslog (UDP/TCP), 6 log decoders, 16 correlation rules with auto-triggered playbooks |
+| **Intel Enrichment**   | Built-in IOC database (18 entries) + AbuseIPDB, AlienVault OTX, VirusTotal integrations            |
+| **MITRE ATT&CK**       | Offline technique lookup, CVE searching via NVD API                                                |
+| **SOAR Actions**       | Block IP (firewall), quarantine files, kill processes, restart services — with full rollback       |
+| **Human-in-the-Loop**  | Playbook steps can pause for analyst approval before executing actions                             |
+| **Central Server**     | Team dashboard with investigation list, search, detail views, cross-node IOC correlation           |
+| **Edge Sync**          | Distributed deployment — edge nodes push investigations to central server                          |
+| **Notifications**      | Slack and Discord webhook alerts for automated incident notification                               |
+| **Plugin System**      | Extend with external `.so` plugins loaded at runtime                                               |
+| **TLS Support**        | Built-in HTTPS with self-signed certificate generation for production deployments                  |
+| **Docker Ready**       | Multi-stage Dockerfile + docker-compose for one-command deployment                                 |
 
 ---
 
@@ -109,27 +107,27 @@ docker compose up server
 
 InnoIgniterAI ships with **20 built-in playbooks** — YAML workflows that chain agent actions into repeatable investigation procedures.
 
-| Category | Playbook | Purpose |
-|---|---|---|
-| **Triage** | `hash-lookup` | Check hash against cache, YARA, VT, and intel DB |
-| | `file-analysis` | Hash + YARA scan + PE metadata + IOC enrichment |
-| | `ip-reputation` | IP address lookup via VT and local intel |
-| | `domain-reputation` | Domain/URL check via VT, IOC enrich, web search |
-| | `email-analysis` | Analyze phishing email indicators |
-| | `network-scan` | Multi-indicator network analysis |
-| **Enrichment** | `ip-enrich` | Deep IP enrichment — AbuseIPDB + OTX + VT + IOC |
-| | `windows-event-analysis` | Enrich Windows Event with MITRE, CVE, web search |
-| | `registry-check` | Analyze registry persistence indicators |
-| | `log-analysis` | Log event analysis with YARA, MITRE, CVE |
-| | `mitre-lookup` | MITRE ATT&CK technique details |
-| | `cve-lookup` | CVE severity, CVSS score, affected products |
-| **Response** | `block-ip` | Firewall rule via netsh/iptables/pfctl |
-| | `quarantine-file` | Move file to restricted directory |
-| | `kill-process` | Terminate process by name or PID |
-| | `restart-service` | Restart system service |
-| | `rollback-action` | Undo a previously executed response action |
-| **Notify** | `slack-notify` | Send alert to Slack webhook |
-| | `discord-notify` | Send alert to Discord webhook |
+| Category       | Playbook                 | Purpose                                          |
+| -------------- | ------------------------ | ------------------------------------------------ |
+| **Triage**     | `hash-lookup`            | Check hash against cache, YARA, VT, and intel DB |
+|                | `file-analysis`          | Hash + YARA scan + PE metadata + IOC enrichment  |
+|                | `ip-reputation`          | IP address lookup via VT and local intel         |
+|                | `domain-reputation`      | Domain/URL check via VT, IOC enrich, web search  |
+|                | `email-analysis`         | Analyze phishing email indicators                |
+|                | `network-scan`           | Multi-indicator network analysis                 |
+| **Enrichment** | `ip-enrich`              | Deep IP enrichment — AbuseIPDB + OTX + VT + IOC  |
+|                | `windows-event-analysis` | Enrich Windows Event with MITRE, CVE, web search |
+|                | `registry-check`         | Analyze registry persistence indicators          |
+|                | `log-analysis`           | Log event analysis with YARA, MITRE, CVE         |
+|                | `mitre-lookup`           | MITRE ATT&CK technique details                   |
+|                | `cve-lookup`             | CVE severity, CVSS score, affected products      |
+| **Response**   | `block-ip`               | Firewall rule via netsh/iptables/pfctl           |
+|                | `quarantine-file`        | Move file to restricted directory                |
+|                | `kill-process`           | Terminate process by name or PID                 |
+|                | `restart-service`        | Restart system service                           |
+|                | `rollback-action`        | Undo a previously executed response action       |
+| **Notify**     | `slack-notify`           | Send alert to Slack webhook                      |
+|                | `discord-notify`         | Send alert to Discord webhook                    |
 
 Playbooks are defined in YAML and support variable interpolation (`${input.hash}`), conditional execution (`if:`), timeouts, optional steps, and human-in-the-loop gates (`wait: analyst_approval`).
 
@@ -137,18 +135,18 @@ Playbooks are defined in YAML and support variable interpolation (`${input.hash}
 
 ## Agents
 
-| Agent | Package | Capabilities |
-|---|---|---|
-| **Detection** | `internal/detection` | YARA scan, PE analysis, hash lookup, VirusTotal lookup |
-| **Knowledge** | `internal/knowledge` | MITRE ATT&CK, CVE lookup, IOC enrichment, malware lookup, web search |
-| **Host** | `internal/host` | Intent classification, playbook planning, report synthesis, confidence scoring |
-| **Response** | `internal/response` | Block IP, quarantine file, kill process, restart service, rollback |
-| **Notifier** | `internal/integration/notifier` | Slack webhook, Discord webhook |
-| **AbuseIPDB** | `internal/integration/abuseipdb` | IP reputation with abuse confidence score |
-| **OTX** | `internal/integration/otx` | AlienVault OTX pulse count for indicators |
-| **Splunk** | `internal/integration/splunk` | Splunk search, saved search, alert check |
-| **Elastic** | `internal/integration/elastic` | Elasticsearch search, alert check, index listing |
-| **Exporter** | `internal/plugins/exporter` | HTML report server for investigation dashboards |
+| Agent         | Package                          | Capabilities                                                                   |
+| ------------- | -------------------------------- | ------------------------------------------------------------------------------ |
+| **Detection** | `internal/detection`             | YARA scan, PE analysis, hash lookup, VirusTotal lookup                         |
+| **Knowledge** | `internal/knowledge`             | MITRE ATT&CK, CVE lookup, IOC enrichment, malware lookup, web search           |
+| **Host**      | `internal/host`                  | Intent classification, playbook planning, report synthesis, confidence scoring |
+| **Response**  | `internal/response`              | Block IP, quarantine file, kill process, restart service, rollback             |
+| **Notifier**  | `internal/integration/notifier`  | Slack webhook, Discord webhook                                                 |
+| **AbuseIPDB** | `internal/integration/abuseipdb` | IP reputation with abuse confidence score                                      |
+| **OTX**       | `internal/integration/otx`       | AlienVault OTX pulse count for indicators                                      |
+| **Splunk**    | `internal/integration/splunk`    | Splunk search, saved search, alert check                                       |
+| **Elastic**   | `internal/integration/elastic`   | Elasticsearch search, alert check, index listing                               |
+| **Exporter**  | `internal/plugins/exporter`      | HTML report server for investigation dashboards                                |
 
 All agents implement the `agent.Agent` interface and are registered in a shared plugin registry at startup.
 
@@ -156,21 +154,21 @@ All agents implement the `agent.Agent` interface and are registered in a shared 
 
 ## CLI Reference
 
-| Command | Description |
-|---|---|
-| `init` | First-run setup wizard (prompts for API keys, configures SIEM and telemetry) |
-| `serve` | Start edge daemon — task worker, SIEM engine, optional export server and edge sync |
-| `server` | Start central server mode — web dashboard, sync API, cross-node correlation |
-| `investigate <query>` | Run a security investigation (natural language or explicit playbook) |
-| `status <id>` | View investigation status |
-| `history` | List recent investigations |
-| `report <id>` | Regenerate or save investigation report |
-| `approval pending\|approve\|deny <id>` | Human-in-the-loop approval workflow |
-| `plugin list\|install\|remove` | Manage external agent plugins |
-| `update self\|intel\|playbooks` | Update binary, intel database, or playbook library |
-| `genkey` | Generate self-signed TLS certificate and key |
-| `completion bash\|zsh\|fish\|powershell` | Generate shell completion scripts |
-| `version` | Print version information |
+| Command                                  | Description                                                                        |
+| ---------------------------------------- | ---------------------------------------------------------------------------------- |
+| `init`                                   | First-run setup wizard (prompts for API keys, configures SIEM and telemetry)       |
+| `serve`                                  | Start edge daemon — task worker, SIEM engine, optional export server and edge sync |
+| `server`                                 | Start central server mode — web dashboard, sync API, cross-node correlation        |
+| `investigate <query>`                    | Run a security investigation (natural language or explicit playbook)               |
+| `status <id>`                            | View investigation status                                                          |
+| `history`                                | List recent investigations                                                         |
+| `report <id>`                            | Regenerate or save investigation report                                            |
+| `approval pending\|approve\|deny <id>`   | Human-in-the-loop approval workflow                                                |
+| `plugin list\|install\|remove`           | Manage external agent plugins                                                      |
+| `update self\|intel\|playbooks`          | Update binary, intel database, or playbook library                                 |
+| `genkey`                                 | Generate self-signed TLS certificate and key                                       |
+| `completion bash\|zsh\|fish\|powershell` | Generate shell completion scripts                                                  |
+| `version`                                | Print version information                                                          |
 
 See [docs/cli-reference.md](docs/cli-reference.md) for the full CLI reference with all flags and examples.
 
@@ -206,21 +204,21 @@ See [docs/cli-reference.md](docs/cli-reference.md) for the full CLI reference wi
 
 16 built-in detection rules cover Windows Event Log, syslog, and web server logs:
 
-| Rule | MITRE | Severity |
-|---|---|---|
-| Multiple failed logins (5 in 60s) | T1110.003 | 4 |
-| Brute force (20 in 60s) | T1110 | 5 |
-| HTTP 5XX errors | — | 3 |
-| HTTP 4XX burst (10 in 60s) | — | 2 |
-| Suspicious process execution | T1059 | 4 |
-| PowerShell script block (Event 4104) | T1059.001 | 3 |
-| Scheduled task created (Event 4698) | T1053.005 | 4 |
-| New service installed (Event 7045) | T1543.003 | 4 |
-| Windows Defender detection (Event 1116) | T1204 | 5 |
-| Process creation (Event 4688) | T1059 | 2 |
-| Registry persistence (Event 4657) | T1547.001 | 3 |
-| RDP failed login (Event 4625) | T1021.001 | 3 |
-| Account lockout (Event 4740) | T1110 | 3 |
+| Rule                                    | MITRE     | Severity |
+| --------------------------------------- | --------- | -------- |
+| Multiple failed logins (5 in 60s)       | T1110.003 | 4        |
+| Brute force (20 in 60s)                 | T1110     | 5        |
+| HTTP 5XX errors                         | —         | 3        |
+| HTTP 4XX burst (10 in 60s)              | —         | 2        |
+| Suspicious process execution            | T1059     | 4        |
+| PowerShell script block (Event 4104)    | T1059.001 | 3        |
+| Scheduled task created (Event 4698)     | T1053.005 | 4        |
+| New service installed (Event 7045)      | T1543.003 | 4        |
+| Windows Defender detection (Event 1116) | T1204     | 5        |
+| Process creation (Event 4688)           | T1059     | 2        |
+| Registry persistence (Event 4657)       | T1547.001 | 3        |
+| RDP failed login (Event 4625)           | T1021.001 | 3        |
+| Account lockout (Event 4740)            | T1110     | 3        |
 
 Rules auto-trigger playbooks. For example, `MULTIPLE_FAILED_LOGINS` fires the `ip-reputation` playbook against the attacker's IP.
 
@@ -253,58 +251,23 @@ go test ./... -count=1           # full: includes correlation tests
 go test ./... -bench=. -benchmem # run benchmarks
 ```
 
-### Project structure
-
-```
-dev/
-├── cmd/innoigniter/          # CLI entry point (Cobra)
-├── internal/
-│   ├── agent/                # Agent interface
-│   ├── config/               # Configuration loader
-│   ├── db/                   # SQLite database with migrations
-│   ├── detection/            # YARA, PE, hash, VT
-│   ├── edge/                 # Edge sync client
-│   ├── host/                 # Orchestrator agent
-│   ├── integration/          # External integrations
-│   │   ├── abuseipdb/        # AbuseIPDB IP reputation
-│   │   ├── elastic/          # Elasticsearch connector
-│   │   ├── notifier/         # Slack/Discord webhooks
-│   │   ├── otx/              # AlienVault OTX
-│   │   └── splunk/           # Splunk connector
-│   ├── investigation/        # Investigation manager
-│   ├── knowledge/            # MITRE, CVE, intel
-│   ├── playbook/             # Playbook engine + YAML library
-│   ├── plugin/               # Plugin registry
-│   ├── plugins/exporter/     # HTML report server
-│   ├── response/             # SOAR actions
-│   ├── server/               # Central server + dashboard
-│   ├── siem/                 # Log ingestion + correlation
-│   ├── taskqueue/            # SQLite-backed task queue
-│   └── telemetry/            # Opt-in usage reporting
-├── playbooks/                # Editable playbook YAML files
-├── intel/                    # IOC seed data
-├── docs/                     # Documentation
-├── Dockerfile                # Multi-stage build
-├── docker-compose.yml        # Server + edge deployment
-├── go.mod
-└── Makefile
-```
-
 ---
+
+
 
 ## Documentation
 
-| Document | Description |
-|---|---|
-| [User Guide](docs/user-guide.md) | End-to-end walkthrough for analysts with real-world scenarios |
-| [CLI Reference](docs/cli-reference.md) | All commands, flags, and examples |
-| [Playbook Authoring Guide](docs/playbook-authoring.md) | YAML structure, interpolation, conditions |
-| [Plugin Development Guide](docs/plugin-development.md) | Building and distributing plugins |
-| [Testing Guide](docs/testing-guide.md) | Verification commands for every phase |
-| [Build Plan](docs/build-plan.md) | Phased implementation roadmap |
-| [Benchmarks](docs/benchmarks.md) | YARA, PE, SIEM decoder performance |
-| [End-to-End Demo (PS1)](docs/end-to-end-demo.ps1) | PowerShell demo script |
-| [End-to-End Demo (SH)](docs/end-to-end-demo.sh) | Shell demo script |
+| Document                                               | Description                                                   |
+| ------------------------------------------------------ | ------------------------------------------------------------- |
+| [User Guide](docs/user-guide.md)                       | End-to-end walkthrough for analysts with real-world scenarios |
+| [CLI Reference](docs/cli-reference.md)                 | All commands, flags, and examples                             |
+| [Playbook Authoring Guide](docs/playbook-authoring.md) | YAML structure, interpolation, conditions                     |
+| [Plugin Development Guide](docs/plugin-development.md) | Building and distributing plugins                             |
+| [Testing Guide](docs/testing-guide.md)                 | Verification commands for every phase                         |
+| [Build Plan](docs/build-plan.md)                       | Phased implementation roadmap                                 |
+| [Benchmarks](docs/benchmarks.md)                       | YARA, PE, SIEM decoder performance                            |
+| [End-to-End Demo (PS1)](docs/end-to-end-demo.ps1)      | PowerShell demo script                                        |
+| [End-to-End Demo (SH)](docs/end-to-end-demo.sh)        | Shell demo script                                             |
 
 ---
 
