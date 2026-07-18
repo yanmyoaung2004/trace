@@ -267,29 +267,178 @@ Expected: 10 tests (block IP with/without target, quarantine missing file, kill 
 
 ## Phase 8 — Plugins
 
-```powershell
-# Install a plugin
-.\innoigniter.exe plugin install inno-splunk
-```
+### Build and unit tests
 
 ```powershell
-# List installed plugins
+go build -o innoigniter.exe ./cmd/innoigniter
+go vet ./...
+go test ./... -count=1
+```
+Expected: Build succeeds, vet clean, all tests pass.
+
+### CLI commands
+
+```powershell
+# Version
+.\innoigniter.exe version
+```
+Expected: `InnoIgniterAI v0.1.0-dev`
+
+```powershell
+# List all registered agents + their capabilities
 .\innoigniter.exe plugin list
 ```
+Expected: 5 agents shown with their actions (detection, knowledge, host, response, exporter).
+
+```powershell
+# Full end-to-end investigation with intent classification
+.\innoigniter.exe investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+```
+Expected: Intent classifier maps to `hash-lookup` playbook, all steps execute, markdown report with `malicious` reputation (Mimikatz).
+
+```powershell
+# Investigation history
+.\innoigniter.exe history
+```
+Expected: Table of recent investigations with ID, status, intent, playbook, timestamp.
+
+```powershell
+# Investigation status
+.\innoigniter.exe status <investigation-id>
+```
+Expected: Full details for a single investigation.
+
+```powershell
+# Regenerate report for a completed investigation
+.\innoigniter.exe report <investigation-id>
+```
+Expected: Markdown report output.
+
+```powershell
+# Save report to file
+.\innoigniter.exe report <investigation-id> -o report.md
+```
+Expected: Report written to `report.md`.
+
+### HTML report server (reference plugin)
+
+```powershell
+# Start daemon with exporter
+.\innoigniter.exe serve --export :8080
+```
+Expected: Logs `Report server started at http://:8080`. Open `http://localhost:8080` to see dark-themed investigation list with links to detail pages.
+
+### HITL approval workflow
+
+```powershell
+# List investigations waiting for analyst approval
+.\innoigniter.exe approval pending
+```
+Expected: Table of investigations with `waiting_approval` status, or "No pending approvals."
+
+```powershell
+# Approve or deny a pending investigation step
+.\innoigniter.exe approval approve <investigation-id>
+.\innoigniter.exe approval deny <investigation-id>
+```
+Expected: Status updated to `approved` or `denied`.
+
+### Plugin management
+
+```powershell
+# Install a plugin from URL
+.\innoigniter.exe plugin install https://plugins.innoigniter.io/v1/plugins/my-plugin.so
+```
+Expected: Downloads `.so` to `~/.innoigniter/plugins/`, logs size + path.
+
+```powershell
+# Remove an installed plugin
+.\innoigniter.exe plugin remove my-plugin.so
+```
+Expected: Plugin file deleted from plugins directory.
 
 ---
 
 ## Phase 9 — Central server
 
+### Build and unit tests
 ```powershell
-# Start in server mode
-.\innoigniter.exe server
+go build -o innoigniter.exe ./cmd/innoigniter
+go vet ./...
+go test ./... -count=1
 ```
-Expected: gRPC listener, web UI at configured address.
+Expected: Build succeeds, vet clean, all tests pass.
+
+### Server mode (dashboard + sync API)
 
 ```powershell
-# Two edge nodes report to server
-# Verify cross-node correlation on server dashboard
+# Terminal 1 — Start central server
+.\innoigniter.exe server --http-addr :8080
+```
+Expected: Logs `starting in server mode`, `HTTP API + dashboard on :8080`. Open `http://localhost:8080` for dashboard (investigation list, search, correlations).
+
+```powershell
+# Terminal 2 — Start edge node with sync
+.\innoigniter.exe serve --server-addr http://localhost:8080
+```
+Expected: Edge logs `registered as node <id>`, heartbeats every 30s, pushes investigations to server.
+
+```powershell
+# Terminal 2 — Run an investigation on the edge
+.\innoigniter.exe investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+```
+Expected: Investigation appears on server dashboard at `http://localhost:8080` within 30s.
+
+### API endpoints
+
+```powershell
+# List registered nodes
+curl http://localhost:8080/api/v1/nodes
+```
+
+```powershell
+# List investigations (with optional filters)
+curl http://localhost:8080/api/v1/investigations
+curl "http://localhost:8080/api/v1/investigations?search=mimikatz"
+curl "http://localhost:8080/api/v1/investigations?status=completed"
+```
+
+```powershell
+# Get a single investigation
+curl http://localhost:8080/api/v1/investigations/<id>
+```
+
+```powershell
+# Cross-node IOC correlations
+curl http://localhost:8080/api/v1/correlations
+```
+
+### Cross-node correlation
+
+```powershell
+# Run the same hash on TWO different edge nodes (e.g. two machines, or with different config paths)
+# On Node 1:
+.\innoigniter.exe serve --server-addr http://localhost:8080
+.\innoigniter.exe investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+
+# On Node 2:
+.\innoigniter.exe serve --server-addr http://localhost:8080
+.\innoigniter.exe investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+
+# Check server dashboard → Correlations tab shows IOC with 2+ nodes, confidence 0.75+
+```
+Expected: Cross-node correlation page shows Mimikatz hash seen on 2+ nodes.
+
+### RBAC + API key auth (admin setup)
+
+```powershell
+# Create an admin user (via DB)
+sqlite3 .innoigniter/innoigniter.db "INSERT INTO server_users (id, email, password_hash, role, api_key) VALUES ('admin-1', 'admin@example.com', 'hash', 'admin', 'sk-xxxxxxxxxxxxx');"
+```
+
+```powershell
+# Authenticated API call
+curl -H "Authorization: Bearer sk-xxxxxxxxxxxxx" http://localhost:8080/api/v1/nodes
 ```
 
 ---

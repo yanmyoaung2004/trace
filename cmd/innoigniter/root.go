@@ -161,6 +161,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newApprovalCmd())
 	cmd.AddCommand(newReportCmd())
 	cmd.AddCommand(newPluginCmd())
+	cmd.AddCommand(newServerCmd())
 	cmd.AddCommand(newVersionCmd())
 
 	return cmd

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/innoigniter/edge/internal/agent"
+	"github.com/innoigniter/edge/internal/edge"
 	"github.com/innoigniter/edge/internal/siem"
 	"github.com/spf13/cobra"
 )
@@ -109,9 +110,25 @@ Examples:
 				}
 			}()
 
+			serverAddr, _ := cmd.Flags().GetString("server-addr")
+			var syncClient *edge.SyncClient
+			if serverAddr != "" {
+				sc := edge.NewSyncClient(serverAddr, app.invManager)
+				if err := sc.Register(ctx); err != nil {
+					log.Printf("[edge-sync] registration failed: %v", err)
+				} else {
+					sc.Start(ctx)
+					syncClient = sc
+					log.Printf("[edge-sync] syncing to server at %s", serverAddr)
+				}
+			}
+
 			<-sigCh
 			log.Printf("Shutting down...")
 			cancel()
+			if syncClient != nil {
+				syncClient.Close()
+			}
 			log.Printf("Stopped")
 			return nil
 		},
@@ -121,5 +138,6 @@ Examples:
 	cmd.Flags().String("syslog-addr", "", "syslog listener address (e.g. :514)")
 	cmd.Flags().StringSlice("log-dir", nil, "directories to watch for log files")
 	cmd.Flags().String("export", "", "start HTML report server on given address (e.g. :8080)")
+	cmd.Flags().String("server-addr", "", "address of central server for edge sync (e.g. http://localhost:8080)")
 	return cmd
 }
