@@ -4,7 +4,8 @@
 *.dll
 *.so
 *.dylib
-innoigniter
+/innoigniter
+/innoigniter.exe
 
 # Go
 *.test

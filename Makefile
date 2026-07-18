@@ -2,11 +2,13 @@
 
 BINARY = innoigniter
 GO = go
+VERSION = $(shell git describe --tags --always --dirty 2>/dev/null || echo "0.1.0-dev")
+LDFLAGS = -ldflags "-X main.Version=$(VERSION)"
 
 all: fmt vet build
 
 build:
-	$(GO) build -o $(BINARY) ./cmd/$(BINARY)
+	$(GO) build $(LDFLAGS) -o $(BINARY) ./cmd/$(BINARY)
 
 clean:
 	rm -f $(BINARY)

@@ -1,0 +1,117 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+
+	"github.com/innoigniter/edge/internal/agent"
+	"github.com/spf13/cobra"
+)
+
+func newInvestigateCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "investigate [query]",
+		Short: "Run a security investigation",
+		Long: `Run a security investigation using natural language or explicit parameters.
+Examples:
+  innoigniter investigate "check hash d41d8cd98f00b204e9800998ecf8427e"
+  innoigniter investigate --playbook hash-lookup --param hash=<sha256>
+  innoigniter investigate --playbook file-analysis --param file=/path/to/file.exe`,
+		Args: cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
+			query := argsToQuery(args)
+			playbookName, _ := cmd.Flags().GetString("playbook")
+			rawParams, _ := cmd.Flags().GetStringToString("param")
+			params := make(map[string]any)
+			for k, v := range rawParams {
+				params[k] = v
+			}
+
+			if query == "" && playbookName == "" {
+				return fmt.Errorf("provide a query or --playbook flag")
+			}
+
+			if playbookName == "" {
+				intentOutput, err := app.hostAgent.Execute(ctx, agent.Input{
+					"action": "classify_intent",
+					"query":  query,
+				})
+				if err != nil {
+					return fmt.Errorf("classify intent: %w", err)
+				}
+				playbookName, _ = intentOutput["playbook"].(string)
+
+				planInput := agent.Input{
+					"action":   "plan_investigation",
+					"intent":   query,
+					"playbook": playbookName,
+				}
+				planOutput, err := app.hostAgent.Execute(ctx, planInput)
+				if err == nil {
+					if p, ok := planOutput["parameters"].(map[string]any); ok {
+						for k, v := range p {
+							if _, set := params[k]; !set {
+								if vs, ok := v.(string); ok {
+									params[k] = vs
+								}
+							}
+						}
+					}
+				}
+			}
+
+			pb := app.playbooks.Get(playbookName)
+			if pb == nil {
+				return fmt.Errorf("playbook %q not found", playbookName)
+			}
+
+			fmt.Fprintf(os.Stderr, "Running playbook: %s (%s)\n", pb.Name, pb.Description)
+
+			inv, err := app.invManager.Create(ctx, query, playbookName)
+			if err != nil {
+				return fmt.Errorf("create investigation: %w", err)
+			}
+			fmt.Fprintf(os.Stderr, "Investigation ID: %s\n", inv.ID)
+
+			results, err := app.executor.Execute(ctx, inv, pb, params)
+			if err != nil {
+				return fmt.Errorf("execute playbook: %w", err)
+			}
+
+			reportOutput, err := app.hostAgent.Execute(ctx, agent.Input{
+				"action":          "synthesize_report",
+				"results":         results,
+				"investigation_id": inv.ID,
+				"intent":           query,
+			})
+			if err != nil {
+				return fmt.Errorf("synthesize report: %w", err)
+			}
+
+			report, _ := reportOutput["report"].(string)
+			fmt.Println(report)
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringP("playbook", "p", "", "playbook name to run")
+	cmd.Flags().StringToString("param", nil, "parameters for the playbook (key=value)")
+	return cmd
+}
+
+func argsToQuery(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	q := ""
+	for i, a := range args {
+		if i > 0 {
+			q += " "
+		}
+		q += a
+	}
+	return q
+}
