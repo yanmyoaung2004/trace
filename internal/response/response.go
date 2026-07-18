@@ -282,15 +282,12 @@ func (a *Agent) rollbackAction(ctx context.Context, input agent.Input) (agent.Ou
 }
 
 func (a *Agent) runCommand(cmd string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
 	var c *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
-		c = exec.CommandContext(ctx, "powershell", "-Command", cmd)
+		c = exec.Command("powershell", "-Command", cmd)
 	default:
-		c = exec.CommandContext(ctx, "sh", "-c", cmd)
+		c = exec.Command("sh", "-c", cmd)
 	}
 
 	output, err := c.CombinedOutput()
