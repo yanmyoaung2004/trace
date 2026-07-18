@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.svg">
-    <img src="docs/assets/banner-light.svg" alt="InnoIgniterAI — Multi-agent cybersecurity platform" width="700">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo_dark.png">
+    <img src="docs/assets/logo_light.png" alt="InnoIgniterAI" width="600">
   </picture>
 </p>
 
