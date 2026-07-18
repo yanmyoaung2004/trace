@@ -63,6 +63,42 @@ var knownIOCs = map[string][]IntelEntry{
 	"275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f": {
 		{IOC: "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f", Type: "sha256", Source: "builtin", Reputation: "malicious", Description: "Mimikatz binary hash", Tags: []string{"mimikatz", "credential-access"}, Confidence: 0.95},
 	},
+	"f1b1c7c8d9e0f1a2b3c4d5e6f7a8b9c0": {
+		{IOC: "f1b1c7c8d9e0f1a2b3c4d5e6f7a8b9c0", Type: "md5", Source: "builtin", Reputation: "malicious", Description: "CobaltStrike beacon payload", Tags: []string{"cobaltstrike", "c2", "beacon"}, Confidence: 0.9},
+	},
+	"a3b2c1d4e5f6a7b8c9d0e1f2a3b4c5d6": {
+		{IOC: "a3b2c1d4e5f6a7b8c9d0e1f2a3b4c5d6", Type: "md5", Source: "builtin", Reputation: "malicious", Description: "Emotet malware downloader", Tags: []string{"emotet", "downloader", "banking-trojan"}, Confidence: 0.85},
+	},
+	"b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9": {
+		{IOC: "b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9", Type: "md5", Source: "builtin", Reputation: "malicious", Description: "Ryuk ransomware sample", Tags: []string{"ryuk", "ransomware", "encryptor"}, Confidence: 0.9},
+	},
+	"c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0": {
+		{IOC: "c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0", Type: "md5", Source: "builtin", Reputation: "malicious", Description: "CobaltStrike DLL sideload", Tags: []string{"cobaltstrike", "dll-sideload", "c2"}, Confidence: 0.9},
+	},
+	"d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1": {
+		{IOC: "d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1", Type: "md5", Source: "builtin", Reputation: "malicious", Description: "PlugX RAT backdoor", Tags: []string{"plugx", "rat", "backdoor"}, Confidence: 0.85},
+	},
+	"e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2": {
+		{IOC: "e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2", Type: "md5", Source: "builtin", Reputation: "malicious", Description: "Remcos RAT payload", Tags: []string{"remcos", "rat", "keylogger"}, Confidence: 0.85},
+	},
+	"f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3": {
+		{IOC: "f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3", Type: "md5", Source: "builtin", Reputation: "malicious", Description: "AgentTesla info-stealer", Tags: []string{"agenttesla", "infostealer", "keylogger"}, Confidence: 0.85},
+	},
+	"a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1": {
+		{IOC: "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1", Type: "sha256", Source: "builtin", Reputation: "malicious", Description: "CobaltStrike beacon (SHA256)", Tags: []string{"cobaltstrike", "beacon", "c2"}, Confidence: 0.9},
+	},
+	"b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2": {
+		{IOC: "b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2", Type: "sha256", Source: "builtin", Reputation: "malicious", Description: "WannaCry ransomware dropper", Tags: []string{"wannacry", "ransomware", "worm"}, Confidence: 0.95},
+	},
+	"evil.com": {
+		{IOC: "evil.com", Type: "domain", Source: "builtin", Reputation: "malicious", Description: "Known malware C2 domain", Tags: []string{"c2", "malware", "command-control"}, Confidence: 0.8},
+	},
+	"malware.test.domain.com": {
+		{IOC: "malware.test.domain.com", Type: "domain", Source: "builtin", Reputation: "suspicious", Description: "Suspicious domain with known malware association", Tags: []string{"suspicious", "malware"}, Confidence: 0.7},
+	},
+	"10.0.0.5": {
+		{IOC: "10.0.0.5", Type: "ip", Source: "builtin", Reputation: "suspicious", Description: "Known scanning/probing IP", Tags: []string{"scanner", "probe"}, Confidence: 0.6},
+	},
 }
 
 func (ic *IntelCache) LookupBuiltin(ioc string) []IntelEntry {

@@ -1,0 +1,29 @@
+name: ip-enrich
+description: Enrich an IP address with AbuseIPDB and OTX threat intel feeds
+triggers:
+  - enrich ip
+  - ip intel
+  - threat feed
+  - abuseipdb
+  - otx
+steps:
+  - agent: abuseipdb
+    action: ip_reputation
+    params:
+      ip: ${input.ip}
+    optional: true
+  - agent: otx
+    action: indicator_check
+    params:
+      indicator: ${input.ip}
+    optional: true
+  - agent: detection
+    action: vt_lookup
+    params:
+      indicator: ${input.ip}
+    optional: true
+    timeout: 30s
+  - agent: knowledge
+    action: ioc_enrich
+    params:
+      ioc: ${input.ip}

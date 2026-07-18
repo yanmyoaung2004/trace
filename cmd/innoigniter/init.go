@@ -69,9 +69,17 @@ You can skip any step — the tool works without external API keys.`,
 				cfg["llm_provider"] = "openai"
 			}
 
-			if wsKey := prompt(reader, "Web search API key (optional): "); wsKey != "" {
-				cfg["web_search_key"] = wsKey
-			}
+		if wsKey := prompt(reader, "Web search API key (optional): "); wsKey != "" {
+			cfg["web_search_key"] = wsKey
+		}
+
+		if abuseKey := prompt(reader, "AbuseIPDB API key (free, for IP reputation): "); abuseKey != "" {
+			cfg["abuseipdb_key"] = abuseKey
+		}
+
+		if otxKey := prompt(reader, "AlienVault OTX API key (free, for threat intel): "); otxKey != "" {
+			cfg["otx_api_key"] = otxKey
+		}
 
 			if siemResp := prompt(reader, "Enable SIEM log monitoring? [y/N]: "); strings.ToLower(siemResp) == "y" {
 				cfg["siem"] = map[string]any{

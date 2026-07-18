@@ -11,8 +11,10 @@ import (
 	"github.com/innoigniter/edge/internal/db"
 	"github.com/innoigniter/edge/internal/detection"
 	"github.com/innoigniter/edge/internal/host"
+	"github.com/innoigniter/edge/internal/integration/abuseipdb"
 	"github.com/innoigniter/edge/internal/integration/elastic"
 	"github.com/innoigniter/edge/internal/integration/notifier"
+	"github.com/innoigniter/edge/internal/integration/otx"
 	"github.com/innoigniter/edge/internal/integration/splunk"
 	"github.com/innoigniter/edge/internal/investigation"
 	"github.com/innoigniter/edge/internal/knowledge"
@@ -76,6 +78,8 @@ func (a *App) initRegistry() error {
 	a.registry.Register(response.New(a.sqlDB))
 	a.registry.Register(exporter.New(a.sqlDB))
 	a.registry.Register(notifier.New())
+	a.registry.Register(abuseipdb.NewAgent(a.cfg.AbuseIPDBKey))
+	a.registry.Register(otx.NewAgent(a.cfg.OTXAPIKey))
 	a.registry.Register(splunk.New())
 	a.registry.Register(elastic.New())
 

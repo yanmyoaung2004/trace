@@ -22,6 +22,8 @@ type Config struct {
 	LLMURL       string `json:"llm_url"`
 	LLMAPIKey    string `json:"llm_api_key"`
 	VTAPIKey     string `json:"vt_api_key"`
+	AbuseIPDBKey string `json:"abuseipdb_key"`
+	OTXAPIKey    string `json:"otx_api_key"`
 	WebSearchKey string `json:"web_search_key"`
 }
 
@@ -117,6 +119,12 @@ func Load(path string) (*Config, error) {
 	}
 	if v := os.Getenv("INNO_LLM_URL"); v != "" {
 		cfg.LLMURL = v
+	}
+	if v := os.Getenv("INNO_ABUSEIPDB_KEY"); v != "" {
+		cfg.AbuseIPDBKey = v
+	}
+	if v := os.Getenv("INNO_OTX_API_KEY"); v != "" {
+		cfg.OTXAPIKey = v
 	}
 
 	return cfg, nil

@@ -99,6 +99,7 @@ func TestPlaybookByNameExists(t *testing.T) {
 		"cve-lookup", "mitre-lookup",
 		"block-ip", "quarantine-file", "kill-process", "restart-service", "rollback-action",
 		"slack-notify", "discord-notify",
+		"windows-event-analysis", "registry-check", "ip-enrich",
 	}
 
 	for _, name := range expectedPlaybooks {
@@ -216,6 +217,8 @@ var validAgents = map[string]bool{
 	"splunk":     true,
 	"elastic":    true,
 	"exporter":   true,
+	"abuseipdb":  true,
+	"otx":        true,
 }
 
 func init() {

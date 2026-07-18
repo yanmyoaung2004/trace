@@ -94,6 +94,41 @@ func (re *RuleEngine) LoadDefault() {
 			RuleID: "BRUTE_FORCE_FALLBACK", Description: "Multiple auth failures from same source (any service)",
 			Severity: 3, MITRE: "T1110", condition: "field:message ~= (?i)failed", threshold: 10, windowDur: 120 * time.Second,
 		},
+		{
+			RuleID: "WIN_POWERSHELL_4104", Description: "PowerShell script block logging (Event 4104)",
+			Severity: 3, MITRE: "T1059.001", condition: "tag:powershell", threshold: 1,
+			Actions: []RuleAction{{Playbook: "log-analysis", Params: map[string]any{"event_id": "4104"}}},
+		},
+		{
+			RuleID: "WIN_SCHEDULED_TASK_4698", Description: "Scheduled task created (Event 4698) — potential persistence",
+			Severity: 4, MITRE: "T1053.005", condition: "tag:persistence", threshold: 1,
+			Actions: []RuleAction{{Playbook: "file-analysis", Params: map[string]any{"path": "${process_path}"}}},
+		},
+		{
+			RuleID: "WIN_SERVICE_INSTALL_7045", Description: "New service installed (Event 7045)",
+			Severity: 4, MITRE: "T1543.003", condition: "tag:service_install", threshold: 1,
+		},
+		{
+			RuleID: "WIN_DEFENDER_1116", Description: "Windows Defender detected malware (Event 1116)",
+			Severity: 5, MITRE: "T1204", condition: "tag:malware_detection", threshold: 1,
+			Actions: []RuleAction{{Playbook: "file-analysis", Params: map[string]any{"path": "${file_path}"}}},
+		},
+		{
+			RuleID: "WIN_PROCESS_4688_CREATION", Description: "Process creation with command line (Event 4688)",
+			Severity: 2, MITRE: "T1059", condition: "tag:process_creation", threshold: 1,
+		},
+		{
+			RuleID: "WIN_REGISTRY_PERSISTENCE", Description: "Registry persistence modification (Event 4657)",
+			Severity: 3, MITRE: "T1547.001", condition: "tag:registry_change", threshold: 1,
+		},
+		{
+			RuleID: "WIN_RDP_LOGIN_4625", Description: "RDP failed login (Event 4625, LogonType 10)",
+			Severity: 3, MITRE: "T1021.001", condition: "field:logontype == 10", threshold: 1,
+		},
+		{
+			RuleID: "WIN_ACCOUNT_LOCKOUT_4740", Description: "User account locked out (Event 4740)",
+			Severity: 3, MITRE: "T1110", condition: "tag:account_lockout", threshold: 1,
+		},
 	}
 }
 

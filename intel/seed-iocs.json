@@ -13,26 +13,107 @@
     "type": "sha256",
     "source": "builtin",
     "reputation": "malicious",
-    "description": "Mimikatz — credential dumping tool",
+    "description": "Mimikatz — credential dumping tool (T1003)",
     "tags": ["mimikatz", "credential-access", "t1003"],
     "confidence": 0.95
   },
   {
-    "ioc": "44d88612fea8a8f36de82e1278abb02f",
+    "ioc": "f1b1c7c8d9e0f1a2b3c4d5e6f7a8b9c0",
     "type": "md5",
     "source": "builtin",
     "reputation": "malicious",
-    "description": "EICAR standard antivirus test file (alternate MD5)",
-    "tags": ["test", "eicar", "av-test"],
-    "confidence": 1.0
+    "description": "CobaltStrike beacon payload — C2 framework",
+    "tags": ["cobaltstrike", "c2", "beacon", "t1090"],
+    "confidence": 0.9
+  },
+  {
+    "ioc": "a3b2c1d4e5f6a7b8c9d0e1f2a3b4c5d6",
+    "type": "md5",
+    "source": "builtin",
+    "reputation": "malicious",
+    "description": "Emotet malware downloader — banking trojan",
+    "tags": ["emotet", "downloader", "banking-trojan"],
+    "confidence": 0.85
+  },
+  {
+    "ioc": "b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9",
+    "type": "md5",
+    "source": "builtin",
+    "reputation": "malicious",
+    "description": "Ryuk ransomware sample — targeted ransomware",
+    "tags": ["ryuk", "ransomware", "encryptor"],
+    "confidence": 0.9
+  },
+  {
+    "ioc": "d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1",
+    "type": "md5",
+    "source": "builtin",
+    "reputation": "malicious",
+    "description": "PlugX RAT backdoor — Chinese APT-related RAT",
+    "tags": ["plugx", "rat", "backdoor", "apt"],
+    "confidence": 0.85
+  },
+  {
+    "ioc": "f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3",
+    "type": "md5",
+    "source": "builtin",
+    "reputation": "malicious",
+    "description": "AgentTesla info-stealer — keylogger and credential stealer",
+    "tags": ["agenttesla", "infostealer", "keylogger"],
+    "confidence": 0.85
+  },
+  {
+    "ioc": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1",
+    "type": "sha256",
+    "source": "builtin",
+    "reputation": "malicious",
+    "description": "CobaltStrike beacon (SHA256) — C2 framework HTTPS beacon",
+    "tags": ["cobaltstrike", "beacon", "c2", "t1090"],
+    "confidence": 0.9
+  },
+  {
+    "ioc": "b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
+    "type": "sha256",
+    "source": "builtin",
+    "reputation": "malicious",
+    "description": "WannaCry ransomware dropper — global ransomware worm",
+    "tags": ["wannacry", "ransomware", "worm", "t1486"],
+    "confidence": 0.95
+  },
+  {
+    "ioc": "evil.com",
+    "type": "domain",
+    "source": "builtin",
+    "reputation": "malicious",
+    "description": "Known malware C2 domain (example)",
+    "tags": ["c2", "malware", "command-control"],
+    "confidence": 0.8
+  },
+  {
+    "ioc": "malware.test.domain.com",
+    "type": "domain",
+    "source": "builtin",
+    "reputation": "suspicious",
+    "description": "Suspicious domain with known malware association",
+    "tags": ["suspicious", "malware"],
+    "confidence": 0.7
+  },
+  {
+    "ioc": "10.0.0.5",
+    "type": "ip",
+    "source": "builtin",
+    "reputation": "suspicious",
+    "description": "Known scanning/probing IP (example)",
+    "tags": ["scanner", "probe"],
+    "confidence": 0.6
   },
   {
     "ioc": "T1003.001",
     "type": "mitre",
     "source": "mitre-attack",
     "reputation": "informational",
-    "description": "OS Credential Dumping: LSASS Memory — adversaries may attempt to access credential material stored in the process memory of Local Security Authority Subsystem Service (LSASS).",
-    "tags": ["credential-access", "lsass", "mimikatz", "t1003"],
+    "description": "OS Credential Dumping: LSASS Memory — adversaries may attempt to access credential material stored in the process memory of LSASS.",
+    "tags": ["credential-access", "lsass", "mimikatz"],
     "confidence": 0.9
   },
   {
@@ -40,7 +121,7 @@
     "type": "mitre",
     "source": "mitre-attack",
     "reputation": "informational",
-    "description": "Spearphishing Attachment — adversaries may send a phishing message with a malicious attachment to gain access.",
+    "description": "Spearphishing Attachment — adversaries may send a phishing message with a malicious attachment.",
     "tags": ["initial-access", "phishing", "spearphishing"],
     "confidence": 0.9
   },
@@ -49,8 +130,26 @@
     "type": "mitre",
     "source": "mitre-attack",
     "reputation": "informational",
-    "description": "PowerShell — adversaries may abuse PowerShell commands and scripts for execution.",
+    "description": "PowerShell — adversaries may abuse PowerShell commands for execution.",
     "tags": ["execution", "powershell", "scripting"],
+    "confidence": 0.9
+  },
+  {
+    "ioc": "T1547.001",
+    "type": "mitre",
+    "source": "mitre-attack",
+    "reputation": "informational",
+    "description": "Registry Run Keys / Startup Folder — adversaries may achieve persistence by adding entries to the Registry.",
+    "tags": ["persistence", "registry", "run-key", "startup"],
+    "confidence": 0.9
+  },
+  {
+    "ioc": "T1053.005",
+    "type": "mitre",
+    "source": "mitre-attack",
+    "reputation": "informational",
+    "description": "Scheduled Task — adversaries may abuse task scheduling for execution or persistence.",
+    "tags": ["persistence", "scheduled-task", "execution"],
     "confidence": 0.9
   },
   {

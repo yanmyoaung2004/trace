@@ -1,0 +1,29 @@
+name: registry-check
+description: Check Windows Registry keys for persistence indicators
+triggers:
+  - registry
+  - regedit
+  - run key
+  - startup
+  - persistence
+steps:
+  - agent: knowledge
+    action: ioc_enrich
+    params:
+      ioc: ${input.registry_key}
+    optional: true
+  - agent: knowledge
+    action: mitre_lookup
+    params:
+      technique: ${input.technique}
+    optional: true
+  - agent: knowledge
+    action: web_search
+    params:
+      query: ${input.registry_key} malware persistence
+    optional: true
+  - agent: detection
+    action: hash_lookup
+    params:
+      hash: ${input.hash}
+    optional: true

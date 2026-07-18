@@ -215,14 +215,37 @@ func (d *WindowsEventDecoder) Decode(raw []byte) (*Event, error) {
 	if strings.Contains(msg, "4625") || strings.Contains(msg, "failed logon") || strings.Contains(msg, "logon failure") {
 		e.Severity = 3
 		e.Tags = append(e.Tags, "security", "auth_failure")
+		e.Fields["logontype"] = extractLogonType(string(m[4]))
 	} else if strings.Contains(msg, "4624") || strings.Contains(msg, "logon success") {
 		e.Tags = append(e.Tags, "security", "auth_success")
 	} else if strings.Contains(msg, "4688") || strings.Contains(msg, "process creation") {
-		e.Tags = append(e.Tags, "security", "process")
+		e.Tags = append(e.Tags, "security", "process_creation")
+		e.Fields["process_path"] = extractField(string(m[4]), "process:")
+	} else if strings.Contains(msg, "4698") || strings.Contains(msg, "scheduled task") {
+		e.Tags = append(e.Tags, "security", "persistence")
+		e.Severity = 3
+	} else if strings.Contains(msg, "7045") || strings.Contains(msg, "service install") {
+		e.Tags = append(e.Tags, "security", "service_install")
+		e.Severity = 3
+	} else if strings.Contains(msg, "1116") || strings.Contains(msg, "defender") {
+		e.Tags = append(e.Tags, "security", "malware_detection")
+		e.Severity = 5
+		e.Fields["file_path"] = extractField(string(m[4]), "file:")
+	} else if strings.Contains(msg, "4104") || strings.Contains(msg, "powershell") {
+		e.Tags = append(e.Tags, "security", "powershell")
+		e.Severity = 2
+	} else if strings.Contains(msg, "4657") || strings.Contains(msg, "registry") {
+		e.Tags = append(e.Tags, "security", "registry_change")
+		e.Severity = 2
+	} else if strings.Contains(msg, "4740") || strings.Contains(msg, "locked out") {
+		e.Tags = append(e.Tags, "security", "account_lockout")
+		e.Severity = 3
 	} else if strings.Contains(msg, "error") {
 		e.Severity = 2
 		e.Tags = append(e.Tags, "error")
 	}
+
+	e.Fields["event_id"] = m[2]
 
 	return e, nil
 }
@@ -252,6 +275,38 @@ func (d *AutoDecoder) Decode(raw []byte) (*Event, error) {
 		Raw:       string(raw),
 		Fields:    map[string]any{"message": string(raw)},
 	}, nil
+}
+
+func extractLogonType(msg string) string {
+	if strings.Contains(msg, "logontype: 10") || strings.Contains(msg, "logon type: 10") {
+		return "10"
+	}
+	if strings.Contains(msg, "logontype: 2") || strings.Contains(msg, "logon type: 2") {
+		return "2"
+	}
+	if strings.Contains(msg, "logontype: 3") || strings.Contains(msg, "logon type: 3") {
+		return "3"
+	}
+	return ""
+}
+
+func extractField(msg, prefix string) string {
+	idx := strings.Index(strings.ToLower(msg), prefix)
+	if idx < 0 {
+		return ""
+	}
+	start := idx + len(prefix)
+	for start < len(msg) && msg[start] == ' ' {
+		start++
+	}
+	end := start
+	for end < len(msg) && msg[end] != ',' && msg[end] != ' ' && msg[end] != '\n' {
+		end++
+	}
+	if end > start {
+		return msg[start:end]
+	}
+	return ""
 }
 
 func parseInt(s string) int {
