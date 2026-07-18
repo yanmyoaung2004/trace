@@ -1,0 +1,14 @@
+name: restart-service
+description: Restart a system service
+triggers:
+  - restart
+  - service restart
+steps:
+  - agent: response
+    action: restart_service
+    params:
+      name: ${input.name}
+  - agent: host
+    action: synthesize_report
+    params:
+      investigation_id: ${investigation.id}

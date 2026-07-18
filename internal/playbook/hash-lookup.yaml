@@ -1,0 +1,30 @@
+name: hash-lookup
+description: Check a file hash against local cache, YARA, and VirusTotal
+triggers:
+  - hash
+  - check hash
+  - sha256
+steps:
+  - agent: detection
+    action: hash_lookup
+    params:
+      hash: ${input.hash}
+  - agent: detection
+    action: yara_scan
+    params:
+      path: ${input.path}
+    optional: true
+  - agent: detection
+    action: vt_lookup
+    params:
+      hash: ${input.hash}
+    timeout: 30s
+    optional: true
+  - agent: knowledge
+    action: ioc_enrich
+    params:
+      ioc: ${input.hash}
+  - agent: host
+    action: synthesize_report
+    params:
+      investigation_id: ${investigation.id}

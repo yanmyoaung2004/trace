@@ -1,0 +1,812 @@
+[
+  {
+    "id": "T1566",
+    "name": "Phishing",
+    "description": "Adversaries may send phishing messages to gain access to victim systems. All forms of phishing are electronically delivered social engineering. Phishing can be targeted (spearphishing) or broadcast to a wide audience.",
+    "tactic": "initial-access",
+    "tactics": ["initial-access"],
+    "platforms": ["Windows", "macOS", "Linux", "Office 365", "SaaS"],
+    "mitigations": ["User training", "Email filtering", "DMARC", "SPF", "DKIM"],
+    "detection": ["Email gateway logs", "User reports", "URL analysis"]
+  },
+  {
+    "id": "T1566.001",
+    "name": "Spearphishing Attachment",
+    "description": "Adversaries may send spearphishing emails with malicious attachments to gain access. The attachment may contain exploits or payloads.",
+    "tactic": "initial-access",
+    "tactics": ["initial-access"],
+    "platforms": ["Windows", "macOS", "Linux", "Office 365"],
+    "mitigations": ["User training", "Attachment sandboxing", "Mark of the Web"],
+    "detection": ["Email gateway", "Sandbox detonation", "File reputation"]
+  },
+  {
+    "id": "T1566.002",
+    "name": "Spearphishing Link",
+    "description": "Adversaries may send spearphishing emails with malicious links to gain access. Links may direct users to credential harvesting pages or drive-by download sites.",
+    "tactic": "initial-access",
+    "tactics": ["initial-access"],
+    "platforms": ["Windows", "macOS", "Linux", "Office 365"],
+    "mitigations": ["URL filtering", "User training", "Browser isolation"],
+    "detection": ["URL reputation", "Web proxy logs", "Click analysis"]
+  },
+  {
+    "id": "T1190",
+    "name": "Exploit Public-Facing Application",
+    "description": "Adversaries may exploit weaknesses in internet-facing systems to gain initial access. Common targets include web servers, databases, and VPN appliances.",
+    "tactic": "initial-access",
+    "tactics": ["initial-access"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Patch management", "WAF", "Network segmentation"],
+    "detection": ["IDS/IPS alerts", "Vulnerability scanning", "Web server logs"]
+  },
+  {
+    "id": "T1078",
+    "name": "Valid Accounts",
+    "description": "Adversaries may obtain and abuse credentials of existing accounts as a means of gaining Initial Access, Persistence, Privilege Escalation, or Defense Evasion.",
+    "tactic": "initial-access",
+    "tactics": ["initial-access", "persistence", "privilege-escalation", "defense-evasion"],
+    "platforms": ["Windows", "macOS", "Linux", "Cloud", "Network"],
+    "mitigations": ["MFA", "Privileged account management", "Credential rotation"],
+    "detection": ["Authentication logs", "UEBA", "Anomalous logon patterns"]
+  },
+  {
+    "id": "T1059",
+    "name": "Command and Scripting Interpreter",
+    "description": "Adversaries may abuse command and script interpreters to execute commands. These interpreters provide a way to interact with computer systems and execute code.",
+    "tactic": "execution",
+    "tactics": ["execution"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Application control", "PowerShell Constrained Language", "Execution policies"],
+    "detection": ["Process monitoring", "Script block logging", "Command line auditing"]
+  },
+  {
+    "id": "T1059.001",
+    "name": "PowerShell",
+    "description": "Adversaries may abuse PowerShell for execution. PowerShell is a powerful scripting environment widely used for both legitimate administration and malicious activity.",
+    "tactic": "execution",
+    "tactics": ["execution"],
+    "platforms": ["Windows"],
+    "mitigations": ["PowerShell Constrained Language", "AMSI", "Script block logging"],
+    "detection": ["PowerShell event logs (4103, 4104)", "AMSI alerts", "Process creation events"]
+  },
+  {
+    "id": "T1059.003",
+    "name": "Windows Command Shell",
+    "description": "Adversaries may abuse cmd.exe to execute commands. The Windows command shell is the primary command-line interface on Windows systems.",
+    "tactic": "execution",
+    "tactics": ["execution"],
+    "platforms": ["Windows"],
+    "mitigations": ["Application control", "Attack surface reduction"],
+    "detection": ["Process creation (Event 4688)", "Command line auditing"]
+  },
+  {
+    "id": "T1204",
+    "name": "User Execution",
+    "description": "Adversaries may rely on user execution to gain access. Users may be tricked into opening malicious files or executing code.",
+    "tactic": "execution",
+    "tactics": ["execution"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["User training", "Attachment filtering", "Execution prevention"],
+    "detection": ["File monitoring", "Process monitoring", "User behavior analytics"]
+  },
+  {
+    "id": "T1547",
+    "name": "Boot or Logon Autostart Execution",
+    "description": "Adversaries may configure system settings to automatically execute programs on system boot or user logon to maintain persistence.",
+    "tactic": "persistence",
+    "tactics": ["persistence"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Registry monitoring", "Startup folder monitoring", "Autorun management"],
+    "detection": ["Registry monitoring", "Startup item monitoring", "Sysinternals Autoruns"]
+  },
+  {
+    "id": "T1547.001",
+    "name": "Registry Run Keys / Startup Folder",
+    "description": "Adversaries may achieve persistence by adding programs to startup folders or registry run keys that execute on system boot or user logon.",
+    "tactic": "persistence",
+    "tactics": ["persistence"],
+    "platforms": ["Windows"],
+    "mitigations": ["Registry auditing", "Application control"],
+    "detection": ["Registry event monitoring", "File system monitoring"]
+  },
+  {
+    "id": "T1053",
+    "name": "Scheduled Task/Job",
+    "description": "Adversaries may abuse task scheduling to execute code at system startup or on a scheduled basis for persistence or privilege escalation.",
+    "tactic": "persistence",
+    "tactics": ["persistence", "privilege-escalation", "execution"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Task scheduling auditing", "Application control"],
+    "detection": ["Task scheduler log (Event 4698)", "Cron monitoring", "Process monitoring"]
+  },
+  {
+    "id": "T1136",
+    "name": "Create Account",
+    "description": "Adversaries may create accounts to maintain access to victim systems. Accounts may be local, domain, or cloud-based.",
+    "tactic": "persistence",
+    "tactics": ["persistence"],
+    "platforms": ["Windows", "macOS", "Linux", "Cloud"],
+    "mitigations": ["Account management policies", "Audit user creation"],
+    "detection": ["User account creation events (4720)", "Cloud audit logs"]
+  },
+  {
+    "id": "T1068",
+    "name": "Exploitation for Privilege Escalation",
+    "description": "Adversaries may exploit software vulnerabilities to elevate privileges. Exploitation may target OS kernels, drivers, or application vulnerabilities.",
+    "tactic": "privilege-escalation",
+    "tactics": ["privilege-escalation"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Patch management", "Least privilege", "Driver blocklist"],
+    "detection": ["Exploit detection", "Event 10 (ETW)", "Kernel callbacks"]
+  },
+  {
+    "id": "T1134",
+    "name": "Access Token Manipulation",
+    "description": "Adversaries may manipulate access tokens to escalate privileges or impersonate users. Token manipulation can bypass security controls.",
+    "tactic": "privilege-escalation",
+    "tactics": ["privilege-escalation", "defense-evasion"],
+    "platforms": ["Windows"],
+    "mitigations": ["Local admin restriction", "Token protection"],
+    "detection": ["Token manipulation events", "Process access monitoring"]
+  },
+  {
+    "id": "T1055",
+    "name": "Process Injection",
+    "description": "Adversaries may inject code into processes to evade process-based defenses and escalate privileges. Common techniques include DLL injection, PE injection, and thread execution hijacking.",
+    "tactic": "defense-evasion",
+    "tactics": ["defense-evasion", "privilege-escalation"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Process mitigation policies", "Code signing"],
+    "detection": ["API monitoring", "Process hollowing detection", "Memory scanning"]
+  },
+  {
+    "id": "T1562",
+    "name": "Impair Defenses",
+    "description": "Adversaries may disable or tamper with security tools to avoid detection. This includes disabling antivirus, EDR, firewalls, and logging.",
+    "tactic": "defense-evasion",
+    "tactics": ["defense-evasion"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Tamper protection", "EDR self-defense", "Minimal admin rights"],
+    "detection": ["Service stop events", "Driver unload events", "Security tool heartbeats"]
+  },
+  {
+    "id": "T1562.001",
+    "name": "Disable or Modify Tools",
+    "description": "Adversaries may disable security tools by stopping services, killing processes, or uninstalling tools.",
+    "tactic": "defense-evasion",
+    "tactics": ["defense-evasion"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Tamper protection", "Service ACLs"],
+    "detection": ["Event 7036 (service state)", "Process termination events"]
+  },
+  {
+    "id": "T1070",
+    "name": "Indicator Removal",
+    "description": "Adversaries may delete or modify artifacts to cover their tracks, including logs, prefetch files, browser history, and event logs.",
+    "tactic": "defense-evasion",
+    "tactics": ["defense-evasion"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Centralized logging", "Immutable logs", "Log forwarding"],
+    "detection": ["Log deletion events (1102)", "Clear event log (1102)", "File deletion monitoring"]
+  },
+  {
+    "id": "T1070.001",
+    "name": "Clear Windows Event Logs",
+    "description": "Adversaries may clear Windows Event Logs to hide traces of their activity using wevtutil, PowerShell, or direct API calls.",
+    "tactic": "defense-evasion",
+    "tactics": ["defense-evasion"],
+    "platforms": ["Windows"],
+    "mitigations": ["Centralized logging", "Event log forwarding", "SIEM"],
+    "detection": ["Event 1102 (log clear)", "Event 104", "wevtutil usage monitoring"]
+  },
+  {
+    "id": "T1555",
+    "name": "Credentials from Password Stores",
+    "description": "Adversaries may extract credentials from password managers, credential vaults, and other password stores.",
+    "tactic": "credential-access",
+    "tactics": ["credential-access"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["MFA", "Password manager policies", "DPAPI protection"],
+    "detection": ["Process access to vault files", "API call monitoring"]
+  },
+  {
+    "id": "T1555.003",
+    "name": "Credentials from Web Browsers",
+    "description": "Adversaries may extract credentials from web browsers by reading stored passwords from browser password managers.",
+    "tactic": "credential-access",
+    "tactics": ["credential-access"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["MFA", "Browser isolation", "Disable password storage"],
+    "detection": ["Browser file access events", "LSASS access monitoring"]
+  },
+  {
+    "id": "T1003",
+    "name": "OS Credential Dumping",
+    "description": "Adversaries may attempt to dump credentials from the operating system to obtain account credentials. Tools like Mimikatz are commonly used.",
+    "tactic": "credential-access",
+    "tactics": ["credential-access"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Credential Guard", "LSA protection", "Minimizing cached credentials"],
+    "detection": ["Event 4663 (LSASS access)", "Mimikatz detection", "Process access monitoring"]
+  },
+  {
+    "id": "T1003.001",
+    "name": "LSASS Memory",
+    "description": "Adversaries may dump LSASS memory to extract credential material. Tools like procdump, Mimikatz, and direct API calls target LSASS.",
+    "tactic": "credential-access",
+    "tactics": ["credential-access"],
+    "platforms": ["Windows"],
+    "mitigations": ["Credential Guard", "LSA protection (RunAsPPL)", "Windows Defender Credential Guard"],
+    "detection": ["Event 4663 (LSASS handle)", "Event 4656", "Mimikatz driver detection"]
+  },
+  {
+    "id": "T1057",
+    "name": "Process Discovery",
+    "description": "Adversaries may get information about running processes on a system. This helps them understand the environment and identify targets.",
+    "tactic": "discovery",
+    "tactics": ["discovery"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Process access restrictions"],
+    "detection": ["Process listing commands (tasklist, ps)", "API monitoring"]
+  },
+  {
+    "id": "T1083",
+    "name": "File and Directory Discovery",
+    "description": "Adversaries may enumerate files and directories to understand the filesystem layout and locate interesting files.",
+    "tactic": "discovery",
+    "tactics": ["discovery"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Folder redirection", "File screening"],
+    "detection": ["File enumeration commands (dir, ls)", "API call monitoring"]
+  },
+  {
+    "id": "T1082",
+    "name": "System Information Discovery",
+    "description": "Adversaries may gather system information including OS version, hostname, architecture, and installed software.",
+    "tactic": "discovery",
+    "tactics": ["discovery"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Host monitoring"],
+    "detection": ["System info commands (systeminfo, uname -a)", "WMI queries"]
+  },
+  {
+    "id": "T1016",
+    "name": "System Network Configuration Discovery",
+    "description": "Adversaries may look for network configuration settings to understand the network layout and identify potential targets.",
+    "tactic": "discovery",
+    "tactics": ["discovery"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Network segmentation"],
+    "detection": ["Network config commands (ipconfig, ifconfig)", "Network query events"]
+  },
+  {
+    "id": "T1021",
+    "name": "Remote Services",
+    "description": "Adversaries may use valid accounts to log into remote machines using remote access protocols like RDP, SSH, WinRM, and VNC.",
+    "tactic": "lateral-movement",
+    "tactics": ["lateral-movement"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Network segmentation", "MFA for remote access", "Just-in-time access"],
+    "detection": ["Remote login events (4624, 4625)", "RDP connection logs", "SSH auth logs"]
+  },
+  {
+    "id": "T1021.001",
+    "name": "Remote Desktop Protocol",
+    "description": "Adversaries may use RDP to access remote systems. RDP is a common target for brute-force attacks and credential abuse.",
+    "tactic": "lateral-movement",
+    "tactics": ["lateral-movement"],
+    "platforms": ["Windows"],
+    "mitigations": ["Network Level Authentication", "RDP restriction", "RD Gateway"],
+    "detection": ["Event 4624 (logon type 10)", "RDP connection logs", "Failed logon events (4625)"]
+  },
+  {
+    "id": "T1570",
+    "name": "Lateral Tool Transfer",
+    "description": "Adversaries may transfer tools between systems to support lateral movement. Common methods include SMB, scp, certutil, and BITSAdmin.",
+    "tactic": "lateral-movement",
+    "tactics": ["lateral-movement"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Network segmentation", "Application control", "File transfer monitoring"],
+    "detection": ["SMB file transfer events (5145)", "File creation events", "Network connection logs"]
+  },
+  {
+    "id": "T1074",
+    "name": "Data Staged",
+    "description": "Adversaries may collect and stage data in a central location before exfiltration. This helps them organize exfiltrated data.",
+    "tactic": "collection",
+    "tactics": ["collection"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Data loss prevention", "Sensitive data monitoring"],
+    "detection": ["Large file transfers", "Data aggregation patterns", "File compression events"]
+  },
+  {
+    "id": "T1005",
+    "name": "Data from Local System",
+    "description": "Adversaries may search local system sources for data of interest. This includes files, databases, browser data, and local email stores.",
+    "tactic": "collection",
+    "tactics": ["collection"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Data classification", "Access controls", "DLP"],
+    "detection": ["File access events", "Search API monitoring", "Process monitoring"]
+  },
+  {
+    "id": "T1071",
+    "name": "Application Layer Protocol",
+    "description": "Adversaries may communicate using application layer protocols to blend in with normal traffic. Common protocols include HTTP, HTTPS, DNS, and SMTP.",
+    "tactic": "command-and-control",
+    "tactics": ["command-and-control"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Network segmentation", "SSL inspection", "DNS filtering"],
+    "detection": ["Network intrusion detection", "Proxy logs", "DNS query analysis"]
+  },
+  {
+    "id": "T1071.001",
+    "name": "Web Protocols",
+    "description": "Adversaries may use HTTP/HTTPS for C2 communication. Web traffic is commonly allowed through firewalls and blends with legitimate traffic.",
+    "tactic": "command-and-control",
+    "tactics": ["command-and-control"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["SSL inspection", "Web filtering", "Network traffic analysis"],
+    "detection": ["HTTP beaconing detection", "User-Agent analysis", "JA3 fingerprinting"]
+  },
+  {
+    "id": "T1573",
+    "name": "Encrypted Channel",
+    "description": "Adversaries may use encrypted C2 channels to hide the content of their communications. This includes custom encryption, SSL/TLS, and obfuscation.",
+    "tactic": "command-and-control",
+    "tactics": ["command-and-control"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["SSL inspection", "Traffic analysis"],
+    "detection": ["Network traffic analysis", "TLS fingerprinting", "Beacon detection"]
+  },
+  {
+    "id": "T1095",
+    "name": "Non-Application Layer Protocol",
+    "description": "Adversaries may use non-application layer protocols like ICMP, TCP raw sockets, or UDP for C2 communication to evade detection.",
+    "tactic": "command-and-control",
+    "tactics": ["command-and-control"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Firewall rules", "Network monitoring"],
+    "detection": ["ICMP tunneling detection", "Raw socket monitoring", "Anomalous protocol use"]
+  },
+  {
+    "id": "T1048",
+    "name": "Exfiltration Over Alternative Protocol",
+    "description": "Adversaries may exfiltrate data over different protocols than the original C2 channel, often to evade detection.",
+    "tactic": "exfiltration",
+    "tactics": ["exfiltration"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["DLP", "Network monitoring", "Data classification"],
+    "detection": ["Unusual outbound traffic", "Protocol anomalies", "Data volume alerts"]
+  },
+  {
+    "id": "T1041",
+    "name": "Exfiltration Over C2 Channel",
+    "description": "Adversaries may exfiltrate data over the existing C2 channel, using the same protocol and infrastructure.",
+    "tactic": "exfiltration",
+    "tactics": ["exfiltration"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Network monitoring", "Traffic analysis"],
+    "detection": ["Data volume monitoring", "Beacon traffic analysis"]
+  },
+  {
+    "id": "T1567",
+    "name": "Exfiltration Over Web Service",
+    "description": "Adversaries may exfiltrate data using web services like cloud storage, paste sites, or social media platforms.",
+    "tactic": "exfiltration",
+    "tactics": ["exfiltration"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["DLP", "Cloud access monitoring", "Web filtering"],
+    "detection": ["Cloud API calls", "Large uploads", "Unusual outbound connections"]
+  },
+  {
+    "id": "T1485",
+    "name": "Data Destruction",
+    "description": "Adversaries may destroy data on target systems to disrupt availability and cause damage.",
+    "tactic": "impact",
+    "tactics": ["impact"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Backups", "File permissions", "Immutable storage"],
+    "detection": ["Mass file deletion events", "Disk wipe tools", "Shadow copy deletion"]
+  },
+  {
+    "id": "T1486",
+    "name": "Data Encrypted for Impact",
+    "description": "Adversaries may encrypt data on target systems to disrupt availability and demand ransom. This is characteristic of ransomware.",
+    "tactic": "impact",
+    "tactics": ["impact"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Backups (3-2-1 rule)", "Application control", "Anti-ransomware"],
+    "detection": ["File extension changes", "Mass file modifications", "Ransom notes"]
+  },
+  {
+    "id": "T1490",
+    "name": "Inhibit System Recovery",
+    "description": "Adversaries may delete or remove system recovery data to prevent recovery after disruption. This includes deleting Volume Shadow Copies and backups.",
+    "tactic": "impact",
+    "tactics": ["impact"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Immutable backups", "Offline backups", "Shadow copy quotas"],
+    "detection": ["vssadmin.exe execution", "WMI shadow copy deletion", "Backup deletion events"]
+  },
+  {
+    "id": "T1529",
+    "name": "System Shutdown/Reboot",
+    "description": "Adversaries may shutdown or reboot systems to disrupt access or as part of destructive malware.",
+    "tactic": "impact",
+    "tactics": ["impact"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["PowerShell/CMD execution restrictions"],
+    "detection": ["Shutdown event (1074)", "Unexpected system restarts"]
+  },
+  {
+    "id": "T1195",
+    "name": "Supply Chain Compromise",
+    "description": "Adversaries may compromise third-party software or hardware to gain access to victim networks through trusted vendors.",
+    "tactic": "initial-access",
+    "tactics": ["initial-access"],
+    "platforms": ["Windows", "macOS", "Linux", "Cloud"],
+    "mitigations": ["Software integrity verification", "Vendor assessment", "SBOM"],
+    "detection": ["Code signing verification", "Integrity checking", "Behavioral analysis"]
+  },
+  {
+    "id": "T1553",
+    "name": "Subvert Trust Controls",
+    "description": "Adversaries may hijack or bypass trust mechanisms to install malicious code that appears legitimate through modified certificates or trust stores.",
+    "tactic": "defense-evasion",
+    "tactics": ["defense-evasion"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Certificate pinning", "Code signing enforcement"],
+    "detection": ["Certificate store modifications", "Driver signing enforcement bypass"]
+  },
+  {
+    "id": "T1218",
+    "name": "Signed Binary Proxy Execution",
+    "description": "Adversaries may use signed, trusted binaries to proxy execution of malicious code. Known as living-off-the-land binaries (LOLBins).",
+    "tactic": "defense-evasion",
+    "tactics": ["defense-evasion"],
+    "platforms": ["Windows"],
+    "mitigations": ["Application control", "ASR rules"],
+    "detection": ["LOLBin execution monitoring", "Parent-child process analysis"]
+  },
+  {
+    "id": "T1218.011",
+    "name": "Rundll32",
+    "description": "Adversaries may use rundll32.exe to execute arbitrary DLLs. Rundll32 is a legitimate Windows binary often abused for code execution.",
+    "tactic": "defense-evasion",
+    "tactics": ["defense-evasion", "execution"],
+    "platforms": ["Windows"],
+    "mitigations": ["Application control", "ASR rules"],
+    "detection": ["rundll32.exe execution without command line", "Unusual DLL loads"]
+  },
+  {
+    "id": "T1218.005",
+    "name": "Mshta",
+    "description": "Adversaries may use mshta.exe to execute malicious HTA files. Mshta is a legitimate utility for executing Microsoft HTML Applications.",
+    "tactic": "defense-evasion",
+    "tactics": ["defense-evasion", "execution"],
+    "platforms": ["Windows"],
+    "mitigations": ["Application control", "HTA file association management"],
+    "detection": ["mshta.exe execution", "Network connections from mshta"]
+  },
+  {
+    "id": "T1204.002",
+    "name": "Malicious File",
+    "description": "Adversaries may rely on a user opening a malicious file to gain code execution. Files include Office documents, PDFs, and scripts.",
+    "tactic": "execution",
+    "tactics": ["execution"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Attachment filtering", "Mark of the Web", "Application control"],
+    "detection": ["File open events", "Office macro warnings", "MotW analysis"]
+  },
+  {
+    "id": "T1548",
+    "name": "Abuse Elevation Control Mechanism",
+    "description": "Adversaries may bypass UAC or sudo to escalate privileges using bypass techniques that abuse elevation control mechanisms.",
+    "tactic": "privilege-escalation",
+    "tactics": ["privilege-escalation", "defense-evasion"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["UAC configuration", "sudo restrictions"],
+    "detection": ["UAC bypass detection", "Event 4688 with high integrity", "Process token analysis"]
+  },
+  {
+    "id": "T1548.002",
+    "name": "Bypass User Account Control",
+    "description": "Adversaries may bypass UAC to execute code with elevated privileges without triggering a UAC prompt.",
+    "tactic": "privilege-escalation",
+    "tactics": ["privilege-escalation", "defense-evasion"],
+    "platforms": ["Windows"],
+    "mitigations": ["UAC set to always notify", "Application control"],
+    "detection": ["Event 4688 (process creation)", "UAC bypass pattern detection", "Registry modifications"]
+  },
+  {
+    "id": "T1027",
+    "name": "Obfuscated Files or Information",
+    "description": "Adversaries may obfuscate files or information to evade detection. Common techniques include encoding, encryption, compression, and packing.",
+    "tactic": "defense-evasion",
+    "tactics": ["defense-evasion"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Antivirus/EDR", "Behavioral detection"],
+    "detection": ["Entropy analysis", "Packer detection", "Base64/hex detection in scripts"]
+  },
+  {
+    "id": "T1027.010",
+    "name": "Command Obfuscation",
+    "description": "Adversaries may obfuscate commands during execution to evade detection using encoding, variable substitution, and string manipulation.",
+    "tactic": "defense-evasion",
+    "tactics": ["defense-evasion"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["PowerShell script block logging", "Command line auditing"],
+    "detection": ["Deobfuscation analysis", "Character frequency analysis", "Base64 command detection"]
+  },
+  {
+    "id": "T1036",
+    "name": "Masquerading",
+    "description": "Adversaries may manipulate file names, extensions, or metadata to make malicious content appear legitimate or benign.",
+    "tactic": "defense-evasion",
+    "tactics": ["defense-evasion"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Application control", "File integrity monitoring"],
+    "detection": ["PE metadata analysis", "Digital signature verification", "File extension mismatch"]
+  },
+  {
+    "id": "T1036.005",
+    "name": "Match Legitimate Name or Location",
+    "description": "Adversaries may name executables or place them in locations that match legitimate system files to evade detection.",
+    "tactic": "defense-evasion",
+    "tactics": ["defense-evasion"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["File integrity monitoring", "Application whitelisting"],
+    "detection": ["Process path analysis", "Known-location checks", "Digital signature verification"]
+  },
+  {
+    "id": "T1012",
+    "name": "Query Registry",
+    "description": "Adversaries may interact with the Windows Registry to gather information about the system, configuration, and software.",
+    "tactic": "discovery",
+    "tactics": ["discovery"],
+    "platforms": ["Windows"],
+    "mitigations": ["Registry auditing"],
+    "detection": ["Registry query events (Event 4656)", "Reg.exe usage", "API call monitoring"]
+  },
+  {
+    "id": "T1518",
+    "name": "Software Discovery",
+    "description": "Adversaries may enumerate installed software and security tools to understand the environment and determine if any security products are present.",
+    "tactic": "discovery",
+    "tactics": ["discovery"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Security tool obfuscation"],
+    "detection": ["Process enumeration", "WMI queries for installed products", "Registry queries"]
+  },
+  {
+    "id": "T1069",
+    "name": "Permission Groups Discovery",
+    "description": "Adversaries may enumerate user permissions, groups, and domain administrators to identify privileged accounts.",
+    "tactic": "discovery",
+    "tactics": ["discovery"],
+    "platforms": ["Windows", "macOS", "Linux", "Cloud"],
+    "mitigations": ["Audit group membership changes"],
+    "detection": ["Group enumeration commands (net group, net localgroup)", "LDAP queries"]
+  },
+  {
+    "id": "T1087",
+    "name": "Account Discovery",
+    "description": "Adversaries may enumerate user accounts to identify valid credentials, privileged accounts, and targets for lateral movement.",
+    "tactic": "discovery",
+    "tactics": ["discovery"],
+    "platforms": ["Windows", "macOS", "Linux", "Cloud"],
+    "mitigations": ["Audit account enumeration"],
+    "detection": ["Account enumeration commands (net user)", "LDAP queries for users", "Event 4798"]
+  },
+  {
+    "id": "T1049",
+    "name": "System Network Connections Discovery",
+    "description": "Adversaries may enumerate active network connections to identify remote systems and services for lateral movement.",
+    "tactic": "discovery",
+    "tactics": ["discovery"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Network segmentation"],
+    "detection": ["netstat.exe execution", "Get-NetTCPConnection", "Active connection enumeration"]
+  },
+  {
+    "id": "T1018",
+    "name": "Remote System Discovery",
+    "description": "Adversaries may enumerate remote systems to identify targets for lateral movement using tools like ping, nbtstat, and LDAP queries.",
+    "tactic": "discovery",
+    "tactics": ["discovery"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Network segmentation"],
+    "detection": ["Network scanning activity", "LDAP queries for computers", "DNS queries"]
+  },
+  {
+    "id": "T1090",
+    "name": "Proxy",
+    "description": "Adversaries may use proxies to route C2 traffic through intermediate servers to obscure the source of communications.",
+    "tactic": "command-and-control",
+    "tactics": ["command-and-control"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Network traffic analysis", "Proxy auto-configuration"],
+    "detection": ["Connection chain analysis", "Known proxy IP detection", "Traffic fingerprinting"]
+  },
+  {
+    "id": "T1090.003",
+    "name": "Multi-hop Proxy",
+    "description": "Adversaries may route C2 traffic through multiple proxy hops to make tracking more difficult.",
+    "tactic": "command-and-control",
+    "tactics": ["command-and-control"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Threat intelligence", "Traffic analysis"],
+    "detection": ["Tor node detection", "Proxy chain analysis", "Hop count analysis"]
+  },
+  {
+    "id": "T1008",
+    "name": "Fallback Channels",
+    "description": "Adversaries may use multiple C2 channels with fallback mechanisms to maintain communication if primary channels are blocked.",
+    "tactic": "command-and-control",
+    "tactics": ["command-and-control"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Network segmentation", "Traffic analysis"],
+    "detection": ["Multiple simultaneous C2 connections", "Protocol switching detection"]
+  },
+  {
+    "id": "T1105",
+    "name": "Ingress Tool Transfer",
+    "description": "Adversaries may transfer tools from external systems to the victim environment to support operations.",
+    "tactic": "command-and-control",
+    "tactics": ["command-and-control"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Network controls", "Application control"],
+    "detection": ["File download events", "PowerShell download detection", "BITSAdmin monitoring"]
+  },
+  {
+    "id": "T1110",
+    "name": "Brute Force",
+    "description": "Adversaries may use brute-force techniques to gain access to accounts by guessing or cracking passwords.",
+    "tactic": "credential-access",
+    "tactics": ["credential-access"],
+    "platforms": ["Windows", "macOS", "Linux", "Cloud", "Network"],
+    "mitigations": ["Account lockout policies", "MFA", "Password complexity"],
+    "detection": ["Multiple failed login events (4625)", "Login timestamp analysis", "IP-based correlation"]
+  },
+  {
+    "id": "T1110.003",
+    "name": "Password Spraying",
+    "description": "Adversaries may attempt to log in using a single password against many accounts to avoid account lockout.",
+    "tactic": "credential-access",
+    "tactics": ["credential-access"],
+    "platforms": ["Windows", "macOS", "Linux", "Cloud", "Network"],
+    "mitigations": ["MFA", "Password complexity", "Monitor auth logs"],
+    "detection": ["Many failed logins across accounts", "Same password attempts", "Unusual login times"]
+  },
+  {
+    "id": "T1550",
+    "name": "Use Alternate Authentication Material",
+    "description": "Adversaries may use alternative authentication material like pass-the-hash, pass-the-ticket, or Kerberos tickets to access systems.",
+    "tactic": "lateral-movement",
+    "tactics": ["lateral-movement", "defense-evasion"],
+    "platforms": ["Windows"],
+    "mitigations": ["Credential Guard", "KB2871997", "Protected Users group"],
+    "detection": ["NTLM hash use detection", "Kerberos ticket anomalies", "Event 4768/4769 analysis"]
+  },
+  {
+    "id": "T1550.002",
+    "name": "Pass the Hash",
+    "description": "Adversaries may use captured NTLM hashes to authenticate without knowing the plaintext password.",
+    "tactic": "lateral-movement",
+    "tactics": ["lateral-movement"],
+    "platforms": ["Windows"],
+    "mitigations": ["Credential Guard", "KB2871997", "Disable NTLM"],
+    "detection": ["NTLM authentication anomalies", "Event 4624 with NTLM", "Mimikatz detection"]
+  },
+  {
+    "id": "T1047",
+    "name": "Windows Management Instrumentation",
+    "description": "Adversaries may use WMI for execution, lateral movement, discovery, and persistence. WMI provides a powerful management interface.",
+    "tactic": "execution",
+    "tactics": ["execution", "lateral-movement"],
+    "platforms": ["Windows"],
+    "mitigations": ["WMI Control ACLs", "Disable WMI if not needed"],
+    "detection": ["WMI event subscription (Event 5861)", "WMI process creation (Event 4688)", "WMI activity monitoring"]
+  },
+  {
+    "id": "T1072",
+    "name": "Software Deployment Tools",
+    "description": "Adversaries may abuse enterprise software deployment tools to move laterally and execute code across the environment.",
+    "tactic": "lateral-movement",
+    "tactics": ["lateral-movement", "execution"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Least privilege", "Network segmentation", "Tool monitoring"],
+    "detection": ["Deployment tool logs", "SCCM/Puppet/Ansible anomalies"]
+  },
+  {
+    "id": "T1203",
+    "name": "Exploitation for Client Execution",
+    "description": "Adversaries may exploit software vulnerabilities in client applications to execute code. Common targets include browsers, Office, and PDF readers.",
+    "tactic": "execution",
+    "tactics": ["execution"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Patch management", "Application isolation", "Browser sandbox"],
+    "detection": ["Exploit detection", "Crash dumps", "Process anomalies"]
+  },
+  {
+    "id": "T1132",
+    "name": "Data Encoding",
+    "description": "Adversaries may encode data to make it harder for defenders to detect exfiltrated content or C2 traffic.",
+    "tactic": "command-and-control",
+    "tactics": ["command-and-control", "exfiltration"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Network traffic analysis", "DLP"],
+    "detection": ["Entropy analysis", "Base64 detection", "Encrypted traffic analysis"]
+  },
+  {
+    "id": "T1114",
+    "name": "Email Collection",
+    "description": "Adversaries may collect email data from targets to gather sensitive information or intelligence.",
+    "tactic": "collection",
+    "tactics": ["collection"],
+    "platforms": ["Windows", "macOS", "Linux", "Office 365"],
+    "mitigations": ["MFA", "Mailbox auditing", "DLP"],
+    "detection": ["Mailbox access anomalies", "Graph API mailbox access", "EWS enumeration"]
+  },
+  {
+    "id": "T1114.001",
+    "name": "Local Email Collection",
+    "description": "Adversaries may collect email data from local email clients like Outlook by accessing PST files or MAPI.",
+    "tactic": "collection",
+    "tactics": ["collection"],
+    "platforms": ["Windows"],
+    "mitigations": ["File access auditing", "Application control"],
+    "detection": ["Outlook process monitoring", "PST file access events"]
+  },
+  {
+    "id": "T1560",
+    "name": "Archive Collected Data",
+    "description": "Adversaries may compress or encrypt collected data before exfiltration to reduce size and evade detection.",
+    "tactic": "collection",
+    "tactics": ["collection"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["DLP", "Archive tool monitoring"],
+    "detection": ["Compression tool execution (zip, rar, 7z)", "Large compressed file creation"]
+  },
+  {
+    "id": "T1560.001",
+    "name": "Archive via Utility",
+    "description": "Adversaries may use built-in or third-party archiving utilities like WinRAR, 7-Zip, or tar to package collected data.",
+    "tactic": "collection",
+    "tactics": ["collection"],
+    "platforms": ["Windows", "macOS", "Linux"],
+    "mitigations": ["Application control", "DLP"],
+    "detection": ["Compression command-line arguments", "Archive creation events"]
+  },
+  {
+    "id": "T1530",
+    "name": "Data from Cloud Storage",
+    "description": "Adversaries may access cloud storage services (OneDrive, Google Drive, S3) to collect sensitive data.",
+    "tactic": "collection",
+    "tactics": ["collection"],
+    "platforms": ["Cloud", "SaaS"],
+    "mitigations": ["Cloud access monitoring", "MFA", "Conditional access"],
+    "detection": ["Cloud API logs", "Anomalous data access patterns", "Unusual download volumes"]
+  },
+  {
+    "id": "T1098",
+    "name": "Account Manipulation",
+    "description": "Adversaries may manipulate accounts to maintain or escalate access by modifying credentials or permissions.",
+    "tactic": "persistence",
+    "tactics": ["persistence", "privilege-escalation"],
+    "platforms": ["Windows", "macOS", "Linux", "Cloud"],
+    "mitigations": ["Account auditing", "Privileged access management"],
+    "detection": ["Account modification events (4738)", "Group membership changes (4728, 4732, 4756)"]
+  },
+  {
+    "id": "T1098.002",
+    "name": "Additional Email Delegate Permissions",
+    "description": "Adversaries may add delegate permissions to mailboxes to maintain persistent access to email data.",
+    "tactic": "persistence",
+    "tactics": ["persistence"],
+    "platforms": ["Office 365", "Cloud"],
+    "mitigations": ["Mailbox auditing", "Least privilege"],
+    "detection": ["Mailbox delegation events", "Calendar sharing anomalies"]
+  }
+]

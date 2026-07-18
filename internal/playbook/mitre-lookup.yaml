@@ -1,0 +1,15 @@
+name: mitre-lookup
+description: Look up a MITRE ATT&CK technique
+triggers:
+  - technique
+  - mitre
+  - attack
+steps:
+  - agent: knowledge
+    action: mitre_lookup
+    params:
+      technique: ${input.technique}
+  - agent: host
+    action: synthesize_report
+    params:
+      investigation_id: ${investigation.id}

@@ -1,0 +1,18 @@
+{
+  "db_path": "D:\\Projects_And_Learning\\AI\\InnoIgniterAI\\dev\\.innoigniter\\innoigniter.db",
+  "log_dir": "D:\\Projects_And_Learning\\AI\\InnoIgniterAI\\dev\\.innoigniter\\logs",
+  "playbook_dir": "D:\\Projects_And_Learning\\AI\\InnoIgniterAI\\dev\\.innoigniter\\playbooks",
+
+  "siem": {
+    "enabled": true,
+    "log_dir": "D:\\Projects_And_Learning\\AI\\InnoIgniterAI\\dev\\logs",
+    "syslog_addr": ":9514"
+  },
+
+  "vt_api_key": "",
+  "llm_provider": "openai",
+  "llm_url": "",
+  "llm_api_key": "",
+  "web_search_key": ""
+}
+
