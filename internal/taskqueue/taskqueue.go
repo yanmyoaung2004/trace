@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/db"
+	"github.com/yanmyoaung2004/trace/internal/db"
 )
 
 type Task struct {

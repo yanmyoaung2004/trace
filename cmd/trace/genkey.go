@@ -22,7 +22,7 @@ func newGenKeyCmd() *cobra.Command {
 		Short: "Generate a self-signed TLS certificate and key",
 		Long: `Generate a self-signed TLS certificate and RSA key for development use.
 Example:
-  innoigniter genkey --host localhost --out ~/.innoigniter/tls`,
+  trace genkey --host localhost --out ~/.trace/tls`,
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
 			host, _ := cmdCobra.Flags().GetString("host")
 			outDir, _ := cmdCobra.Flags().GetString("out")
@@ -33,7 +33,7 @@ Example:
 			}
 			if outDir == "" {
 				home, _ := os.UserHomeDir()
-				outDir = filepath.Join(home, ".innoigniter", "tls")
+				outDir = filepath.Join(home, ".trace", "tls")
 			}
 
 			os.MkdirAll(outDir, 0700)
@@ -48,7 +48,7 @@ Example:
 			template := x509.Certificate{
 				SerialNumber: serial,
 				Subject: pkix.Name{
-					Organization: []string{"InnoIgniterAI Dev"},
+					Organization: []string{"Trace Dev"},
 					CommonName:   host,
 				},
 				NotBefore:             time.Now(),
@@ -100,13 +100,13 @@ Example:
 			fmt.Printf("  Bits: %d\n", bits)
 			fmt.Println()
 			fmt.Printf("Start server with:\n")
-			fmt.Printf("  innoigniter server --tls-cert %s --tls-key %s\n", certPath, keyPath)
+			fmt.Printf("  trace server --tls-cert %s --tls-key %s\n", certPath, keyPath)
 			return nil
 		},
 	}
 
 	cmd.Flags().String("host", "localhost", "certificate hostname or IP")
-	cmd.Flags().String("out", "", "output directory (default ~/.innoigniter/tls)")
+	cmd.Flags().String("out", "", "output directory (default ~/.trace/tls)")
 	cmd.Flags().Int("bits", 2048, "RSA key size in bits")
 	return cmd
 }

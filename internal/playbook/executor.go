@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/plugin"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/investigation"
+	"github.com/yanmyoaung2004/trace/internal/plugin"
+	"github.com/yanmyoaung2004/trace/internal/investigation"
 )
 
 type Executor struct {

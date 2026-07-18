@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/config"
+	"github.com/yanmyoaung2004/trace/internal/config"
 )
 
 func TestDefault(t *testing.T) {
@@ -50,10 +50,10 @@ func TestLoadFromFile(t *testing.T) {
 }
 
 func TestEnvOverride(t *testing.T) {
-	os.Setenv("INNO_DB_PATH", "/env/test.db")
-	os.Setenv("INNO_VT_API_KEY", "vtkey-123")
-	defer os.Unsetenv("INNO_DB_PATH")
-	defer os.Unsetenv("INNO_VT_API_KEY")
+	os.Setenv("TRACE_DB_PATH", "/env/test.db")
+	os.Setenv("TRACE_VT_API_KEY", "vtkey-123")
+	defer os.Unsetenv("TRACE_DB_PATH")
+	defer os.Unsetenv("TRACE_VT_API_KEY")
 
 	cfg, err := config.Load("")
 	if err != nil {
@@ -76,8 +76,8 @@ func TestFileThenEnv(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	os.Setenv("INNO_DB_PATH", "/env/db.db")
-	defer os.Unsetenv("INNO_DB_PATH")
+	os.Setenv("TRACE_DB_PATH", "/env/db.db")
+	defer os.Unsetenv("TRACE_DB_PATH")
 
 	cfg, err := config.Load(path)
 	if err != nil {

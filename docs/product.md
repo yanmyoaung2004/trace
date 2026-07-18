@@ -1,8 +1,8 @@
-# InnoIgniterAI
+# Trace
 
 ## Vision
 
-The goal of InnoIgniterAI is to build an intelligent cybersecurity analyst that can:
+The goal of Trace is to build an intelligent cybersecurity analyst that can:
 
 - Understand natural language security questions
 - Investigate threats autonomously
@@ -153,7 +153,7 @@ Capabilities include:
 - Security alerts
 - Incident correlation
 
-This enables InnoIgniterAI to monitor live enterprise environments rather than only analyzing uploaded artifacts.
+This enables Trace to monitor live enterprise environments rather than only analyzing uploaded artifacts.
 
 ---
 
@@ -308,7 +308,7 @@ LLM
 Answer
 ```
 
-InnoIgniterAI is closer to:
+Trace is closer to:
 
 ```
 User
@@ -368,6 +368,6 @@ The architecture you've described naturally supports adding more specialized age
 
 Because the orchestration layer is already agent-based, these capabilities can be added without redesigning the core system.
 
-Overall, InnoIgniterAI is best positioned not as "an AI cybersecurity chatbot," but as **an enterprise AI security operations platform that combines multi-agent orchestration, SIEM integration, threat intelligence, and AI-powered malware analysis to automate investigation workflows and assist security analysts.**
+Overall, Trace is best positioned not as "an AI cybersecurity chatbot," but as **an enterprise AI security operations platform that combines multi-agent orchestration, SIEM integration, threat intelligence, and AI-powered malware analysis to automate investigation workflows and assist security analysts.**
 
 [1]: https://arxiv.org/abs/2402.14034?utm_source=chatgpt.com "AgentScope: A Flexible yet Robust Multi-Agent Platform"

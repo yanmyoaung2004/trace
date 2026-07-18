@@ -3,7 +3,7 @@ package knowledge_test
 import (
 	"testing"
 
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/knowledge"
+	"github.com/yanmyoaung2004/trace/internal/knowledge"
 )
 
 func TestMitreDBSearch(t *testing.T) {

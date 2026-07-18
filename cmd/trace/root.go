@@ -7,23 +7,23 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/config"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/db"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/detection"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/host"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/integration/abuseipdb"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/integration/elastic"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/integration/notifier"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/integration/otx"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/integration/splunk"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/investigation"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/knowledge"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/playbook"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/plugin"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/plugins/exporter"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/response"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/taskqueue"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/telemetry"
+	"github.com/yanmyoaung2004/trace/internal/config"
+	"github.com/yanmyoaung2004/trace/internal/db"
+	"github.com/yanmyoaung2004/trace/internal/detection"
+	"github.com/yanmyoaung2004/trace/internal/host"
+	"github.com/yanmyoaung2004/trace/internal/integration/abuseipdb"
+	"github.com/yanmyoaung2004/trace/internal/integration/elastic"
+	"github.com/yanmyoaung2004/trace/internal/integration/notifier"
+	"github.com/yanmyoaung2004/trace/internal/integration/otx"
+	"github.com/yanmyoaung2004/trace/internal/integration/splunk"
+	"github.com/yanmyoaung2004/trace/internal/investigation"
+	"github.com/yanmyoaung2004/trace/internal/knowledge"
+	"github.com/yanmyoaung2004/trace/internal/playbook"
+	"github.com/yanmyoaung2004/trace/internal/plugin"
+	"github.com/yanmyoaung2004/trace/internal/plugins/exporter"
+	"github.com/yanmyoaung2004/trace/internal/response"
+	"github.com/yanmyoaung2004/trace/internal/taskqueue"
+	"github.com/yanmyoaung2004/trace/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -121,7 +121,7 @@ func (a *App) initServices() error {
 	a.taskQueue = taskqueue.New(a.database)
 	a.executor = playbook.NewExecutor(a.registry, a.invManager, a.logWriter)
 
-	telURL := "https://telemetry.innoigniter.io/v1/report"
+	telURL := "https://telemetry.trace.sh/v1/report"
 	if a.cfg.Telemetry.URL != "" {
 		telURL = a.cfg.Telemetry.URL
 	}
@@ -169,9 +169,9 @@ var app = &App{}
 
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "innoigniter",
-		Short: "InnoIgniterAI — Multi-agent cybersecurity investigation platform",
-		Long:  `InnoIgniterAI orchestrates security agents to investigate threats, enrich IOCs, analyze files, and automate response actions.`,
+		Use:   "trace",
+		Short: "Trace — Multi-agent cybersecurity investigation platform",
+		Long:  `Trace orchestrates security agents to investigate threats, enrich IOCs, analyze files, and automate response actions.`,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if cmd.Name() == "help" || cmd.Name() == "completion" {
 				return nil

@@ -80,7 +80,7 @@ func (c *CVEClient) fetchFromNVD(ctx context.Context, cveID string) (*CVEResult,
 		return nil, err
 	}
 
-	req.Header.Set("User-Agent", "innoigniter/0.1.0")
+	req.Header.Set("User-Agent", "trace/0.1.0")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

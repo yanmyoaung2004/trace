@@ -1,4 +1,4 @@
-# InnoIgniterAI — Analyst User Guide
+# Trace — Analyst User Guide
 
 > End-to-end walkthrough for security analysts using the platform.
 

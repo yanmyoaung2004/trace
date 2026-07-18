@@ -1,6 +1,6 @@
 # Plugin Development Guide
 
-Plugins extend InnoIgniterAI by adding new agents. They are compiled as Go `.so` shared libraries loaded at runtime.
+Plugins extend Trace by adding new agents. They are compiled as Go `.so` shared libraries loaded at runtime.
 
 ## Interface
 

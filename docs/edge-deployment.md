@@ -217,7 +217,7 @@ Both modes produce the same internal alert format. Playbooks, agents, and report
 
 ## Central server mode
 
-Edge nodes can optionally report to a central InnoIgniterAI server. The server aggregates investigations, provides cross-node correlation, long-term retention, and a team dashboard. Edge nodes continue working fully offline — results sync when connectivity returns. Neither mode depends on the other.
+Edge nodes can optionally report to a central Trace server. The server aggregates investigations, provides cross-node correlation, long-term retention, and a team dashboard. Edge nodes continue working fully offline — results sync when connectivity returns. Neither mode depends on the other.
 
 Central server is a separate binary. It's not required for edge nodes to function.
 

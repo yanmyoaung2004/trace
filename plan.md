@@ -1,4 +1,4 @@
-# InnoIgniterAI — Next Steps
+# Trace — Next Steps
 
 ## Short Term
 

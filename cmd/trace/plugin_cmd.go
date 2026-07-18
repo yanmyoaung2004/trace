@@ -16,7 +16,7 @@ import (
 
 func pluginDir() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".innoigniter", "plugins")
+	return filepath.Join(home, ".trace", "plugins")
 }
 
 func newPluginCmd() *cobra.Command {
@@ -61,7 +61,7 @@ func newPluginCmd() *cobra.Command {
 The plugin must export a "Plugin" symbol implementing agent.AgentPlugin.
 
 Example:
-  innoigniter plugin install https://plugins.innoigniter.io/v1/plugins/exporter.so`,
+  trace plugin install https://plugins.trace.sh/v1/plugins/exporter.so`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
 			url := args[0]

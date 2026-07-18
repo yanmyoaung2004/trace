@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/db"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/response"
+	"github.com/yanmyoaung2004/trace/internal/db"
+	"github.com/yanmyoaung2004/trace/internal/response"
 )
 
 func setupResponse(t *testing.T) *response.Agent {

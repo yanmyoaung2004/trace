@@ -21,11 +21,11 @@ func newInitCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
 		Short: "First-run setup wizard",
-		Long: `Interactive setup that creates ~/.innoigniter/config.json with your preferences.
+		Long: `Interactive setup that creates ~/.trace/config.json with your preferences.
 You can skip any step — the tool works without external API keys.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			home, _ := os.UserHomeDir()
-			base := filepath.Join(home, ".innoigniter")
+			base := filepath.Join(home, ".trace")
 			cfgPath := filepath.Join(base, "config.json")
 
 			if _, err := os.Stat(cfgPath); err == nil {
@@ -45,12 +45,12 @@ You can skip any step — the tool works without external API keys.`,
 
 			reader := bufio.NewReader(os.Stdin)
 
-			fmt.Println("InnoIgniterAI Setup")
+			fmt.Println("Trace Setup")
 			fmt.Println(strings.Repeat("=", 40))
 			fmt.Println("Press Enter to skip any option.")
 
 			cfg := map[string]any{
-				"db_path":   filepath.Join(base, "innoigniter.db"),
+				"db_path":   filepath.Join(base, "trace.db"),
 				"data_dir":  filepath.Join(base, "data"),
 				"log_dir":   filepath.Join(base, "logs"),
 				"playbook":  filepath.Join(base, "playbooks"),
@@ -99,7 +99,7 @@ You can skip any step — the tool works without external API keys.`,
 			}
 
 			fmt.Printf("\nConfig written to %s\n", cfgPath)
-			fmt.Println("Run 'innoigniter serve' to start or 'innoigniter investigate' for a quick check.")
+			fmt.Println("Run 'trace serve' to start or 'trace investigate' for a quick check.")
 			return nil
 		},
 	}

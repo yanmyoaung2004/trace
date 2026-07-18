@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/agent"
+	"github.com/yanmyoaung2004/trace/internal/agent"
 )
 
 type Client struct {

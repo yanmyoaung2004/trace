@@ -158,7 +158,7 @@ Plugins are stored in `~/.innoigniter/plugins/` and loaded on next restart.
 
 ## `update`
 
-Update InnoIgniterAI or its data.
+Update Trace or its data.
 
 ```
 innoigniter update <subcommand>

@@ -177,7 +177,7 @@ func (c *VTClient) fetchFromVT(ctx context.Context, hash string) (*VTResult, err
 	}
 
 	req.Header.Set("x-apikey", c.apiKey)
-	req.Header.Set("User-Agent", "innoigniter/0.1.0")
+	req.Header.Set("User-Agent", "trace/0.1.0")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/agent"
+	"github.com/yanmyoaung2004/trace/internal/agent"
 )
 
 type Agent struct {
@@ -83,7 +83,7 @@ func (a *Agent) sendSlack(ctx context.Context, input agent.Input) (agent.Output,
 
 	payload := slackPayload{
 		Text:      text,
-		Username:  "InnoIgniterAI",
+		Username:  "Trace",
 		IconEmoji: ":shield:",
 	}
 

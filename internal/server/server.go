@@ -9,9 +9,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/config"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/db"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/investigation"
+	"github.com/yanmyoaung2004/trace/internal/config"
+	"github.com/yanmyoaung2004/trace/internal/db"
+	"github.com/yanmyoaung2004/trace/internal/investigation"
 )
 
 func RunServer(cfg *config.Config, database *db.DB, invMgr *investigation.Manager) error {

@@ -130,10 +130,10 @@ func (dh *DashboardHandler) index(w http.ResponseWriter, r *http.Request) {
 
 	var b strings.Builder
 	b.WriteString(`<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>InnoIgniter Server</title>
+<title>Trace Server</title>
 <style>` + pageStyle + `</style></head><body>
 <div class="header">
-<h1>InnoIgniter Server</h1>
+<h1>Trace Server</h1>
 <div class="header-right">
 <span class="auto-refresh"><span class="dot"></span>Live</span>
 <div class="nav"><a href="/" class="active">Dashboard</a><a href="/correlations">Correlations</a></div>
@@ -324,7 +324,7 @@ func (dh *DashboardHandler) correlations(w http.ResponseWriter, r *http.Request)
 
 	var b strings.Builder
 	b.WriteString(`<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>Correlations — InnoIgniter Server</title>
+<title>Correlations — Trace Server</title>
 <style>` + pageStyle + `</style></head><body>
 <div class="header"><h1>Cross-Node IOC Correlations</h1>
 <div class="nav"><a href="/">Dashboard</a><a href="/correlations" class="active">Correlations</a></div></div>

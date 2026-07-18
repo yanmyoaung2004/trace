@@ -1,4 +1,4 @@
-# InnoIgniterAI
+# Trace
 
 Greenfield project — no code, no build system, no tests yet. The sole source of truth is `docs/product.md`.
 

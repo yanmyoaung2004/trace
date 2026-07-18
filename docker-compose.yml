@@ -6,15 +6,15 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - inno_data:/home/innoigniter/.innoigniter
+      - trace_data:/home/trace/.trace
     environment:
-      - INNO_VT_API_KEY=${INNO_VT_API_KEY:-}
-      - INNO_LLM_API_KEY=${INNO_LLM_API_KEY:-}
-      - INNO_LLM_URL=${INNO_LLM_URL:-}
+      - TRACE_VT_API_KEY=${TRACE_VT_API_KEY:-}
+      - TRACE_LLM_API_KEY=${TRACE_LLM_API_KEY:-}
+      - TRACE_LLM_URL=${TRACE_LLM_URL:-}
     command: ["server", "--http-addr", ":8080"]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "innoigniter", "version"]
+      test: ["CMD", "trace", "version"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -24,10 +24,10 @@ services:
     depends_on:
       - server
     volumes:
-      - inno_edge_data:/home/innoigniter/.innoigniter
+      - trace_edge_data:/home/trace/.trace
       - ./logs:/logs:ro
     environment:
-      - INNO_VT_API_KEY=${INNO_VT_API_KEY:-}
+      - TRACE_VT_API_KEY=${TRACE_VT_API_KEY:-}
     command: ["serve", "--server-addr", "http://server:8080", "--siem", "--log-dir", "/logs"]
     restart: unless-stopped
     profiles:
@@ -38,13 +38,13 @@ services:
     depends_on:
       - server
     volumes:
-      - inno_edge2_data:/home/innoigniter/.innoigniter
+      - trace_edge2_data:/home/trace/.trace
     command: ["serve", "--server-addr", "http://server:8080"]
     restart: unless-stopped
     profiles:
       - edge2
 
 volumes:
-  inno_data:
-  inno_edge_data:
-  inno_edge2_data:
+  trace_data:
+  trace_edge_data:
+  trace_edge2_data:

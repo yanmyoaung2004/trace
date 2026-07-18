@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/agent"
+	"github.com/yanmyoaung2004/trace/internal/agent"
 	"github.com/spf13/cobra"
 )
 

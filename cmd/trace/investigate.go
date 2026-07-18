@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/agent"
+	"github.com/yanmyoaung2004/trace/internal/agent"
 	"github.com/spf13/cobra"
 )
 
@@ -15,9 +15,9 @@ func newInvestigateCmd() *cobra.Command {
 		Short: "Run a security investigation",
 		Long: `Run a security investigation using natural language or explicit parameters.
 Examples:
-  innoigniter investigate "check hash d41d8cd98f00b204e9800998ecf8427e"
-  innoigniter investigate --playbook hash-lookup --param hash=<sha256>
-  innoigniter investigate --playbook file-analysis --param file=/path/to/file.exe`,
+  trace investigate "check hash d41d8cd98f00b204e9800998ecf8427e"
+  trace investigate --playbook hash-lookup --param hash=<sha256>
+  trace investigate --playbook file-analysis --param file=/path/to/file.exe`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()

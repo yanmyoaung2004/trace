@@ -1,4 +1,4 @@
-module github.com/yanmyoaung2004/innoigniter-ai
+module github.com/yanmyoaung2004/trace
 
 go 1.26.4
 

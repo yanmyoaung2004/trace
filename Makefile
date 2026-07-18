@@ -1,6 +1,6 @@
 .PHONY: all build clean test lint vet fmt run
 
-BINARY = innoigniter
+BINARY = trace
 GO = go
 VERSION = $(shell git describe --tags --always --dirty 2>/dev/null || echo "0.1.0-dev")
 LDFLAGS = -ldflags "-X main.Version=$(VERSION)"
@@ -12,7 +12,7 @@ build:
 
 clean:
 	rm -f $(BINARY)
-	rm -rf .innoigniter/
+	rm -rf .trace/
 
 test:
 	$(GO) test ./... -v -count=1

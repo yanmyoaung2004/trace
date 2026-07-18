@@ -1,4 +1,4 @@
-# InnoIgniterAI — Build Plan
+# Trace — Build Plan
 
 ## Phase 0 — Project scaffold (days 1–2)
 

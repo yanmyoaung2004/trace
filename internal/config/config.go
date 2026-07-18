@@ -68,7 +68,7 @@ func repoDir() string {
 
 func Default() *Config {
 	home, _ := os.UserHomeDir()
-	base := filepath.Join(home, ".innoigniter")
+	base := filepath.Join(home, ".trace")
 
 	playbookDir := filepath.Join(base, "playbooks")
 	intelDir := filepath.Join(base, "intel")
@@ -83,7 +83,7 @@ func Default() *Config {
 	}
 
 	return &Config{
-		DBPath:     filepath.Join(base, "innoigniter.db"),
+		DBPath:     filepath.Join(base, "trace.db"),
 		DataDir:    filepath.Join(base, "data"),
 		LogDir:     filepath.Join(base, "logs"),
 		Playbook:   playbookDir,
@@ -108,22 +108,22 @@ func Load(path string) (*Config, error) {
 		}
 	}
 
-	if v := os.Getenv("INNO_DB_PATH"); v != "" {
+	if v := os.Getenv("TRACE_DB_PATH"); v != "" {
 		cfg.DBPath = v
 	}
-	if v := os.Getenv("INNO_VT_API_KEY"); v != "" {
+	if v := os.Getenv("TRACE_VT_API_KEY"); v != "" {
 		cfg.VTAPIKey = v
 	}
-	if v := os.Getenv("INNO_LLM_API_KEY"); v != "" {
+	if v := os.Getenv("TRACE_LLM_API_KEY"); v != "" {
 		cfg.LLMAPIKey = v
 	}
-	if v := os.Getenv("INNO_LLM_URL"); v != "" {
+	if v := os.Getenv("TRACE_LLM_URL"); v != "" {
 		cfg.LLMURL = v
 	}
-	if v := os.Getenv("INNO_ABUSEIPDB_KEY"); v != "" {
+	if v := os.Getenv("TRACE_ABUSEIPDB_KEY"); v != "" {
 		cfg.AbuseIPDBKey = v
 	}
-	if v := os.Getenv("INNO_OTX_API_KEY"); v != "" {
+	if v := os.Getenv("TRACE_OTX_API_KEY"); v != "" {
 		cfg.OTXAPIKey = v
 	}
 

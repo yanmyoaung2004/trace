@@ -5,11 +5,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/agent"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/db"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/investigation"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/playbook"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/plugin"
+	"github.com/yanmyoaung2004/trace/internal/agent"
+	"github.com/yanmyoaung2004/trace/internal/db"
+	"github.com/yanmyoaung2004/trace/internal/investigation"
+	"github.com/yanmyoaung2004/trace/internal/playbook"
+	"github.com/yanmyoaung2004/trace/internal/plugin"
 )
 
 type mockAgent struct {

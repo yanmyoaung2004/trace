@@ -9,9 +9,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/agent"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/edge"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/siem"
+	"github.com/yanmyoaung2004/trace/internal/agent"
+	"github.com/yanmyoaung2004/trace/internal/edge"
+	"github.com/yanmyoaung2004/trace/internal/siem"
 	"github.com/spf13/cobra"
 )
 
@@ -19,11 +19,11 @@ func newServeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the investigation server daemon",
-		Long: `Start the InnoIgniterAI daemon. Optionally enables SIEM log monitoring.
+		Long: `Start the Trace daemon. Optionally enables SIEM log monitoring.
 Examples:
-  innoigniter serve
-  innoigniter serve --siem
-  innoigniter serve --siem --syslog-addr :514`,
+  trace serve
+  trace serve --siem
+  trace serve --siem --syslog-addr :514`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := app.initialize(cmd.Flag("config").Value.String()); err != nil {
 				return err
@@ -35,7 +35,7 @@ Examples:
 			sigCh := make(chan os.Signal, 1)
 			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-			log.Printf("InnoIgniterAI v%s starting", Version)
+			log.Printf("Trace v%s starting", Version)
 			log.Printf("Database: %s", app.cfg.DBPath)
 
 			siemEnabled, _ := cmd.Flags().GetBool("siem")

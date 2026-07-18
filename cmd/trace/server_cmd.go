@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/server"
+	"github.com/yanmyoaung2004/trace/internal/server"
 	"github.com/spf13/cobra"
 )
 
@@ -11,13 +11,13 @@ func newServerCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "server",
 		Short: "Start in central server mode",
-		Long: `Start InnoIgniterAI in central server mode with web dashboard and sync API.
+		Long: `Start Trace in central server mode with web dashboard and sync API.
 Edge nodes connect to this server to push investigations and receive cross-node correlation.
 
 Examples:
-  innoigniter server
-  innoigniter server --http-addr :9090
-  innoigniter server --config server-config.json`,
+  trace server
+  trace server --http-addr :9090
+  trace server --config server-config.json`,
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
 			if err := app.initialize(cmdCobra.Flag("config").Value.String()); err != nil {
 				return err
@@ -36,7 +36,7 @@ Examples:
 			}
 			app.cfg.Server.Enabled = true
 
-			fmt.Printf("InnoIgniterAI v%s — Server Mode\n", Version)
+			fmt.Printf("Trace v%s — Server Mode\n", Version)
 			return server.RunServer(app.cfg, app.database, app.invManager)
 		},
 	}

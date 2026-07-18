@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo_dark.png">
-    <img src="docs/assets/logo_light.png" alt="InnoIgniterAI" width="200">
+    <img src="docs/assets/logo_light.png" alt="Trace" width="200">
   </picture>
 </p>
 
@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <b>InnoIgniterAI</b> is an open-source, multi-agent cybersecurity investigation platform.
+  <b>Trace</b> is an open-source, multi-agent cybersecurity investigation platform.
   It orchestrates specialized security agents to triage threats, enrich indicators,
   analyze malicious files, monitor logs in real time, and automate response actions —
   all from a single binary.
@@ -105,7 +105,7 @@ docker compose up server
 
 ## Playbooks
 
-InnoIgniterAI ships with **20 built-in playbooks** — YAML workflows that chain agent actions into repeatable investigation procedures.
+Trace ships with **20 built-in playbooks** — YAML workflows that chain agent actions into repeatable investigation procedures.
 
 | Category       | Playbook                 | Purpose                                          |
 | -------------- | ------------------------ | ------------------------------------------------ |

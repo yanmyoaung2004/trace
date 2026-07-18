@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/siem"
+	"github.com/yanmyoaung2004/trace/internal/siem"
 )
 
 func startEngine(t *testing.T, e *siem.Engine) (context.Context, context.CancelFunc) {

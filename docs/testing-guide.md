@@ -282,7 +282,7 @@ Expected: Build succeeds, vet clean, all tests pass.
 # Version
 .\innoigniter.exe version
 ```
-Expected: `InnoIgniterAI v0.1.0-dev`
+Expected: `Trace v0.1.0-dev`
 
 ```powershell
 # List all registered agents + their capabilities

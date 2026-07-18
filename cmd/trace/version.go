@@ -13,7 +13,7 @@ func newVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print version information",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("InnoIgniterAI v%s\n", Version)
+			fmt.Printf("Trace v%s\n", Version)
 		},
 	}
 }

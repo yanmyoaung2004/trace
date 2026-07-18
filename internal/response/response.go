@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/agent"
+	"github.com/yanmyoaung2004/trace/internal/agent"
 )
 
 type ActionRecord struct {
@@ -36,7 +36,7 @@ type Agent struct {
 }
 
 func New(database *sql.DB) *Agent {
-	qDir := filepath.Join(os.TempDir(), "innoigniter-quarantine")
+	qDir := filepath.Join(os.TempDir(), "trace-quarantine")
 	os.MkdirAll(qDir, 0700)
 	return &Agent{db: database, quarantineDir: qDir}
 }
@@ -80,15 +80,15 @@ func (a *Agent) blockIP(_ context.Context, input agent.Input) (agent.Output, err
 	var cmdStr, rollbackCmd string
 	switch runtime.GOOS {
 	case "windows":
-		ruleName := fmt.Sprintf("innoigniter-block-%s", strings.ReplaceAll(ip, ".", "-"))
-		cmdStr = fmt.Sprintf("netsh advfirewall firewall add rule name=\"%s\" dir=in action=block remoteip=%s", ruleName, ip)
-		rollbackCmd = fmt.Sprintf("netsh advfirewall firewall delete rule name=\"%s\"", ruleName)
+		ruleName := fmt.Sprintf("trace-block-%s", strings.ReplaceAll(ip, ".", "-"))
+		cmdStr = fmt.Sprintf("netsh advfirewall firewall add rule name=%s dir=in action=block remoteip=%s", ruleName, ip)
+		rollbackCmd = fmt.Sprintf("netsh advfirewall firewall delete rule name=%s", ruleName)
 	case "linux":
 		cmdStr = fmt.Sprintf("iptables -A INPUT -s %s -j DROP", ip)
 		rollbackCmd = fmt.Sprintf("iptables -D INPUT -s %s -j DROP", ip)
 	case "darwin":
-		cmdStr = fmt.Sprintf("pfctl -t innoigniter -T add %s", ip)
-		rollbackCmd = fmt.Sprintf("pfctl -t innoigniter -T delete %s", ip)
+		cmdStr = fmt.Sprintf("pfctl -t trace -T add %s", ip)
+		rollbackCmd = fmt.Sprintf("pfctl -t trace -T delete %s", ip)
 	default:
 		return agent.Output{"error": fmt.Sprintf("unsupported OS: %s", runtime.GOOS)}, nil
 	}

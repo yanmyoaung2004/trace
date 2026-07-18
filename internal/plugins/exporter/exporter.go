@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yanmyoaung2004/innoigniter-ai/internal/agent"
+	"github.com/yanmyoaung2004/trace/internal/agent"
 )
 
 type Agent struct {
@@ -84,7 +84,7 @@ func (a *Agent) listHandler(w http.ResponseWriter, r *http.Request) {
 
 	var b strings.Builder
 	b.WriteString(`<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>InnoIgniterAI — Investigations</title>
+<title>Trace — Investigations</title>
 <style>
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 960px; margin: 40px auto; padding: 0 20px; background: #0d1117; color: #c9d1d9; }
 h1 { color: #58a6ff; }

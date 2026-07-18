@@ -18,12 +18,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var updateReleaseURL = "https://github.com/yanmyoaung2004/innoigniter-ai/releases/latest/download"
+var updateReleaseURL = "https://github.com/yanmyoaung2004/trace/releases/latest/download"
 
 func newUpdateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update",
-		Short: "Update InnoIgniterAI or its data",
+		Short: "Update Trace or its data",
 	}
 
 	cmd.AddCommand(&cobra.Command{
@@ -64,7 +64,7 @@ func updateSelf() error {
 		arch = "x86_64"
 	}
 
-	binName := fmt.Sprintf("innoigniter-%s-%s%s", runtime.GOOS, arch, ext)
+	binName := fmt.Sprintf("trace-%s-%s%s", runtime.GOOS, arch, ext)
 	sigName := binName + ".sig"
 	url := fmt.Sprintf("%s/%s", updateReleaseURL, binName)
 	sigURL := fmt.Sprintf("%s/%s", updateReleaseURL, sigName)
@@ -82,7 +82,7 @@ func updateSelf() error {
 		return fmt.Errorf("download failed: HTTP %d", resp.StatusCode)
 	}
 
-	tmpDir, err := os.MkdirTemp("", "innoigniter-update")
+	tmpDir, err := os.MkdirTemp("", "trace-update")
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
@@ -139,7 +139,7 @@ func updateSelf() error {
 
 func updateIntel() error {
 	home, _ := os.UserHomeDir()
-	base := filepath.Join(home, ".innoigniter", "intel")
+	base := filepath.Join(home, ".trace", "intel")
 	os.MkdirAll(base, 0755)
 
 	url := fmt.Sprintf("%s/intel.db", updateReleaseURL)
@@ -174,7 +174,7 @@ func updateIntel() error {
 
 func updatePlaybooks() error {
 	home, _ := os.UserHomeDir()
-	base := filepath.Join(home, ".innoigniter", "playbooks")
+	base := filepath.Join(home, ".trace", "playbooks")
 	os.MkdirAll(base, 0755)
 
 	fmt.Printf("Downloading playbook library from %s ...\n", updateReleaseURL)
