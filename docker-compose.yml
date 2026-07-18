@@ -1,0 +1,50 @@
+version: "3.9"
+
+services:
+  server:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - inno_data:/home/innoigniter/.innoigniter
+    environment:
+      - INNO_VT_API_KEY=${INNO_VT_API_KEY:-}
+      - INNO_LLM_API_KEY=${INNO_LLM_API_KEY:-}
+      - INNO_LLM_URL=${INNO_LLM_URL:-}
+    command: ["server", "--http-addr", ":8080"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "innoigniter", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  edge:
+    build: .
+    depends_on:
+      - server
+    volumes:
+      - inno_edge_data:/home/innoigniter/.innoigniter
+      - ./logs:/logs:ro
+    environment:
+      - INNO_VT_API_KEY=${INNO_VT_API_KEY:-}
+    command: ["serve", "--server-addr", "http://server:8080", "--siem", "--log-dir", "/logs"]
+    restart: unless-stopped
+    profiles:
+      - edge
+
+  edge2:
+    build: .
+    depends_on:
+      - server
+    volumes:
+      - inno_edge2_data:/home/innoigniter/.innoigniter
+    command: ["serve", "--server-addr", "http://server:8080"]
+    restart: unless-stopped
+    profiles:
+      - edge2
+
+volumes:
+  inno_data:
+  inno_edge_data:
+  inno_edge2_data:
