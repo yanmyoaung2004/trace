@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/innoigniter/edge/internal/agent"
+	"github.com/yanmyoaung2004/innoigniter-ai/internal/agent"
 	"github.com/spf13/cobra"
 )
 

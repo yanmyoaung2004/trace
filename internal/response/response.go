@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/innoigniter/edge/internal/agent"
+	"github.com/yanmyoaung2004/innoigniter-ai/internal/agent"
 )
 
 type ActionRecord struct {

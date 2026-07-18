@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/innoigniter/edge/internal/playbook"
+	"github.com/yanmyoaung2004/innoigniter-ai/internal/playbook"
 )
 
 func TestLoadFile(t *testing.T) {

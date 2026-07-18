@@ -9,9 +9,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/innoigniter/edge/internal/agent"
-	"github.com/innoigniter/edge/internal/edge"
-	"github.com/innoigniter/edge/internal/siem"
+	"github.com/yanmyoaung2004/innoigniter-ai/internal/agent"
+	"github.com/yanmyoaung2004/innoigniter-ai/internal/edge"
+	"github.com/yanmyoaung2004/innoigniter-ai/internal/siem"
 	"github.com/spf13/cobra"
 )
 

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/innoigniter/edge/internal/host"
-	"github.com/innoigniter/edge/internal/playbook"
+	"github.com/yanmyoaung2004/innoigniter-ai/internal/host"
+	"github.com/yanmyoaung2004/innoigniter-ai/internal/playbook"
 )
 
 func setupHost(t *testing.T) *host.Agent {

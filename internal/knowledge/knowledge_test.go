@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/innoigniter/edge/internal/db"
-	"github.com/innoigniter/edge/internal/knowledge"
+	"github.com/yanmyoaung2004/innoigniter-ai/internal/db"
+	"github.com/yanmyoaung2004/innoigniter-ai/internal/knowledge"
 )
 
 func setupKnowledge(t *testing.T) *knowledge.Agent {

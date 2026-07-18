@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/innoigniter/edge/internal/agent"
+	"github.com/yanmyoaung2004/innoigniter-ai/internal/agent"
 )
 
 type Agent struct {

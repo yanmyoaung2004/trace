@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/innoigniter/edge/internal/agent"
-	"github.com/innoigniter/edge/internal/playbook"
+	"github.com/yanmyoaung2004/innoigniter-ai/internal/agent"
+	"github.com/yanmyoaung2004/innoigniter-ai/internal/playbook"
 )
 
 type Agent struct {

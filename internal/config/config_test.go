@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/innoigniter/edge/internal/config"
+	"github.com/yanmyoaung2004/innoigniter-ai/internal/config"
 )
 
 func TestDefault(t *testing.T) {

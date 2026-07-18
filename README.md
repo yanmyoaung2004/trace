@@ -292,8 +292,8 @@ MIT — see [LICENSE](LICENSE).
 
 ## Community
 
-- [Issues](https://github.com/innoigniter/edge/issues) — bug reports and feature requests
-- [Discussions](https://github.com/innoigniter/edge/discussions) — questions and ideas
+- [Issues](https://github.com/yanmyoaung2004/innoigniter-ai/issues) — bug reports and feature requests
+- [Discussions](https://github.com/yanmyoaung2004/innoigniter-ai/discussions) — questions and ideas
 - [Security](SECURITY.md) — vulnerability reporting
 
 Built with Go, SQLite, YARA, and the MITRE ATT&CK framework.

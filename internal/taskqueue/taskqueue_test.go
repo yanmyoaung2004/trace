@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/innoigniter/edge/internal/db"
-	"github.com/innoigniter/edge/internal/taskqueue"
+	"github.com/yanmyoaung2004/innoigniter-ai/internal/db"
+	"github.com/yanmyoaung2004/innoigniter-ai/internal/taskqueue"
 )
 
 func setupQueue(t *testing.T) *taskqueue.Queue {

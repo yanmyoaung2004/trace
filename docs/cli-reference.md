@@ -171,7 +171,7 @@ Subcommands:
 | `intel` | Refresh the intel database from release server |
 | `playbooks` | Fetch the latest playbook library |
 
-Release downloads from `https://github.com/innoigniter/edge/releases/latest/download`.
+Release downloads from `https://github.com/yanmyoaung2004/innoigniter-ai/releases/latest/download`.
 Signature files (`.sig`) are checked if present.
 
 ---

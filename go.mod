@@ -1,4 +1,4 @@
-module github.com/innoigniter/edge
+module github.com/yanmyoaung2004/innoigniter-ai
 
 go 1.26.4
 

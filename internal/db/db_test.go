@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/innoigniter/edge/internal/db"
+	"github.com/yanmyoaung2004/innoigniter-ai/internal/db"
 )
 
 func TestOpen(t *testing.T) {

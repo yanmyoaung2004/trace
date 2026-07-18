@@ -7,8 +7,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/innoigniter/edge/internal/db"
-	"github.com/innoigniter/edge/internal/detection"
+	"github.com/yanmyoaung2004/innoigniter-ai/internal/db"
+	"github.com/yanmyoaung2004/innoigniter-ai/internal/detection"
 )
 
 func setupDetection(t *testing.T) *detection.Agent {

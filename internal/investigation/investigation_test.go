@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/innoigniter/edge/internal/db"
-	"github.com/innoigniter/edge/internal/investigation"
+	"github.com/yanmyoaung2004/innoigniter-ai/internal/db"
+	"github.com/yanmyoaung2004/innoigniter-ai/internal/investigation"
 )
 
 func setupManager(t *testing.T) *investigation.Manager {

@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/innoigniter/edge/internal/server"
+	"github.com/yanmyoaung2004/innoigniter-ai/internal/server"
 	"github.com/spf13/cobra"
 )
 

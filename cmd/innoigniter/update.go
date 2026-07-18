@@ -18,7 +18,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var updateReleaseURL = "https://github.com/innoigniter/edge/releases/latest/download"
+var updateReleaseURL = "https://github.com/yanmyoaung2004/innoigniter-ai/releases/latest/download"
 
 func newUpdateCmd() *cobra.Command {
 	cmd := &cobra.Command{

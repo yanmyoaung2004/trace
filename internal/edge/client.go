@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/innoigniter/edge/internal/investigation"
+	"github.com/yanmyoaung2004/innoigniter-ai/internal/investigation"
 )
 
 type SyncClient struct {
