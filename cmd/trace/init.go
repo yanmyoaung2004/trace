@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -69,7 +70,7 @@ You can skip any step — the tool works without external API keys.`,
 				cfg["llm_provider"] = "openai"
 			}
 
-		if wsKey := prompt(reader, "Web search API key (optional): "); wsKey != "" {
+		if wsKey := prompt(reader, "Firecrawl API key (web search, optional): "); wsKey != "" {
 			cfg["web_search_key"] = wsKey
 		}
 
@@ -99,7 +100,37 @@ You can skip any step — the tool works without external API keys.`,
 			}
 
 			fmt.Printf("\nConfig written to %s\n", cfgPath)
-			fmt.Println("Run 'trace serve' to start or 'trace investigate' for a quick check.")
+
+			if resp := prompt(reader, "\nAdd trace to your PATH so you can run it from anywhere? [y/N]: "); strings.ToLower(resp) == "y" {
+				binDir, _ := filepath.Split(os.Args[0])
+				absDir, _ := filepath.Abs(binDir)
+
+				if runtime.GOOS == "windows" {
+					psCmd := fmt.Sprintf(`$dir = '%s'; $path = [Environment]::GetEnvironmentVariable('PATH', 'User'); if ($path -notlike '*'+$dir+'*') { [Environment]::SetEnvironmentVariable('PATH', $dir+';'+$path, 'User'); Write-Output 'Added to PATH. Restart your terminal to use just: trace' } else { Write-Output 'Already in PATH.' }`, absDir)
+					os.WriteFile(filepath.Join(os.TempDir(), "add-trace-path.ps1"), []byte(psCmd), 0644)
+					exec, _ := os.Executable()
+					if strings.HasSuffix(strings.ToLower(exec), ".exe") {
+						fmt.Printf("Run this in an admin PowerShell to add trace to PATH:\n  [Environment]::SetEnvironmentVariable('PATH', '%s;'+[Environment]::GetEnvironmentVariable('PATH','User'), 'User')\n\n", absDir)
+						fmt.Printf("Or manually add %s to your PATH.\n", absDir)
+					}
+				} else {
+					rcPath := filepath.Join(os.Getenv("HOME"), ".bashrc")
+					if _, err := os.Stat(rcPath); os.IsNotExist(err) {
+						rcPath = filepath.Join(os.Getenv("HOME"), ".zshrc")
+					}
+					line := fmt.Sprintf("\nexport PATH=\"%s:$PATH\"\n", absDir)
+					f, _ := os.OpenFile(rcPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+					if f != nil {
+						f.WriteString(line)
+						f.Close()
+						fmt.Printf("Added to %s. Run 'source %s' or restart your shell.\n", rcPath, rcPath)
+					}
+				}
+			}
+
+			fmt.Println("\nDone! Start investigating:")
+			fmt.Println("  trace serve          # start the daemon")
+			fmt.Println("  trace investigate    # run an investigation")
 			return nil
 		},
 	}

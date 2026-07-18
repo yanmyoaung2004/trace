@@ -192,6 +192,7 @@ func (re *RuleEngine) Evaluate(event *Event) []*Alert {
 			Source:      "siem",
 			Event:       event,
 			RuleID:      rule.RuleID,
+			Actions:     rule.Actions,
 			CreatedAt:   now,
 		}
 		alerts = append(alerts, alert)
@@ -303,4 +304,21 @@ func correlationKey(event *Event, rule CompiledRule) string {
 
 func cidrMatch(ip, cidr string) bool {
 	return strings.HasPrefix(ip, strings.Split(cidr, "/")[0])
+}
+
+func InterpolateParams(params map[string]any, event *Event) map[string]any {
+	out := make(map[string]any, len(params))
+	for k, v := range params {
+		str, ok := v.(string)
+		if !ok {
+			out[k] = v
+			continue
+		}
+		for fk, fv := range event.Fields {
+			placeholder := "${" + fk + "}"
+			str = strings.ReplaceAll(str, placeholder, fmt.Sprintf("%v", fv))
+		}
+		out[k] = str
+	}
+	return out
 }

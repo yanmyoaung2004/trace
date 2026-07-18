@@ -22,14 +22,15 @@ type Event struct {
 }
 
 type Alert struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	Severity  int       `json:"severity"`
-	MITRE     string    `json:"mitre,omitempty"`
-	Source    string    `json:"source"`
-	Event     *Event    `json:"event,omitempty"`
-	RuleID    string    `json:"rule_id"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        string       `json:"id"`
+	Title     string       `json:"title"`
+	Severity  int          `json:"severity"`
+	MITRE     string       `json:"mitre,omitempty"`
+	Source    string       `json:"source"`
+	Event     *Event       `json:"event,omitempty"`
+	RuleID    string       `json:"rule_id"`
+	Actions   []RuleAction `json:"actions,omitempty"`
+	CreatedAt time.Time    `json:"created_at"`
 }
 
 type SIEMConfig struct {

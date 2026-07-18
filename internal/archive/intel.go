@@ -1,12 +1,16 @@
 package archive
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"sync"
+	"time"
 )
 
 type IntelEntry struct {
@@ -133,19 +137,84 @@ func (ic *IntelCache) Warm(ctx context.Context) error {
 	return nil
 }
 
+type fcSearchResult struct {
+	Title       string `json:"title"`
+	URL         string `json:"url"`
+	Description string `json:"description"`
+}
+
+type fcSearchResponse struct {
+	Success bool `json:"success"`
+	Data    struct {
+		Web []fcSearchResult `json:"web"`
+	} `json:"data"`
+}
+
 type WebSearchClient struct {
 	apiKey string
+	http   *http.Client
 }
 
 func NewWebSearchClient(apiKey string) *WebSearchClient {
-	return &WebSearchClient{apiKey: apiKey}
+	return &WebSearchClient{
+		apiKey: apiKey,
+		http:   &http.Client{Timeout: 30 * time.Second},
+	}
 }
 
 func (w *WebSearchClient) Search(ctx context.Context, query string) ([]string, error) {
 	if w.apiKey == "" {
-		return []string{"Web search not configured (set TRACE_WEB_SEARCH_KEY)"}, nil
+		return []string{"Web search not configured (set TRACE_WEB_SEARCH_KEY or obtain a free key at https://firecrawl.dev)"}, nil
 	}
-	return []string{fmt.Sprintf("Search results for: %s (stub)", query)}, nil
+
+	body, _ := json.Marshal(map[string]any{
+		"query": query,
+		"limit": 5,
+	})
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.firecrawl.dev/v2/search", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+w.apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := w.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("search request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("search API returned %d: %s", resp.StatusCode, string(raw))
+	}
+
+	var result fcSearchResponse
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, fmt.Errorf("parse response: %w", err)
+	}
+
+	if !result.Success {
+		return nil, fmt.Errorf("search API returned unsuccessful")
+	}
+
+	var out []string
+	for _, r := range result.Data.Web {
+		s := fmt.Sprintf("[%s](%s)", r.Title, r.URL)
+		if r.Description != "" {
+			s += " — " + r.Description
+		}
+		out = append(out, s)
+	}
+	if len(out) == 0 {
+		out = append(out, "No results found.")
+	}
+	return out, nil
 }
 
 

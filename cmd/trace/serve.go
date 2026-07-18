@@ -53,7 +53,55 @@ Examples:
 
 				engine := siem.New(siemCfg)
 				engine.OnAlert(func(alert *siem.Alert) {
-					log.Printf("[ALERT] %s (severity: %d)", alert.Title, alert.Severity)
+					log.Printf("[ALERT] %s (severity: %d, rule: %s)", alert.Title, alert.Severity, alert.RuleID)
+
+					for _, action := range alert.Actions {
+						go func(a siem.RuleAction) {
+							defer func() {
+								if r := recover(); r != nil {
+									log.Printf("[ALERT] panic executing playbook %s: %v", a.Playbook, r)
+								}
+							}()
+
+							alertCtx, alertCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+							defer alertCancel()
+
+							pb := app.playbooks.Get(a.Playbook)
+							if pb == nil {
+								log.Printf("[ALERT] playbook %q not found for rule %s", a.Playbook, alert.RuleID)
+								return
+							}
+
+							params := siem.InterpolateParams(a.Params, alert.Event)
+							inv, err := app.invManager.Create(alertCtx, alert.Title, a.Playbook)
+							if err != nil {
+								log.Printf("[ALERT] create investigation: %v", err)
+								return
+							}
+
+							results, err := app.executor.Execute(alertCtx, inv, pb, params)
+							if err != nil {
+								log.Printf("[ALERT] playbook %s failed: %v", a.Playbook, err)
+								app.invManager.UpdateStatus(alertCtx, inv.ID, "failed")
+								return
+							}
+
+							reportOutput, err := app.dispatchAgent.Execute(alertCtx, agent.Input{
+								"action":           "synthesize_report",
+								"results":          results,
+								"investigation_id": inv.ID,
+								"intent":           alert.Title,
+							})
+							if err != nil {
+								log.Printf("[ALERT] report synthesis failed: %v", err)
+								return
+							}
+
+							if report, ok := reportOutput["report"].(string); ok && report != "" {
+								log.Printf("[ALERT] investigation %s completed — playbook: %s", inv.ID[:8], a.Playbook)
+							}
+						}(action)
+					}
 				})
 
 				if err := engine.Start(ctx); err != nil {
