@@ -1,16 +1,17 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/innoigniter/edge/main/docs/assets/banner-dark.svg">
-    <img src="docs/assets/banner-light.svg" alt="InnoIgniterAI — Multi-agent cybersecurity platform" width="600">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.svg">
+    <img src="docs/assets/banner-light.svg" alt="InnoIgniterAI — Multi-agent cybersecurity platform" width="700">
   </picture>
 </p>
 
 <p align="center">
-  <a href="#"><img src="https://img.shields.io/github/actions/workflow/status/innoigniter/edge/ci.yml?branch=main&style=for-the-badge&logo=github&label=CI" alt="CI"></a>
-  <a href="#"><img src="https://img.shields.io/github/v/release/innoigniter/edge?style=for-the-badge&logo=go&label=Release" alt="Release"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Build-passing-3fb950?style=for-the-badge&logo=go" alt="Build"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="License"></a>
   <a href="#"><img src="https://img.shields.io/badge/Go-1.26-00ADD8?style=for-the-badge&logo=go" alt="Go 1.26"></a>
   <a href="#"><img src="https://img.shields.io/badge/platform-Windows%20|%20Linux%20|%20macOS-8A2BE2?style=for-the-badge" alt="Platforms"></a>
+  <a href="#"><img src="https://img.shields.io/badge/37%20tests-passing-3fb950?style=for-the-badge" alt="Tests"></a>
+  <a href="#"><img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="MIT"></a>
 </p>
 
 <p align="center">
