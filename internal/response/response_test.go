@@ -38,6 +38,9 @@ func TestBlockIPNoIP(t *testing.T) {
 }
 
 func TestBlockIPRecorded(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping OS command test in short mode")
+	}
 	agent := setupResponse(t)
 	ctx := context.Background()
 
@@ -98,6 +101,9 @@ func TestKillProcessNoTarget(t *testing.T) {
 }
 
 func TestKillProcessByName(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping OS command test in short mode")
+	}
 	agent := setupResponse(t)
 	ctx := context.Background()
 
@@ -121,6 +127,9 @@ func TestKillProcessByName(t *testing.T) {
 }
 
 func TestRestartService(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping OS command test in short mode")
+	}
 	agent := setupResponse(t)
 	ctx := context.Background()
 
@@ -156,6 +165,9 @@ func TestRollbackNotFound(t *testing.T) {
 }
 
 func TestAllActionsReturnActionID(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping OS command execution test in short mode")
+	}
 	agent := setupResponse(t)
 	ctx := context.Background()
 
