@@ -190,11 +190,11 @@ This ensures the first real investigation never hits cold cache and serves as a 
 
 ### 9. Single binary update strategy
 
-- `innoigniter update` — downloads new binary, verifies signature, swaps atomically
-- `innoigniter update-intel` — refreshes threat intel DB from a CDN-hosted snapshot
-- `innoigniter plugin install <name>` — downloads a new detection plugin
+- .trace update` — downloads new binary, verifies signature, swaps atomically
+- .trace update-intel` — refreshes threat intel DB from a CDN-hosted snapshot
+- .trace plugin install <name>` — downloads a new detection plugin
 
-All updates are signed. Rollback via `innoigniter update --version <prev>`.
+All updates are signed. Rollback via .trace update --version <prev>`.
 
 ## What This Enables
 

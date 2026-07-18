@@ -1,4 +1,4 @@
-﻿# InnoIgniterAI — End-to-End Demo Script
+# Trace � End-to-End Demo Script
 # Run this from the dev/ directory after building the binary.
 # This walks through installation, investigations, SIEM, server, and team features.
 
@@ -11,54 +11,54 @@ param(
 $ErrorActionPreference = "Continue"
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $Dev = Resolve-Path "$Here\.."
-$Bin = "$Dev\innoigniter.exe"
+$Bin = "$Dev\trace.exe"
 $EicarHash = "e99a18c428cb38d5f260853678922e03"
 $MimikatzHash = "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
 
-Write-Host "╔══════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║     InnoIgniterAI — End-to-End Demo             ║" -ForegroundColor Cyan
-Write-Host "╚══════════════════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host "+--------------------------------------------------+" -ForegroundColor Cyan
+Write-Host "�     Trace � End-to-End Demo             �" -ForegroundColor Cyan
+Write-Host "+--------------------------------------------------+" -ForegroundColor Cyan
 Write-Host ""
 
-# ─── Step 0: Build ───
-Write-Host "▸ Step 0: Build binary" -ForegroundColor Yellow
+# --- Step 0: Build ---
+Write-Host "? Step 0: Build binary" -ForegroundColor Yellow
 Push-Location $Dev
-go build -o innoigniter.exe ./cmd/innoigniter
+go build -o trace.exe ./cmd.trace
 if (-not (Test-Path $Bin)) { Write-Host "Build failed!" -ForegroundColor Red; exit 1 }
-Write-Host "  ✓ Binary built: $Bin" -ForegroundColor Green
+Write-Host "  ? Binary built: $Bin" -ForegroundColor Green
 Write-Host ""
 
-# ─── Step 1: Version & Help ───
-Write-Host "▸ Step 1: Version & help" -ForegroundColor Yellow
+# --- Step 1: Version & Help ---
+Write-Host "? Step 1: Version & help" -ForegroundColor Yellow
 & $Bin version
 Write-Host ""
 
 & $Bin --help
 Write-Host ""
 
-# ─── Step 2: Quick investigation (no setup) ───
-Write-Host "▸ Step 2: Quick investigation — known malicious hash" -ForegroundColor Yellow
+# --- Step 2: Quick investigation (no setup) ---
+Write-Host "? Step 2: Quick investigation � known malicious hash" -ForegroundColor Yellow
 Write-Host "  Running: investigate `"check hash $MimikatzHash`"" -ForegroundColor Gray
 $result = & $Bin investigate "check hash $MimikatzHash" 2>&1
 Write-Host $result
 Write-Host ""
 
-# ─── Step 3: Investigation with explicit playbook ───
-Write-Host "▸ Step 3: Explicit playbook — hash-lookup" -ForegroundColor Yellow
+# --- Step 3: Investigation with explicit playbook ---
+Write-Host "? Step 3: Explicit playbook � hash-lookup" -ForegroundColor Yellow
 Write-Host "  Running: investigate --playbook hash-lookup --param hash=$EicarHash" -ForegroundColor Gray
 $result = & $Bin investigate --playbook hash-lookup --param "hash=$EicarHash" 2>&1
 Write-Host $result
 Write-Host ""
 
-# ─── Step 4: Domain reputation ───
-Write-Host "▸ Step 4: Domain reputation check" -ForegroundColor Yellow
+# --- Step 4: Domain reputation ---
+Write-Host "? Step 4: Domain reputation check" -ForegroundColor Yellow
 Write-Host "  Running: investigate --playbook domain-reputation --param domain=evil.com" -ForegroundColor Gray
 $result = & $Bin investigate --playbook domain-reputation --param domain=evil.com 2>&1
 Write-Host $result
 Write-Host ""
 
-# ─── Step 5: History & Status ───
-Write-Host "▸ Step 5: Investigation history & status" -ForegroundColor Yellow
+# --- Step 5: History & Status ---
+Write-Host "? Step 5: Investigation history & status" -ForegroundColor Yellow
 & $Bin history
 Write-Host ""
 
@@ -70,8 +70,8 @@ if ($lastInv) {
 }
 Write-Host ""
 
-# ─── Step 6: File analysis (YARA) ───
-Write-Host "▸ Step 6: File analysis with YARA" -ForegroundColor Yellow
+# --- Step 6: File analysis (YARA) ---
+Write-Host "? Step 6: File analysis with YARA" -ForegroundColor Yellow
 $tmpDir = Join-Path $env:TEMP "inno-demo-$(Get-Random)"
 New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
 $eicarPath = Join-Path $tmpDir "eicar.txt"
@@ -83,8 +83,8 @@ Write-Host $result
 Remove-Item -Recurse $tmpDir -Force -ErrorAction SilentlyContinue
 Write-Host ""
 
-# ─── Step 7: SIEM engine (quick test) ───
-Write-Host "▸ Step 7: SIEM engine detection (1 min test)" -ForegroundColor Yellow
+# --- Step 7: SIEM engine (quick test) ---
+Write-Host "? Step 7: SIEM engine detection (1 min test)" -ForegroundColor Yellow
 Write-Host "  Starting SIEM engine in background..." -ForegroundColor Gray
 $logDir = Join-Path $env:TEMP "inno-siem-logs-$(Get-Random)"
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
@@ -110,8 +110,8 @@ Remove-Job $job -ErrorAction SilentlyContinue
 Remove-Item -Recurse $logDir -Force -ErrorAction SilentlyContinue
 Write-Host ""
 
-# ─── Step 8: Central server mode ───
-Write-Host "▸ Step 8: Central server mode (brief test)" -ForegroundColor Yellow
+# --- Step 8: Central server mode ---
+Write-Host "? Step 8: Central server mode (brief test)" -ForegroundColor Yellow
 Write-Host "  Starting server in background on :9090..." -ForegroundColor Gray
 
 $serverJob = Start-Job -ScriptBlock {
@@ -123,10 +123,10 @@ Start-Sleep -Seconds 2
 
 try {
     $health = Invoke-WebRequest -Uri "http://localhost:9090/health" -UseBasicParsing -TimeoutSec 5
-    Write-Host "  ✓ Server health check: $($health.StatusCode)" -ForegroundColor Green
+    Write-Host "  ? Server health check: $($health.StatusCode)" -ForegroundColor Green
 
     $nodes = Invoke-WebRequest -Uri "http://localhost:9090/api/v1/nodes" -UseBasicParsing -TimeoutSec 5
-    Write-Host "  ✓ Nodes API response received" -ForegroundColor Green
+    Write-Host "  ? Nodes API response received" -ForegroundColor Green
 
     Write-Host "  Open http://localhost:9090 in your browser for the dashboard." -ForegroundColor Cyan
 } catch {
@@ -137,38 +137,38 @@ Stop-Job $serverJob -ErrorAction SilentlyContinue
 Remove-Job $serverJob -ErrorAction SilentlyContinue
 Write-Host ""
 
-# ─── Step 9: Plugin listing ───
-Write-Host "▸ Step 9: Agent & plugin listing" -ForegroundColor Yellow
+# --- Step 9: Plugin listing ---
+Write-Host "? Step 9: Agent & plugin listing" -ForegroundColor Yellow
 & $Bin plugin list
 Write-Host ""
 
-# ─── Step 10: Cleanup ───
-Write-Host "▸ Step 10: Cleanup" -ForegroundColor Yellow
+# --- Step 10: Cleanup ---
+Write-Host "? Step 10: Cleanup" -ForegroundColor Yellow
 Write-Host "  Removing demo database..." -ForegroundColor Gray
-Remove-Item -Recurse "$env:USERPROFILE\.innoigniter" -Force -ErrorAction SilentlyContinue
+Remove-Item -Recurse "$env:USERPROFILE\.trace" -Force -ErrorAction SilentlyContinue
 Write-Host ""
 
-# ─── Summary ───
-Write-Host "╔══════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║  Demo Complete!                                  ║" -ForegroundColor Cyan
-Write-Host "╠══════════════════════════════════════════════════╣" -ForegroundColor Cyan
-Write-Host "║  Steps demonstrated:                              ║" -ForegroundColor Cyan
-Write-Host "║  1. Build from source                            ║" -ForegroundColor Cyan
-Write-Host "║  2. Version & help                               ║" -ForegroundColor Cyan
-Write-Host "║  3. Natural language investigation               ║" -ForegroundColor Cyan
-Write-Host "║  4. Explicit playbook execution                  ║" -ForegroundColor Cyan
-Write-Host "║  5. Domain reputation check                      ║" -ForegroundColor Cyan
-Write-Host "║  6. History & status tracking                    ║" -ForegroundColor Cyan
-Write-Host "║  7. File analysis with YARA                     ║" -ForegroundColor Cyan
-Write-Host "║  8. SIEM log monitoring + correlation            ║" -ForegroundColor Cyan
-Write-Host "║  9. Central server mode + API                    ║" -ForegroundColor Cyan
-Write-Host "║ 10. Agent plugin listing                         ║" -ForegroundColor Cyan
-Write-Host "╚══════════════════════════════════════════════════╝" -ForegroundColor Cyan
+# --- Summary ---
+Write-Host "+--------------------------------------------------+" -ForegroundColor Cyan
+Write-Host "�  Demo Complete!                                  �" -ForegroundColor Cyan
+Write-Host "�--------------------------------------------------�" -ForegroundColor Cyan
+Write-Host "�  Steps demonstrated:                              �" -ForegroundColor Cyan
+Write-Host "�  1. Build from source                            �" -ForegroundColor Cyan
+Write-Host "�  2. Version & help                               �" -ForegroundColor Cyan
+Write-Host "�  3. Natural language investigation               �" -ForegroundColor Cyan
+Write-Host "�  4. Explicit playbook execution                  �" -ForegroundColor Cyan
+Write-Host "�  5. Domain reputation check                      �" -ForegroundColor Cyan
+Write-Host "�  6. History & status tracking                    �" -ForegroundColor Cyan
+Write-Host "�  7. File analysis with YARA                     �" -ForegroundColor Cyan
+Write-Host "�  8. SIEM log monitoring + correlation            �" -ForegroundColor Cyan
+Write-Host "�  9. Central server mode + API                    �" -ForegroundColor Cyan
+Write-Host "� 10. Agent plugin listing                         �" -ForegroundColor Cyan
+Write-Host "+--------------------------------------------------+" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor White
-Write-Host "  innoigniter init                     - configure API keys" -ForegroundColor Gray
-Write-Host "  innoigniter serve --siem             - start daemon with SIEM" -ForegroundColor Gray
-Write-Host "  innoigniter server --http-addr :8080  - start central server" -ForegroundColor Gray
-Write-Host "  innoigniter completion powershell | Out-String | Invoke-Expression - enable tab completion" -ForegroundColor Gray
+Write-Host " .trace init                     - configure API keys" -ForegroundColor Gray
+Write-Host " .trace serve --siem             - start daemon with SIEM" -ForegroundColor Gray
+Write-Host " .trace server --http-addr :8080  - start central server" -ForegroundColor Gray
+Write-Host " .trace completion powershell | Out-String | Invoke-Expression - enable tab completion" -ForegroundColor Gray
 
 Pop-Location

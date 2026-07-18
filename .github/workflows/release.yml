@@ -31,17 +31,17 @@ jobs:
 
       - name: Generate checksums
         run: |
-          sha256sum innoigniter-* > checksums.txt
+          sha256sum.trace-* > checksums.txt
           cat checksums.txt
 
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            innoigniter-linux-amd64
-            innoigniter-linux-arm64
-            innoigniter-darwin-amd64
-            innoigniter-darwin-arm64
-            innoigniter-windows-amd64.exe
+           .trace-linux-amd64
+           .trace-linux-arm64
+           .trace-darwin-amd64
+           .trace-darwin-arm64
+           .trace-windows-amd64.exe
             checksums.txt
           generate_release_notes: true

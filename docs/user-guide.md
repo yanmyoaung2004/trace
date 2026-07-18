@@ -27,7 +27,7 @@
 ```powershell
 # Build from source
 cd dev
-go build -o innoigniter.exe .\cmd\innoigniter\
+go build -o trace.exe .\cmd.trace\
 
 # Or download a release binary
 # (once releases are published to GitHub)
@@ -37,7 +37,7 @@ go build -o innoigniter.exe .\cmd\innoigniter\
 
 ```bash
 cd dev
-go build -o innoigniter ./cmd/innoigniter
+go build -o.trace ./cmd.trace
 ```
 
 ### Docker
@@ -56,16 +56,16 @@ docker compose up server
 
 ```powershell
 # Check version
-.\innoigniter.exe version
+.\trace.exe version
 
 # Run an investigation immediately (uses defaults)
-.\innoigniter.exe investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+.\trace.exe investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
 ```
 
 ### Interactive setup
 
 ```powershell
-.\innoigniter.exe init
+.\trace.exe init
 ```
 
 The wizard prompts for:
@@ -327,7 +327,7 @@ On macOS: adds rule via `pfctl`.
 innoigniter investigate --playbook quarantine-file --param path=C:\Users\admin\malware.exe
 ```
 
-Moves file to `%TEMP%\innoigniter-quarantine\`.
+Moves file to `%TEMP%.trace-quarantine\`.
 
 ### Kill a process
 
@@ -402,9 +402,9 @@ Dashboard → Correlations tab shows all cross-node IOCs.
 |---|---|---|
 | `VT API key not configured` | No VirusTotal key | Set `$env:INNO_VT_API_KEY` |
 | `path is required` | Missing parameter | Use `--param path=...` |
-| `playbook not found` | Typo in name | Run `innoigniter plugin list` to see available playbooks |
-| `connection refused` on server sync | Server not running | Start `innoigniter server` first |
-| Investigation stuck on `running` | Task worker not started | Start `innoigniter serve` |
+| `playbook not found` | Typo in name | Run .trace plugin list` to see available playbooks |
+| `connection refused` on server sync | Server not running | Start .trace server` first |
+| Investigation stuck on `running` | Task worker not started | Start .trace serve` |
 | `The requested operation requires elevation` | Admin rights needed | Run PowerShell as Administrator |
 | `abuseipdb rate limited` | Free tier exceeded | Wait 1 minute or upgrade API key |
 | DB locked errors | Multiple concurrent writes | Reduce concurrent investigations |
@@ -413,17 +413,17 @@ Dashboard → Correlations tab shows all cross-node IOCs.
 
 ```powershell
 # Investigation audit logs
-dir $env:USERPROFILE\.innoigniter\logs\
+dir $env:USERPROFILE\.trace\logs\
 
 # View a specific investigation log
-type $env:USERPROFILE\.innoigniter\logs\<investigation-id>.jsonl
+type $env:USERPROFILE\.trace\logs\<investigation-id>.jsonl
 ```
 
 ### Reset
 
 ```powershell
 # Delete database and start fresh
-Remove-Item -Recurse $env:USERPROFILE\.innoigniter\
+Remove-Item -Recurse $env:USERPROFILE\.trace\
 ```
 
 ---

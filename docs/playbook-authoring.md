@@ -65,4 +65,4 @@ steps:
 
 ## Loading
 
-Place playbooks in `~/.innoigniter/playbooks/` — they are auto-loaded on startup.
+Place playbooks in `~/.trace/playbooks/` — they are auto-loaded on startup.

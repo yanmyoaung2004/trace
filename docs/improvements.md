@@ -91,7 +91,7 @@ SQLite database pre-populated with:
 - Known YARA rules
 - Known IOC hashes
 
-Update via `innoigniter update-intel` or periodic background fetch.
+Update via .trace update-intel` or periodic background fetch.
 
 ## 7. Limit VT dependency
 

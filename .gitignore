@@ -4,8 +4,8 @@
 *.dll
 *.so
 *.dylib
-/innoigniter
-/innoigniter.exe
+.trace
+/trace.exe
 
 # Go
 *.test
@@ -27,7 +27,7 @@ intel/*.db
 !intel/seed*.db
 
 # Data
-.innoigniter/
+.trace/
 
 # Search cache
 .firecrawl/

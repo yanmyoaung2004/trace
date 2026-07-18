@@ -4,18 +4,18 @@
 
 **Goal**: Go module ready to build.
 
-- `go mod init github.com/<you>/innoigniter`
+- `go mod init github.com/<you>.trace`
 - Directory structure
 - CI: `go build`, `go vet`, `go test ./...`
 - `Makefile` with common commands
-- `cmd/innoigniter/main.go` — entrypoint
+- `cmd.trace/main.go` — entrypoint
 - `internal/` — all packages private
 - `playbooks/` — YAML playbook directory
 - `intel/` — bundled SQLite DB with MITRE + CVE seed data
 
 ```
 innoigniter/
-├── cmd/innoigniter/main.go
+├── cmd.trace/main.go
 ├── internal/
 │   ├── agent/        # Agent interface
 │   ├── playbook/     # Playbook engine
@@ -63,7 +63,7 @@ type Capability struct {
 }
 ```
 
-**Verification**: `innoigniter serve` starts, agents register, SQLite initializes, CLI responds.
+**Verification**: .trace serve` starts, agents register, SQLite initializes, CLI responds.
 
 ---
 
@@ -88,7 +88,7 @@ type Capability struct {
 - `process-investigation` — process name → known malware → MITRE mapping
 - `alert-triage` — generic alert → enrich IOCs → severity → report
 
-**Verification**: `innoigniter investigate --playbook hash-lookup --param hash=<sha256>` runs the full DAG and prints a report.
+**Verification**: .trace investigate --playbook hash-lookup --param hash=<sha256>` runs the full DAG and prints a report.
 
 ---
 
@@ -107,7 +107,7 @@ type Capability struct {
 - Web search tool for open-source threat intel (configurable provider)
 - RAG pipeline: embed intel documents → store in SQLite vec table → semantic search
 
-**Verification**: `innoigniter investigate --playbook ioc-enrich --param ioc=<value>` enriches with MITRE + CVE knowledge.
+**Verification**: .trace investigate --playbook ioc-enrich --param ioc=<value>` enriches with MITRE + CVE knowledge.
 
 ---
 
@@ -127,7 +127,7 @@ type Capability struct {
   - `vt_lookup` — hash/URL/domain → VT report with detection ratio + vendor labels
   - `file_analyze` — combo: hash + YARA + PE + VT in one step
 
-**Verification**: `innoigniter investigate --playbook file-analysis --param file=<path>` produces detection verdict with confidence score.
+**Verification**: .trace investigate --playbook file-analysis --param file=<path>` produces detection verdict with confidence score.
 
 ---
 
@@ -148,7 +148,7 @@ type Capability struct {
 - Investigation lifecycle: create, dispatch, track, complete, archive
 - Markdown report with: summary, indicators, MITRE mapping, confidence, evidence, timeline, remediation
 
-**Verification**: `innoigniter investigate "check this file" --file malware.exe` → playbook matches → agents execute → report printed. End-to-end.
+**Verification**: .trace investigate "check this file" --file malware.exe` → playbook matches → agents execute → report printed. End-to-end.
 
 ---
 
@@ -177,7 +177,7 @@ type Capability struct {
 - File changes in sensitive directories (/etc, %SYSTEMROOT%)
 - Known-bad hash detection via YARA on new files
 
-**Verification**: `innoigniter serve --siem` starts file watcher, decodes log, detects 5 auth failures from same IP, creates alert, triggers `ip-reputation` playbook.
+**Verification**: .trace serve --siem` starts file watcher, decodes log, detects 5 auth failures from same IP, creates alert, triggers `ip-reputation` playbook.
 
 ---
 
@@ -193,11 +193,11 @@ type Capability struct {
   - `restart_service` — systemctl (Linux), sc (Windows)
   - `add_firewall_rule` — allow/block port, protocol, direction
 - All actions record: who triggered, what was done, timestamp, original state for rollback
-- Rollback capability — store undo commands per action, expose `innoigniter rollback <action-id>`
+- Rollback capability — store undo commands per action, expose .trace rollback <action-id>`
 - HITL approval: playbook step with `wait: analyst_approval` blocks until analyst confirms or denies
-- CLI: `innoigniter approval pending`, `approve <id>`, `deny <id>`
+- CLI: .trace approval pending`, `approve <id>`, `deny <id>`
 
-**Verification**: Phishing playbook runs → detection extracts malicious domains → playbook pauses → `innoigniter approval pending` → sees domain block request → `approve` → Response Agent blocks via iptables.
+**Verification**: Phishing playbook runs → detection extracts malicious domains → playbook pauses → .trace approval pending` → sees domain block request → `approve` → Response Agent blocks via iptables.
 
 ---
 
@@ -212,10 +212,10 @@ type Capability struct {
   - LLM provider: OpenAI GPT-4 → implement `Planner` interface
   - Threat intel feed: STIX/TAXII → fetch → normalize → merge into local intel DB
   - Exporter: HTML report → serve as local web page
-- `innoigniter plugin install <name>` — download plugin binary to `~/.innoigniter/plugins/`
-- `innoigniter plugin list` — show installed + their capabilities
+- .trace plugin install <name>` — download plugin binary to `~/.trace/plugins/`
+- .trace plugin list` — show installed + their capabilities
 
-**Verification**: `innoigniter plugin install inno-splunk` → SIEM connector appears in capabilities → Splunk alerts trigger investigations.
+**Verification**: .trace plugin install inno-splunk` → SIEM connector appears in capabilities → Splunk alerts trigger investigations.
 
 ---
 
@@ -223,7 +223,7 @@ type Capability struct {
 
 **Goal**: Optional central binary for team deployment with aggregation and dashboard.
 
-- Same Go binary, server mode via `innoigniter server` (different config)
+- Same Go binary, server mode via .trace server` (different config)
 - Edge sync protocol (gRPC + TLS):
   - Edge registers with server (heartbeat every 30s)
   - Edge pushes investigation summaries + full reports
@@ -248,9 +248,9 @@ type Capability struct {
 
 **Goal**: Ready for real users.
 
-- Update system: `innoigniter update` downloads signed binary, verifies signature, swaps atomically. `innoigniter update-intel` refreshes intel DB. `innoigniter update-playbooks` fetches latest playbook library.
+- Update system: .trace update` downloads signed binary, verifies signature, swaps atomically. .trace update-intel` refreshes intel DB. .trace update-playbooks` fetches latest playbook library.
 - Release pipeline: GitHub Actions builds for linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64. Signs with GPG or cosign.
-- First-run experience: `innoigniter init` — prompts for VT API key (optional), LLM provider URL+key (optional), SIEM enable (optional). Creates config file.
+- First-run experience: .trace init` — prompts for VT API key (optional), LLM provider URL+key (optional), SIEM enable (optional). Creates config file.
 - Documentation: README.md with quickstart, docs/ with CLI reference, playbook authoring guide, plugin development guide.
 - Telemetry: opt-in, privacy-first. Reports: version, OS, active plugin count, investigation count. No content.
 - Web UI: optional companion (served by binary), read-only dashboard — investigation list, search, report viewer.

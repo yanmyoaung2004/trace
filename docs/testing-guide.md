@@ -4,7 +4,7 @@
 
 ```powershell
 cd dev
-go build -o innoigniter.exe .\cmd\innoigniter\
+go build -o trace.exe .\cmd.trace\
 ```
 
 All commands below assume you're in the `dev/` directory.
@@ -16,9 +16,9 @@ All commands below assume you're in the `dev/` directory.
 ```powershell
 go build ./...
 go vet ./...
-.\innoigniter.exe version
+.\trace.exe version
 ```
-Expected: `innoigniter v0.1.0-dev`
+Expected: .trace v0.1.0-dev`
 
 ```powershell
 go test ./... -count=1
@@ -31,7 +31,7 @@ Expected: all packages pass.
 
 ```powershell
 # Serve starts and registers agents
-.\innoigniter.exe serve
+.\trace.exe serve
 ```
 Expected: logs `3 plugins loaded`, graceful shutdown on Ctrl+C.
 
@@ -47,13 +47,13 @@ Expected: DB migrations, task enqueue/claim/complete/fail, config file+env loadi
 
 ```powershell
 # Run a playbook by name
-.\innoigniter.exe investigate "check this hash" --playbook hash-lookup --hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f
+.\trace.exe investigate "check this hash" --playbook hash-lookup --hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f
 ```
 Expected: Investigation created, all 5 playbook steps execute, report shows `reputation: unknown` (hash lookup), `count: 0` (YARA), MITRE mappings from IOC enrich.
 
 ```powershell
 # Intent classification
-.\innoigniter.exe investigate "analyze this file" -f test.exe
+.\trace.exe investigate "analyze this file" -f test.exe
 ```
 Expected: Auto-selects `file-analysis` playbook.
 
@@ -66,8 +66,8 @@ go test ./internal/playbook/... -run TestExecutorConditional -v
 ```powershell
 # HITL approval workflow
 # Start investigation that pauses for approval, then approve:
-.\innoigniter.exe approval pending
-.\innoigniter.exe approval approve <investigation-id>
+.\trace.exe approval pending
+.\trace.exe approval approve <investigation-id>
 ```
 
 ---
@@ -76,32 +76,32 @@ go test ./internal/playbook/... -run TestExecutorConditional -v
 
 ```powershell
 # MITRE technique lookup
-.\innoigniter.exe investigate "tell me about T1566" --technique T1566
+.\trace.exe investigate "tell me about T1566" --technique T1566
 ```
 Expected: Returns Phishing technique with description, mitigations, detection, platforms, tactics.
 
 ```powershell
 # Sub-technique lookup
-.\innoigniter.exe investigate "lsass memory" --technique T1003.001
+.\trace.exe investigate "lsass memory" --technique T1003.001
 ```
 Expected: Returns LSASS Memory sub-technique with Credential Guard mitigations.
 
 ```powershell
 # IOC enrichment (known Mimikatz hash)
-.\innoigniter.exe investigate "check hash" --hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f
+.\trace.exe investigate "check hash" --hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f
 ```
 Expected: IOC enrich returns `builtin_match: true`, `reputation: malicious`, `confidence: 0.95`, tags `["mimikatz", "credential-access"]`.
 
 ```powershell
 # CVE lookup (requires internet)
-.\innoigniter.exe investigate "check cve" --cve-id CVE-2024-3094
+.\trace.exe investigate "check cve" --cve-id CVE-2024-3094
 ```
 Expected: CVE data with severity, CVSS score, description, affected products. Falls back gracefully if NVD is unreachable.
 
 ```powershell
 # Malware family lookup
 # Currently returns MITRE mappings for the search term
-.\innoigniter.exe investigate "mimikatz" --playbook mitre-lookup --technique T1003.001
+.\trace.exe investigate "mimikatz" --playbook mitre-lookup --technique T1003.001
 ```
 
 ```powershell
@@ -117,20 +117,20 @@ Expected: MITRE DB loading, search, sub-technique lookup, IOC enrichment with ca
 ```powershell
 # YARA scan on a file (use a test file)
 echo "X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*" > eicar.txt
-.\innoigniter.exe investigate "scan file" --playbook file-analysis -f .\eicar.txt
+.\trace.exe investigate "scan file" --playbook file-analysis -f .\eicar.txt
 ```
 Expected: YARA matches EICAR test pattern, PE analysis reports "not a PE file", hash lookup runs.
 
 ```powershell
 # PE analysis on a real PE file
-.\innoigniter.exe investigate "analyze pe" --playbook file-analysis -f C:\Windows\System32\notepad.exe
+.\trace.exe investigate "analyze pe" --playbook file-analysis -f C:\Windows\System32\notepad.exe
 ```
 Expected: PE metadata (sections, imports, timestamps), YARA scan, hash reputation.
 
 ```powershell
 # VT lookup (requires VT API key via INNO_VT_API_KEY env var)
 $env:INNO_VT_API_KEY = "your-key"
-.\innoigniter.exe investigate "check hash vt" --hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f
+.\trace.exe investigate "check hash vt" --hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f
 ```
 Expected: VT reports detection ratio and vendor labels. Falls back to local cache if VT is unreachable.
 
@@ -150,21 +150,21 @@ go test ./internal/detection/... -v -count=1
 
 ```powershell
 # Full end-to-end: file analysis with automatic playbook selection
-.\innoigniter.exe investigate "check this file" -f C:\Windows\System32\notepad.exe
+.\trace.exe investigate "check this file" -f C:\Windows\System32\notepad.exe
 ```
 Expected: Intent classifier picks file-analysis, all agents execute, consolidated report with confidence score.
 
 ```powershell
 # Full end-to-end: hash lookup
-.\innoigniter.exe investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+.\trace.exe investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
 ```
 Expected: Intent classifier extracts hash from query, runs hash-lookup playbook.
 
 ```powershell
 # Investigation history and status
-.\innoigniter.exe serve  # in one terminal
+.\trace.exe serve  # in one terminal
 # In another:
-# Query the investigation log in .innoigniter/logs/
+# Query the investigation log in .trace/logs/
 ```
 
 ---
@@ -173,7 +173,7 @@ Expected: Intent classifier extracts hash from query, runs hash-lookup playbook.
 
 ```powershell
 # Start SIEM engine with config (watches logs\ dir, syslog on :9514)
-.\innoigniter.exe serve --config config.json
+.\trace.exe serve --config config.json
 ```
 Expected: File watcher polls `logs\` every 5s, syslog UDP+TCP listeners on :9514.
 
@@ -225,36 +225,36 @@ Expected: 8 tests (JSON, Apache, syslog auth, file watcher, correlation, raw, mu
 
 ```powershell
 # Block an IP address (uses netsh/iptables/pfctl depending on OS)
-.\innoigniter.exe investigate "block 10.0.0.5" --playbook block-ip --ip 10.0.0.5
+.\trace.exe investigate "block 10.0.0.5" --playbook block-ip --ip 10.0.0.5
 ```
 Expected: Response agent records firewall rule, returns action_id + rollback command.
 Note: Requires admin/root privileges on most systems.
 
 ```powershell
 # Rollback an action by ID
-.\innoigniter.exe investigate "rollback previous action" --playbook rollback-action --action-id <action_id>
+.\trace.exe investigate "rollback previous action" --playbook rollback-action --action-id <action_id>
 ```
 
 ```powershell
 # Quarantine a file (moves to restricted quarantine directory)
-.\innoigniter.exe investigate "quarantine eicar" --playbook quarantine-file -f .\eicar.txt
+.\trace.exe investigate "quarantine eicar" --playbook quarantine-file -f .\eicar.txt
 ```
-Expected: File moved to `%TEMP%\innoigniter-quarantine\`, permissions set to read-only.
+Expected: File moved to `%TEMP%.trace-quarantine\`, permissions set to read-only.
 
 ```powershell
 # Kill a process by name
-.\innoigniter.exe investigate "kill process" --playbook kill-process --name notepad
+.\trace.exe investigate "kill process" --playbook kill-process --name notepad
 ```
 
 ```powershell
 # Restart a service
-.\innoigniter.exe investigate "restart service" --playbook restart-service --name BITS
+.\trace.exe investigate "restart service" --playbook restart-service --name BITS
 ```
 
 ```powershell
 # List all response actions in database
 # (query via SQLite directly)
-sqlite3 .innoigniter\innoigniter.db "SELECT id, action_name, target, status, created_at FROM response_actions ORDER BY created_at DESC LIMIT 10"
+sqlite3 .trace\trace.db "SELECT id, action_name, target, status, created_at FROM response_actions ORDER BY created_at DESC LIMIT 10"
 ```
 
 ```powershell
@@ -270,7 +270,7 @@ Expected: 10 tests (block IP with/without target, quarantine missing file, kill 
 ### Build and unit tests
 
 ```powershell
-go build -o innoigniter.exe ./cmd/innoigniter
+go build -o trace.exe ./cmd.trace
 go vet ./...
 go test ./... -count=1
 ```
@@ -280,43 +280,43 @@ Expected: Build succeeds, vet clean, all tests pass.
 
 ```powershell
 # Version
-.\innoigniter.exe version
+.\trace.exe version
 ```
 Expected: `Trace v0.1.0-dev`
 
 ```powershell
 # List all registered agents + their capabilities
-.\innoigniter.exe plugin list
+.\trace.exe plugin list
 ```
 Expected: 5 agents shown with their actions (detection, knowledge, host, response, exporter).
 
 ```powershell
 # Full end-to-end investigation with intent classification
-.\innoigniter.exe investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+.\trace.exe investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
 ```
 Expected: Intent classifier maps to `hash-lookup` playbook, all steps execute, markdown report with `malicious` reputation (Mimikatz).
 
 ```powershell
 # Investigation history
-.\innoigniter.exe history
+.\trace.exe history
 ```
 Expected: Table of recent investigations with ID, status, intent, playbook, timestamp.
 
 ```powershell
 # Investigation status
-.\innoigniter.exe status <investigation-id>
+.\trace.exe status <investigation-id>
 ```
 Expected: Full details for a single investigation.
 
 ```powershell
 # Regenerate report for a completed investigation
-.\innoigniter.exe report <investigation-id>
+.\trace.exe report <investigation-id>
 ```
 Expected: Markdown report output.
 
 ```powershell
 # Save report to file
-.\innoigniter.exe report <investigation-id> -o report.md
+.\trace.exe report <investigation-id> -o report.md
 ```
 Expected: Report written to `report.md`.
 
@@ -324,7 +324,7 @@ Expected: Report written to `report.md`.
 
 ```powershell
 # Start daemon with exporter
-.\innoigniter.exe serve --export :8080
+.\trace.exe serve --export :8080
 ```
 Expected: Logs `Report server started at http://:8080`. Open `http://localhost:8080` to see dark-themed investigation list with links to detail pages.
 
@@ -332,14 +332,14 @@ Expected: Logs `Report server started at http://:8080`. Open `http://localhost:8
 
 ```powershell
 # List investigations waiting for analyst approval
-.\innoigniter.exe approval pending
+.\trace.exe approval pending
 ```
 Expected: Table of investigations with `waiting_approval` status, or "No pending approvals."
 
 ```powershell
 # Approve or deny a pending investigation step
-.\innoigniter.exe approval approve <investigation-id>
-.\innoigniter.exe approval deny <investigation-id>
+.\trace.exe approval approve <investigation-id>
+.\trace.exe approval deny <investigation-id>
 ```
 Expected: Status updated to `approved` or `denied`.
 
@@ -347,13 +347,13 @@ Expected: Status updated to `approved` or `denied`.
 
 ```powershell
 # Install a plugin from URL
-.\innoigniter.exe plugin install https://plugins.innoigniter.io/v1/plugins/my-plugin.so
+.\trace.exe plugin install https://plugins.trace.io/v1/plugins/my-plugin.so
 ```
-Expected: Downloads `.so` to `~/.innoigniter/plugins/`, logs size + path.
+Expected: Downloads `.so` to `~/.trace/plugins/`, logs size + path.
 
 ```powershell
 # Remove an installed plugin
-.\innoigniter.exe plugin remove my-plugin.so
+.\trace.exe plugin remove my-plugin.so
 ```
 Expected: Plugin file deleted from plugins directory.
 
@@ -363,7 +363,7 @@ Expected: Plugin file deleted from plugins directory.
 
 ### Build and unit tests
 ```powershell
-go build -o innoigniter.exe ./cmd/innoigniter
+go build -o trace.exe ./cmd.trace
 go vet ./...
 go test ./... -count=1
 ```
@@ -373,19 +373,19 @@ Expected: Build succeeds, vet clean, all tests pass.
 
 ```powershell
 # Terminal 1 — Start central server
-.\innoigniter.exe server --http-addr :8080
+.\trace.exe server --http-addr :8080
 ```
 Expected: Logs `starting in server mode`, `HTTP API + dashboard on :8080`. Open `http://localhost:8080` for dashboard (investigation list, search, correlations).
 
 ```powershell
 # Terminal 2 — Start edge node with sync
-.\innoigniter.exe serve --server-addr http://localhost:8080
+.\trace.exe serve --server-addr http://localhost:8080
 ```
 Expected: Edge logs `registered as node <id>`, heartbeats every 30s, pushes investigations to server.
 
 ```powershell
 # Terminal 2 — Run an investigation on the edge
-.\innoigniter.exe investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+.\trace.exe investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
 ```
 Expected: Investigation appears on server dashboard at `http://localhost:8080` within 30s.
 
@@ -418,12 +418,12 @@ curl http://localhost:8080/api/v1/correlations
 ```powershell
 # Run the same hash on TWO different edge nodes (e.g. two machines, or with different config paths)
 # On Node 1:
-.\innoigniter.exe serve --server-addr http://localhost:8080
-.\innoigniter.exe investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+.\trace.exe serve --server-addr http://localhost:8080
+.\trace.exe investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
 
 # On Node 2:
-.\innoigniter.exe serve --server-addr http://localhost:8080
-.\innoigniter.exe investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+.\trace.exe serve --server-addr http://localhost:8080
+.\trace.exe investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
 
 # Check server dashboard → Correlations tab shows IOC with 2+ nodes, confidence 0.75+
 ```
@@ -433,7 +433,7 @@ Expected: Cross-node correlation page shows Mimikatz hash seen on 2+ nodes.
 
 ```powershell
 # Create an admin user (via DB)
-sqlite3 .innoigniter/innoigniter.db "INSERT INTO server_users (id, email, password_hash, role, api_key) VALUES ('admin-1', 'admin@example.com', 'hash', 'admin', 'sk-xxxxxxxxxxxxx');"
+sqlite3 .trace/trace.db "INSERT INTO server_users (id, email, password_hash, role, api_key) VALUES ('admin-1', 'admin@example.com', 'hash', 'admin', 'sk-xxxxxxxxxxxxx');"
 ```
 
 ```powershell
@@ -448,7 +448,7 @@ curl -H "Authorization: Bearer sk-xxxxxxxxxxxxx" http://localhost:8080/api/v1/no
 ### Build and unit tests
 
 ```powershell
-go build -o innoigniter.exe ./cmd/innoigniter
+go build -o trace.exe ./cmd.trace
 go vet ./...
 go test ./... -count=1
 ```
@@ -458,14 +458,14 @@ Expected: Build succeeds, vet clean, all tests pass.
 
 ```powershell
 # Run the setup wizard
-.\innoigniter.exe init
+.\trace.exe init
 ```
 Expected: Interactive prompts for VT key, LLM URL, web search key, SIEM, telemetry.
-Creates `~/.innoigniter/config.json`. Pressing Enter on all skips creates a minimal config.
+Creates `~/.trace/config.json`. Pressing Enter on all skips creates a minimal config.
 
 ```powershell
 # Config file is created
-type $env:USERPROFILE\.innoigniter\config.json
+type $env:USERPROFILE\.trace\config.json
 ```
 Expected: JSON with default paths and any options you provided.
 
@@ -473,14 +473,14 @@ Expected: JSON with default paths and any options you provided.
 
 ```powershell
 # Check update command
-.\innoigniter.exe update self --help
+.\trace.exe update self --help
 ```
 Expected: Downloads the latest release binary from GitHub, verifies signature if available,
 creates backup, performs atomic swap.
 
 ```powershell
 # Update won't actually run without a release server — test the command structure
-.\innoigniter.exe update self
+.\trace.exe update self
 ```
 Expected: Fails gracefully (HTTP error or connection refused) — not a crash.
 
@@ -488,12 +488,12 @@ Expected: Fails gracefully (HTTP error or connection refused) — not a crash.
 
 ```powershell
 # Refresh intel database
-.\innoigniter.exe update intel --help
+.\trace.exe update intel --help
 ```
 
 ```powershell
 # Fetch latest playbook library
-.\innoigniter.exe update playbooks --help
+.\trace.exe update playbooks --help
 ```
 Expected: Both show usage. Download from release server when available.
 
@@ -524,7 +524,7 @@ Reports once on startup and every 24h: version, OS, arch, plugin count, investig
 
 ```powershell
 # Enable via config
-# Add to ~/.innoigniter/config.json:
+# Add to ~/.trace/config.json:
 # "telemetry": { "enabled": true }
 ```
 
@@ -539,10 +539,10 @@ Check that the following docs exist:
 
 ```powershell
 cd dev
-go build -o innoigniter.exe .\cmd\innoigniter\
-.\innoigniter.exe version
-.\innoigniter.exe investigate "check T1566" --technique T1566
-.\innoigniter.exe investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+go build -o trace.exe .\cmd.trace\
+.\trace.exe version
+.\trace.exe investigate "check T1566" --technique T1566
+.\trace.exe investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
 go test ./... -count=1
 ```
 

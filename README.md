@@ -57,26 +57,26 @@
 
 ```bash
 cd dev
-go build -o innoigniter ./cmd/innoigniter
+go build -o.trace ./cmd.trace
 ```
 
 ### Run your first investigation
 
 ```bash
 # Check a known malicious hash (Mimikatz)
-./innoigniter investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+..trace investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
 
 # Check a domain reputation
-./innoigniter investigate --playbook domain-reputation --param domain=evil.com
+..trace investigate --playbook domain-reputation --param domain=evil.com
 
 # Analyze a file with YARA
-./innoigniter investigate --playbook file-analysis --param path=/tmp/suspicious.exe
+..trace investigate --playbook file-analysis --param path=/tmp/suspicious.exe
 ```
 
 ### Setup API keys (optional — local analysis works without them)
 
 ```bash
-./innoigniter init
+..trace init
 ```
 
 Interactive wizard prompts for VirusTotal, AbuseIPDB, AlienVault OTX, LLM provider, and web search keys.
@@ -85,13 +85,13 @@ Interactive wizard prompts for VirusTotal, AbuseIPDB, AlienVault OTX, LLM provid
 
 ```bash
 # Edge mode with SIEM log monitoring
-./innoigniter serve --siem --log-dir /var/log
+..trace serve --siem --log-dir /var/log
 
 # Central server mode with web dashboard
-./innoigniter server --http-addr :8080
+..trace server --http-addr :8080
 
 # Edge mode syncing to central server
-./innoigniter serve --server-addr http://server-host:8080
+..trace serve --server-addr http://server-host:8080
 ```
 
 ### Docker
@@ -226,7 +226,7 @@ Rules auto-trigger playbooks. For example, `MULTIPLE_FAILED_LOGINS` fires the `i
 
 ## Configuration
 
-Configuration is read from `~/.innoigniter/config.json` or set via environment variables:
+Configuration is read from `~/.trace/config.json` or set via environment variables:
 
 ```bash
 export INNO_VT_API_KEY="your-vt-key"
@@ -236,7 +236,7 @@ export INNO_LLM_API_KEY="your-llm-key"
 export INNO_DB_PATH="/path/to/custom/db"
 ```
 
-Run `innoigniter init` for an interactive setup wizard.
+Run .trace init` for an interactive setup wizard.
 
 ---
 
@@ -244,7 +244,7 @@ Run `innoigniter init` for an interactive setup wizard.
 
 ```bash
 cd dev
-go build ./cmd/innoigniter
+go build ./cmd.trace
 go vet ./...
 go test ./... -short -count=1    # fast: skips heavy SIEM tests
 go test ./... -count=1           # full: includes correlation tests
@@ -290,8 +290,8 @@ MIT — see [LICENSE](LICENSE).
 
 ## Community
 
-- [Issues](https://github.com/yanmyoaung2004/innoigniter-ai/issues) — bug reports and feature requests
-- [Discussions](https://github.com/yanmyoaung2004/innoigniter-ai/discussions) — questions and ideas
+- [Issues](https://github.com/yanmyoaung2004/trace/issues) — bug reports and feature requests
+- [Discussions](https://github.com/yanmyoaung2004/trace/discussions) — questions and ideas
 - [Security](SECURITY.md) — vulnerability reporting
 
 Built with Go, SQLite, YARA, and the MITRE ATT&CK framework.

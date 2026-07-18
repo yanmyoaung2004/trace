@@ -11,7 +11,7 @@ package main
 
 import (
     "context"
-    "github.com/innoigniter/edge/internal/agent"
+    "github.com.trace/edge/internal/agent"
 )
 
 type MyAgent struct{}
@@ -53,7 +53,7 @@ Restart the daemon to load it:
 innoigniter serve
 ```
 
-The plugin appears in `innoigniter plugin list`.
+The plugin appears in .trace plugin list`.
 
 ## Capabilities
 
@@ -65,4 +65,4 @@ The plugin appears in `innoigniter plugin list`.
 
 ## Distribution
 
-Host the `.so` file on a web server and distribute the URL. Users install via `innoigniter plugin install <url>`.
+Host the `.so` file on a web server and distribute the URL. Users install via .trace plugin install <url>`.

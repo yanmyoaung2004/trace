@@ -13,7 +13,7 @@ innoigniter init
 ```
 
 Prompts for VT API key, LLM provider URL+key, web search key, SIEM enable, telemetry opt-in.
-Creates `~/.innoigniter/config.json`. All prompts are skippable.
+Creates `~/.trace/config.json`. All prompts are skippable.
 
 ---
 
@@ -152,7 +152,7 @@ Subcommands:
 | `install <url>` | Download and install a `.so` plugin binary |
 | `remove <name>` | Remove an installed plugin |
 
-Plugins are stored in `~/.innoigniter/plugins/` and loaded on next restart.
+Plugins are stored in `~/.trace/plugins/` and loaded on next restart.
 
 ---
 
@@ -171,7 +171,7 @@ Subcommands:
 | `intel` | Refresh the intel database from release server |
 | `playbooks` | Fetch the latest playbook library |
 
-Release downloads from `https://github.com/yanmyoaung2004/innoigniter-ai/releases/latest/download`.
+Release downloads from `https://github.com/yanmyoaung2004/trace/releases/latest/download`.
 Signature files (`.sig`) are checked if present.
 
 ---
@@ -187,7 +187,7 @@ innoigniter genkey [flags]
 | Flag | Default | Description |
 |---|---|---|
 | `--host` | `localhost` | Certificate hostname or IP |
-| `--out` | `~/.innoigniter/tls` | Output directory |
+| `--out` | `~/.trace/tls` | Output directory |
 | `--bits` | `2048` | RSA key size in bits |
 
 Outputs `cert.pem` and `key.pem`. Use with `server --tls-cert --tls-key`.
