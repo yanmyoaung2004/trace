@@ -26,7 +26,3 @@ steps:
     params:
       ioc: ${input.hash}
     optional: true
-  - agent: host
-    action: synthesize_report
-    params:
-      investigation_id: ${investigation.id}

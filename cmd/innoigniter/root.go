@@ -11,6 +11,9 @@ import (
 	"github.com/innoigniter/edge/internal/db"
 	"github.com/innoigniter/edge/internal/detection"
 	"github.com/innoigniter/edge/internal/host"
+	"github.com/innoigniter/edge/internal/integration/elastic"
+	"github.com/innoigniter/edge/internal/integration/notifier"
+	"github.com/innoigniter/edge/internal/integration/splunk"
 	"github.com/innoigniter/edge/internal/investigation"
 	"github.com/innoigniter/edge/internal/knowledge"
 	"github.com/innoigniter/edge/internal/playbook"
@@ -72,6 +75,9 @@ func (a *App) initRegistry() error {
 	a.registry.Register(detection.New(a.sqlDB, a.cfg.VTAPIKey))
 	a.registry.Register(response.New(a.sqlDB))
 	a.registry.Register(exporter.New(a.sqlDB))
+	a.registry.Register(notifier.New())
+	a.registry.Register(splunk.New())
+	a.registry.Register(elastic.New())
 
 	a.hostAgent = host.New(a.playbooks)
 	if a.cfg.LLMURL != "" && a.cfg.LLMAPIKey != "" {

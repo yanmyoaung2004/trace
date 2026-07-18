@@ -1,0 +1,26 @@
+name: domain-reputation
+description: Check a domain or URL against threat intel and VirusTotal
+triggers:
+  - domain
+  - url
+  - site
+  - website
+  - check domain
+  - check url
+  - phishing
+steps:
+  - agent: knowledge
+    action: ioc_enrich
+    params:
+      ioc: ${input.domain}
+  - agent: detection
+    action: vt_lookup
+    params:
+      indicator: ${input.domain}
+    optional: true
+    timeout: 30s
+  - agent: knowledge
+    action: web_search
+    params:
+      query: ${input.domain} threat intelligence
+    optional: true

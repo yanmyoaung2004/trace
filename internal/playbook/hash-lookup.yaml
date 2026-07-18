@@ -24,7 +24,3 @@ steps:
     action: ioc_enrich
     params:
       ioc: ${input.hash}
-  - agent: host
-    action: synthesize_report
-    params:
-      investigation_id: ${investigation.id}

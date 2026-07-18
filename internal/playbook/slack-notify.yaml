@@ -1,0 +1,13 @@
+name: slack-notify
+description: Send an alert to a Slack webhook
+triggers:
+  - slack
+  - notify slack
+  - alert slack
+steps:
+  - agent: notifier
+    action: slack
+    params:
+      webhook_url: ${input.webhook_url}
+      title: ${input.title}
+      message: ${input.message}
