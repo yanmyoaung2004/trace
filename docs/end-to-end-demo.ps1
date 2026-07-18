@@ -1,4 +1,4 @@
-# InnoIgniterAI — End-to-End Demo Script
+﻿# InnoIgniterAI — End-to-End Demo Script
 # Run this from the dev/ directory after building the binary.
 # This walks through installation, investigations, SIEM, server, and team features.
 
@@ -166,9 +166,9 @@ Write-Host "║ 10. Agent plugin listing                         ║" -Foregroun
 Write-Host "╚══════════════════════════════════════════════════╝" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor White
-Write-Host "  innoigniter init                     — configure API keys" -ForegroundColor Gray
-Write-Host "  innoigniter serve --siem             — start daemon with SIEM" -ForegroundColor Gray
-Write-Host "  innoigniter server --http-addr :8080  — start central server" -ForegroundColor Gray
-Write-Host "  innoigniter completion powershell | Out-String | Invoke-Expression  — enable tab completion" -ForegroundColor Gray
+Write-Host "  innoigniter init                     - configure API keys" -ForegroundColor Gray
+Write-Host "  innoigniter serve --siem             - start daemon with SIEM" -ForegroundColor Gray
+Write-Host "  innoigniter server --http-addr :8080  - start central server" -ForegroundColor Gray
+Write-Host "  innoigniter completion powershell | Out-String | Invoke-Expression - enable tab completion" -ForegroundColor Gray
 
 Pop-Location
