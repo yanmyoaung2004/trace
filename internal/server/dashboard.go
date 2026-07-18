@@ -83,6 +83,11 @@ code { background: #161b22; padding: 2px 6px; border-radius: 4px; font-size: 0.9
 .nav a { color: #8b949e; font-size: 0.9em; padding-bottom: 2px; border-bottom: 2px solid transparent; }
 .nav a:hover { color: #c9d1d9; }
 .nav a.active { color: #58a6ff; border-bottom-color: #58a6ff; }
+.timeline-event { display: flex; gap: 12px; padding: 8px 0; border-bottom: 1px solid #21262d; font-size: 0.85em; align-items: flex-start; }
+.timeline-event:last-child { border-bottom: none; }
+.tl-time { color: #8b949e; min-width: 160px; font-family: monospace; font-size: 0.9em; }
+.tl-type { color: #58a6ff; min-width: 120px; font-weight: 600; }
+.tl-summary { color: #c9d1d9; }
 @media (max-width: 768px) { .stats { grid-template-columns: repeat(2, 1fr); } body { padding: 12px; } }
 `
 
@@ -293,6 +298,36 @@ body { max-width: 960px; margin: 0 auto; }
 	if inv.Report != "" {
 		b.WriteString(`<div class="card"><h2>Full Report</h2><div class="report">` + html.EscapeString(inv.Report) + `</div></div>`)
 	}
+
+	b.WriteString(`<div class="card"><h2>Investigation Timeline</h2>
+<div id="timeline"><p style="color:#8b949e;">Loading...</p></div>
+</div>
+
+<script>
+fetch('/api/v1/timeline/` + inv.ID + `')
+  .then(r => r.json())
+  .then(events => {
+    var html = '';
+    if (events.length === 0) { html = '<p style="color:#8b949e;">No timeline events.</p>'; }
+    else {
+      events.forEach(function(e) {
+        var ts = e.ts ? e.ts.substring(0, 19).replace('T', ' ') : '--';
+        var type = e.type || 'unknown';
+        var summary = '';
+        if (e.data) {
+          if (e.data.agent) summary += ' agent=' + e.data.agent;
+          if (e.data.action) summary += ' action=' + e.data.action;
+          if (e.data.playbook) summary += ' playbook=' + e.data.playbook;
+          if (e.data.step !== undefined) summary += ' step=' + e.data.step;
+          if (e.data.error) summary += ' error=' + JSON.stringify(e.data.error);
+        }
+        html += '<div class="timeline-event"><span class="tl-time">' + ts + '</span><span class="tl-type">' + type + '</span><span class="tl-summary">' + summary + '</span></div>';
+      });
+    }
+    document.getElementById('timeline').innerHTML = html;
+  })
+  .catch(function() { document.getElementById('timeline').innerHTML = '<p style="color:#f85149;">Failed to load timeline.</p>'; });
+</script>` + "\n")
 
 	b.WriteString(`</body></html>`)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

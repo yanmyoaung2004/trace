@@ -83,15 +83,42 @@ func (a *Agent) synthesizeReport(_ context.Context, input agent.Input) (agent.Ou
 	}, nil
 }
 
-func (a *Agent) planInvestigation(_ context.Context, input agent.Input) (agent.Output, error) {
+func (a *Agent) planInvestigation(ctx context.Context, input agent.Input) (agent.Output, error) {
 	intent, _ := input["intent"].(string)
 	if intent == "" {
 		return nil, fmt.Errorf("intent is required")
 	}
 
 	playbookName := pickPlaybook(intent, a.playbooks, input)
-	if playbookName == "" {
-		playbookName = "hash-lookup"
+
+	if playbookName == "" || playbookName == "hash-lookup" {
+		if a.planner != nil {
+			availablePlaybooks := make([]string, 0, len(a.playbooks.List()))
+			for _, pb := range a.playbooks.List() {
+				availablePlaybooks = append(availablePlaybooks, pb.Name)
+			}
+
+			llmCtx, llmCancel := context.WithTimeout(ctx, 25*time.Second)
+			llmName, llmParams, llmErr := a.planner.Plan(llmCtx, intent, availablePlaybooks)
+			llmCancel()
+
+			if llmErr == nil && llmName != "" {
+				if pb := a.playbooks.Get(llmName); pb != nil {
+					if llmParams == nil {
+						llmParams = extractParams(intent, pb)
+					}
+					return agent.Output{
+						"playbook":   pb.Name,
+						"parameters": llmParams,
+						"planner":    "llm",
+					}, nil
+				}
+			}
+		}
+
+		if playbookName == "" {
+			playbookName = "hash-lookup"
+		}
 	}
 
 	pb := a.playbooks.Get(playbookName)
@@ -104,6 +131,7 @@ func (a *Agent) planInvestigation(_ context.Context, input agent.Input) (agent.O
 	return agent.Output{
 		"playbook":   pb.Name,
 		"parameters": params,
+		"planner":    "heuristic",
 	}, nil
 }
 
@@ -145,23 +173,32 @@ func NewLLMPlanner(provider, url, apiKey string) *LLMPlanner {
 	}
 }
 
+type llmResponse struct {
+	Choices []struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	} `json:"choices"`
+}
+
 func (lp *LLMPlanner) Plan(ctx context.Context, intent string, availablePlaybooks []string) (string, map[string]any, error) {
 	if lp.URL == "" || lp.APIKey == "" {
 		return "", nil, fmt.Errorf("LLM planner not configured")
 	}
 
 	prompt := fmt.Sprintf(`You are a cybersecurity investigation planner. Given the user's intent, select the best playbook from: %s.
-Return JSON: {"playbook": "name", "parameters": {"key": "value"}}
+Return ONLY valid JSON: {"playbook": "name", "parameters": {"key": "value"}}
+If no playbook matches, return {"playbook": "", "parameters": {}}.
 Intent: %s`, strings.Join(availablePlaybooks, ", "), intent)
 
 	body := map[string]any{
 		"model": "gpt-4",
 		"messages": []map[string]string{
-			{"role": "system", "content": "You select playbooks and extract parameters from security investigation requests."},
+			{"role": "system", "content": "You select playbooks and extract parameters from security investigation requests. Return only JSON."},
 			{"role": "user", "content": prompt},
 		},
 		"temperature": 0.1,
-		"max_tokens":  200,
+		"max_tokens":  300,
 	}
 
 	payload, _ := json.Marshal(body)
@@ -181,19 +218,33 @@ Intent: %s`, strings.Join(availablePlaybooks, ", "), intent)
 
 	respBody, _ := io.ReadAll(resp.Body)
 
-	var result struct {
+	var openAIResp llmResponse
+	if err := json.Unmarshal(respBody, &openAIResp); err == nil && len(openAIResp.Choices) > 0 {
+		content := strings.TrimSpace(openAIResp.Choices[0].Message.Content)
+		content = strings.TrimPrefix(content, "```json")
+		content = strings.TrimPrefix(content, "```")
+		content = strings.TrimSuffix(content, "```")
+		content = strings.TrimSpace(content)
+
+		var result struct {
+			Playbook   string         `json:"playbook"`
+			Parameters map[string]any `json:"parameters"`
+		}
+		if err := json.Unmarshal([]byte(content), &result); err == nil && result.Playbook != "" {
+			return result.Playbook, result.Parameters, nil
+		}
+	}
+
+	type planResult struct {
 		Playbook   string         `json:"playbook"`
 		Parameters map[string]any `json:"parameters"`
 	}
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		_ = err
+	var direct planResult
+	if err := json.Unmarshal(respBody, &direct); err == nil && direct.Playbook != "" {
+		return direct.Playbook, direct.Parameters, nil
 	}
 
-	if result.Playbook == "" {
-		return "", nil, fmt.Errorf("llm returned no playbook")
-	}
-
-	return result.Playbook, result.Parameters, nil
+	return "", nil, fmt.Errorf("llm returned no valid playbook")
 }
 
 func (a *Agent) calculateConfidenceFromResults(results map[string]any) float64 {

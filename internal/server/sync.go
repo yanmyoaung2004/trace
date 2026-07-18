@@ -7,14 +7,22 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/yanmyoaung2004/trace/internal/investigation"
 )
 
 type SyncHandler struct {
-	manager *ServerManager
+	manager  *ServerManager
+	logDir   string
 }
 
 func NewSyncHandler(mgr *ServerManager) *SyncHandler {
 	return &SyncHandler{manager: mgr}
+}
+
+func (h *SyncHandler) WithLogDir(dir string) *SyncHandler {
+	h.logDir = dir
+	return h
 }
 
 func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -25,6 +33,7 @@ func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/investigations/", h.handleInvestigationByID)
 	mux.HandleFunc("/api/v1/investigations", h.handleInvestigations)
 	mux.HandleFunc("/api/v1/correlations", h.handleCorrelations)
+	mux.HandleFunc("/api/v1/timeline/", h.handleTimeline)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -178,16 +187,41 @@ func (h *SyncHandler) handleCorrelations(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, corrs)
 }
 
+func (h *SyncHandler) handleTimeline(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/v1/timeline/")
+	id = strings.TrimSuffix(id, "/")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "investigation ID is required")
+		return
+	}
+
+	if h.logDir == "" {
+		writeError(w, http.StatusNotFound, "log directory not configured")
+		return
+	}
+
+	entries, err := investigation.ReadInvestigationLog(h.logDir, id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if entries == nil {
+		entries = []investigation.LogEntry{}
+	}
+	writeJSON(w, http.StatusOK, entries)
+}
+
 type ServeOptions struct {
 	ListenAddr string
 	CertFile   string
 	KeyFile    string
+	LogDir     string
 }
 
 func ServeHTTP(opts ServeOptions, mgr *ServerManager, dashboard DashboardDataProvider) (*http.Server, error) {
 	mux := http.NewServeMux()
 
-	sync := NewSyncHandler(mgr)
+	sync := NewSyncHandler(mgr).WithLogDir(opts.LogDir)
 	sync.RegisterRoutes(mux)
 
 	dashboardHandler := NewDashboardHandler(dashboard)
