@@ -143,7 +143,7 @@ func NewWebSearchClient(apiKey string) *WebSearchClient {
 
 func (w *WebSearchClient) Search(ctx context.Context, query string) ([]string, error) {
 	if w.apiKey == "" {
-		return []string{"Web search not configured (set INNO_WEB_SEARCH_KEY)"}, nil
+		return []string{"Web search not configured (set TRACE_WEB_SEARCH_KEY)"}, nil
 	}
 	return []string{fmt.Sprintf("Search results for: %s (stub)", query)}, nil
 }

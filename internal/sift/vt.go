@@ -68,7 +68,7 @@ func (c *VTClient) LookupHash(ctx context.Context, hash string) (*VTResult, erro
 			Indicator:  hash,
 			Type:       "hash",
 			Reputation: "unknown",
-			Error:      "VT API key not configured (set INNO_VT_API_KEY)",
+			Error:      "VT API key not configured (set TRACE_VT_API_KEY)",
 		}, nil
 	}
 
@@ -99,7 +99,7 @@ func (c *VTClient) LookupURL(ctx context.Context, url string) (*VTResult, error)
 			Indicator:  url,
 			Type:       "url",
 			Reputation: "unknown",
-			Error:      "VT API key not configured (set INNO_VT_API_KEY)",
+			Error:      "VT API key not configured (set TRACE_VT_API_KEY)",
 		}, nil
 	}
 
@@ -127,7 +127,7 @@ func (c *VTClient) LookupIP(ctx context.Context, ip string) (*VTResult, error) {
 			Indicator:  ip,
 			Type:       "ip",
 			Reputation: "unknown",
-			Error:      "VT API key not configured (set INNO_VT_API_KEY)",
+			Error:      "VT API key not configured (set TRACE_VT_API_KEY)",
 		}, nil
 	}
 

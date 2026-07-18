@@ -115,7 +115,7 @@ func (a *Agent) ipReputation(ctx context.Context, input agent.Input) (agent.Outp
 		return agent.Output{"error": err.Error()}, nil
 	}
 	if data == nil {
-		return agent.Output{"ip": ip, "message": "AbuseIPDB not configured (set INNO_ABUSEIPDB_KEY)"}, nil
+		return agent.Output{"ip": ip, "message": "AbuseIPDB not configured (set TRACE_ABUSEIPDB_KEY)"}, nil
 	}
 
 	reputation := "unknown"

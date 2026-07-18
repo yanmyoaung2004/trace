@@ -107,7 +107,7 @@ func (a *Agent) indicatorCheck(ctx context.Context, input agent.Input) (agent.Ou
 		return agent.Output{"indicator": indicator, "error": err.Error()}, nil
 	}
 	if data == nil {
-		return agent.Output{"indicator": indicator, "message": "OTX not configured (set INNO_OTX_API_KEY)"}, nil
+		return agent.Output{"indicator": indicator, "message": "OTX not configured (set TRACE_OTX_API_KEY)"}, nil
 	}
 
 	reputation := "unknown"

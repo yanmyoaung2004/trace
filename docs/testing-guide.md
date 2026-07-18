@@ -128,8 +128,8 @@ Expected: YARA matches EICAR test pattern, PE analysis reports "not a PE file", 
 Expected: PE metadata (sections, imports, timestamps), YARA scan, hash reputation.
 
 ```powershell
-# VT lookup (requires VT API key via INNO_VT_API_KEY env var)
-$env:INNO_VT_API_KEY = "your-key"
+# VT lookup (requires VT API key via TRACE_VT_API_KEY env var)
+$env:TRACE_VT_API_KEY = "your-key"
 .\trace.exe investigate "check hash vt" --hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f
 ```
 Expected: VT reports detection ratio and vendor labels. Falls back to local cache if VT is unreachable.

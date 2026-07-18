@@ -24,7 +24,7 @@ jobs:
         run: go vet ./...
 
       - name: Build
-        run: go build -o.trace ./cmd.trace
+        run: go build -o .trace ./cmd/trace
 
       - name: Test
         run: go test ./... -short -count=1 -p 2

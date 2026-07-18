@@ -83,9 +83,9 @@ All prompts are skippable. Without API keys, local analysis still works.
 ### Environment variables
 
 ```powershell
-$env:INNO_VT_API_KEY = "your-vt-key"
-$env:INNO_ABUSEIPDB_KEY = "your-abuseipdb-key"
-$env:INNO_OTX_API_KEY = "your-otx-key"
+$env:TRACE_VT_API_KEY = "your-vt-key"
+$env:TRACE_ABUSEIPDB_KEY = "your-abuseipdb-key"
+$env:TRACE_OTX_API_KEY = "your-otx-key"
 ```
 
 ---
@@ -290,9 +290,9 @@ The platform ships with known malware hashes and indicators:
 
 | Feed           | Free tier | API key              | Command                |
 | -------------- | --------- | -------------------- | ---------------------- |
-| VirusTotal     | 500/day   | `INNO_VT_API_KEY`    | Auto-used in playbooks |
-| AbuseIPDB      | 1000/day  | `INNO_ABUSEIPDB_KEY` | `ip-enrich` playbook   |
-| AlienVault OTX | Unlimited | `INNO_OTX_API_KEY`   | `ip-enrich` playbook   |
+| VirusTotal     | 500/day   | `TRACE_VT_API_KEY`    | Auto-used in playbooks |
+| AbuseIPDB      | 1000/day  | `TRACE_ABUSEIPDB_KEY` | `ip-enrich` playbook   |
+| AlienVault OTX | Unlimited | `TRACE_OTX_API_KEY`   | `ip-enrich` playbook   |
 
 ### Multi-feed enrichment
 
@@ -405,7 +405,7 @@ Dashboard → Correlations tab shows all cross-node IOCs.
 
 | Symptom                                      | Likely cause               | Fix                                                |
 | -------------------------------------------- | -------------------------- | -------------------------------------------------- |
-| `VT API key not configured`                  | No VirusTotal key          | Set `$env:INNO_VT_API_KEY`                         |
+| `VT API key not configured`                  | No VirusTotal key          | Set `$env:TRACE_VT_API_KEY`                         |
 | `path is required`                           | Missing parameter          | Use `--param path=...`                             |
 | `playbook not found`                         | Typo in name               | Run .trace plugin list` to see available playbooks |
 | `connection refused` on server sync          | Server not running         | Start .trace server` first                         |

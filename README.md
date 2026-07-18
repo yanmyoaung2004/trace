@@ -229,11 +229,11 @@ Rules auto-trigger playbooks. For example, `MULTIPLE_FAILED_LOGINS` fires the `i
 Configuration is read from `~/.trace/config.json` or set via environment variables:
 
 ```bash
-export INNO_VT_API_KEY="your-vt-key"
-export INNO_ABUSEIPDB_KEY="your-abuseipdb-key"
-export INNO_OTX_API_KEY="your-otx-key"
-export INNO_LLM_API_KEY="your-llm-key"
-export INNO_DB_PATH="/path/to/custom/db"
+export TRACE_VT_API_KEY="your-vt-key"
+export TRACE_ABUSEIPDB_KEY="your-abuseipdb-key"
+export TRACE_OTX_API_KEY="your-otx-key"
+export TRACE_LLM_API_KEY="your-llm-key"
+export TRACE_DB_PATH="/path/to/custom/db"
 ```
 
 Run .trace init` for an interactive setup wizard.
