@@ -1,0 +1,39 @@
+name: log-analysis
+description: Parse and analyze a log line or event for suspicious patterns
+triggers:
+  - log
+  - event
+  - syslog
+  - windows event
+  - analyze log
+steps:
+  - agent: detection
+    action: yara_scan
+    params:
+      path: ${input.path}
+    optional: true
+  - agent: detection
+    action: hash_lookup
+    params:
+      hash: ${input.hash}
+    optional: true
+  - agent: knowledge
+    action: ioc_enrich
+    params:
+      ioc: ${input.ioc}
+    optional: true
+  - agent: knowledge
+    action: mitre_lookup
+    params:
+      technique: ${input.technique}
+    optional: true
+  - agent: knowledge
+    action: cve_lookup
+    params:
+      cve_id: ${input.cve_id}
+    optional: true
+  - agent: knowledge
+    action: web_search
+    params:
+      query: ${input.log_source} ${input.event_id} security
+    optional: true

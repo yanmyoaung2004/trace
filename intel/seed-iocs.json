@@ -1,0 +1,74 @@
+[
+  {
+    "ioc": "e99a18c428cb38d5f260853678922e03",
+    "type": "md5",
+    "source": "builtin",
+    "reputation": "malicious",
+    "description": "EICAR standard antivirus test file",
+    "tags": ["test", "eicar", "av-test"],
+    "confidence": 1.0
+  },
+  {
+    "ioc": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+    "type": "sha256",
+    "source": "builtin",
+    "reputation": "malicious",
+    "description": "Mimikatz — credential dumping tool",
+    "tags": ["mimikatz", "credential-access", "t1003"],
+    "confidence": 0.95
+  },
+  {
+    "ioc": "44d88612fea8a8f36de82e1278abb02f",
+    "type": "md5",
+    "source": "builtin",
+    "reputation": "malicious",
+    "description": "EICAR standard antivirus test file (alternate MD5)",
+    "tags": ["test", "eicar", "av-test"],
+    "confidence": 1.0
+  },
+  {
+    "ioc": "T1003.001",
+    "type": "mitre",
+    "source": "mitre-attack",
+    "reputation": "informational",
+    "description": "OS Credential Dumping: LSASS Memory — adversaries may attempt to access credential material stored in the process memory of Local Security Authority Subsystem Service (LSASS).",
+    "tags": ["credential-access", "lsass", "mimikatz", "t1003"],
+    "confidence": 0.9
+  },
+  {
+    "ioc": "T1566.001",
+    "type": "mitre",
+    "source": "mitre-attack",
+    "reputation": "informational",
+    "description": "Spearphishing Attachment — adversaries may send a phishing message with a malicious attachment to gain access.",
+    "tags": ["initial-access", "phishing", "spearphishing"],
+    "confidence": 0.9
+  },
+  {
+    "ioc": "T1059.001",
+    "type": "mitre",
+    "source": "mitre-attack",
+    "reputation": "informational",
+    "description": "PowerShell — adversaries may abuse PowerShell commands and scripts for execution.",
+    "tags": ["execution", "powershell", "scripting"],
+    "confidence": 0.9
+  },
+  {
+    "ioc": "CVE-2024-3094",
+    "type": "cve",
+    "source": "nvd",
+    "reputation": "critical",
+    "description": "XZ Utils backdoor (CVE-2024-3094) — malicious code injected into liblzma build artifacts.",
+    "tags": ["supply-chain", "backdoor", "xz", "critical"],
+    "confidence": 0.95
+  },
+  {
+    "ioc": "CVE-2021-44228",
+    "type": "cve",
+    "source": "nvd",
+    "reputation": "critical",
+    "description": "Apache Log4j2 JNDI injection remote code execution (Log4Shell).",
+    "tags": ["rce", "log4j", "log4shell", "critical"],
+    "confidence": 0.95
+  }
+]

@@ -42,16 +42,43 @@ type ServerConfig struct {
 	HTTPAddr string `json:"http_addr"`
 }
 
+func repoDir() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	dir := filepath.Dir(exe)
+	if fi, err := os.Stat(filepath.Join(dir, "playbooks")); err == nil && fi.IsDir() {
+		return dir
+	}
+	if fi, err := os.Stat(filepath.Join(dir, "intel")); err == nil && fi.IsDir() {
+		return dir
+	}
+	return ""
+}
+
 func Default() *Config {
 	home, _ := os.UserHomeDir()
 	base := filepath.Join(home, ".innoigniter")
+
+	playbookDir := filepath.Join(base, "playbooks")
+	intelDir := filepath.Join(base, "intel")
+
+	if rd := repoDir(); rd != "" {
+		if _, err := os.Stat(playbookDir); os.IsNotExist(err) {
+			playbookDir = filepath.Join(rd, "playbooks")
+		}
+		if _, err := os.Stat(intelDir); os.IsNotExist(err) {
+			intelDir = filepath.Join(rd, "intel")
+		}
+	}
 
 	return &Config{
 		DBPath:     filepath.Join(base, "innoigniter.db"),
 		DataDir:    filepath.Join(base, "data"),
 		LogDir:     filepath.Join(base, "logs"),
-		Playbook:   filepath.Join(base, "playbooks"),
-		IntelDir:   filepath.Join(base, "intel"),
+		Playbook:   playbookDir,
+		IntelDir:   intelDir,
 		LLMProvider: "openai",
 		SIEM: SIEMConfig{
 			SyslogAddr: ":514",

@@ -1,0 +1,45 @@
+name: network-scan
+description: Analyze network indicators — IPs, domains, URLs, ports
+triggers:
+  - network
+  - scan network
+  - connection
+  - traffic
+  - suspicious connection
+steps:
+  - agent: detection
+    action: vt_lookup
+    params:
+      indicator: ${input.ip}
+    optional: true
+    timeout: 30s
+  - agent: knowledge
+    action: ioc_enrich
+    params:
+      ioc: ${input.ip}
+  - agent: detection
+    action: vt_lookup
+    params:
+      indicator: ${input.domain}
+    optional: true
+    timeout: 30s
+  - agent: knowledge
+    action: ioc_enrich
+    params:
+      ioc: ${input.domain}
+    optional: true
+  - agent: detection
+    action: hash_lookup
+    params:
+      hash: ${input.hash}
+    optional: true
+  - agent: knowledge
+    action: cve_lookup
+    params:
+      cve_id: ${input.cve_id}
+    optional: true
+  - agent: knowledge
+    action: web_search
+    params:
+      query: ${input.ip} ${input.port} port scan
+    optional: true

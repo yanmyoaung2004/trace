@@ -1,0 +1,28 @@
+name: file-analysis
+description: Analyze a file with YARA, PE scan, and hash lookup
+triggers:
+  - file
+  - malware
+  - exe
+  - binary
+  - pe
+  - analyze file
+steps:
+  - agent: detection
+    action: hash_lookup
+    params:
+      hash: ${input.hash}
+    optional: true
+  - agent: detection
+    action: yara_scan
+    params:
+      path: ${input.path}
+  - agent: detection
+    action: pe_analyze
+    params:
+      path: ${input.path}
+  - agent: knowledge
+    action: ioc_enrich
+    params:
+      ioc: ${input.hash}
+    optional: true

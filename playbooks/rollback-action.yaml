@@ -1,0 +1,14 @@
+name: rollback-action
+description: Rollback a previously executed action
+triggers:
+  - rollback
+  - undo
+steps:
+  - agent: response
+    action: rollback
+    params:
+      action_id: ${input.action_id}
+  - agent: host
+    action: synthesize_report
+    params:
+      investigation_id: ${investigation.id}

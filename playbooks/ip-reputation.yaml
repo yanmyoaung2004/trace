@@ -1,0 +1,17 @@
+name: ip-reputation
+description: Check an IP address against threat intel and VT
+triggers:
+  - ip
+  - address
+  - reputation
+  - check ip
+steps:
+  - agent: detection
+    action: vt_lookup
+    params:
+      indicator: ${input.ip}
+    optional: true
+  - agent: knowledge
+    action: ioc_enrich
+    params:
+      ioc: ${input.ip}

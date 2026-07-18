@@ -1,0 +1,15 @@
+name: kill-process
+description: Terminate a suspicious process
+triggers:
+  - kill
+  - terminate
+  - stop process
+steps:
+  - agent: response
+    action: kill_process
+    params:
+      name: ${input.name}
+  - agent: host
+    action: synthesize_report
+    params:
+      investigation_id: ${investigation.id}

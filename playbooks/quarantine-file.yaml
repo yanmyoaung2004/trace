@@ -1,0 +1,15 @@
+name: quarantine-file
+description: Move a suspicious file to quarantine
+triggers:
+  - quarantine
+  - isolate
+  - quarantine file
+steps:
+  - agent: response
+    action: quarantine_file
+    params:
+      path: ${input.path}
+  - agent: host
+    action: synthesize_report
+    params:
+      investigation_id: ${investigation.id}

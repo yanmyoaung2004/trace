@@ -1,0 +1,15 @@
+name: block-ip
+description: Block an IP address via firewall
+triggers:
+  - block
+  - firewall
+  - ban
+steps:
+  - agent: response
+    action: block_ip
+    params:
+      ip: ${input.ip}
+  - agent: host
+    action: synthesize_report
+    params:
+      investigation_id: ${investigation.id}

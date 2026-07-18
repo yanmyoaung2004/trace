@@ -22,8 +22,9 @@ vendor/
 .DS_Store
 Thumbs.db
 
-# Intel
+# Intel (runtime DB files ignored, seed files tracked)
 intel/*.db
+!intel/seed*.db
 
 # Data
 .innoigniter/

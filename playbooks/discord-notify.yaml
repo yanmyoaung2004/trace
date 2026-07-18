@@ -1,0 +1,13 @@
+name: discord-notify
+description: Send an alert to a Discord webhook
+triggers:
+  - discord
+  - notify discord
+  - alert discord
+steps:
+  - agent: notifier
+    action: discord
+    params:
+      webhook_url: ${input.webhook_url}
+      title: ${input.title}
+      message: ${input.message}

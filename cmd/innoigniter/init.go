@@ -37,6 +37,12 @@ You can skip any step — the tool works without external API keys.`,
 			}
 
 			os.MkdirAll(base, 0755)
+
+			repoPb := filepath.Join(filepath.Dir(os.Args[0]), "playbooks")
+			if _, err := os.Stat(repoPb); err == nil {
+				fmt.Printf("Found playbook library at %s (linked)\n", repoPb)
+			}
+
 			reader := bufio.NewReader(os.Stdin)
 
 			fmt.Println("InnoIgniterAI Setup")
