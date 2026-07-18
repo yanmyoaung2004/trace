@@ -36,61 +36,94 @@ func (dh *DashboardHandler) RegisterRoutes(mux *http.ServeMux) {
 }
 
 const pageStyle = `
+:root {
+  --bg:      oklch(0.07 0 0);
+  --surface: oklch(0.11 0.008 60);
+  --surface-hover: oklch(0.15 0.008 60);
+  --border:  oklch(0.18 0.008 60);
+  --ink:     oklch(0.93 0.008 60);
+  --muted:   oklch(0.50 0.02 60);
+  --primary: oklch(0.55 0.124 60);
+  --primary-dim: oklch(0.45 0.10 60);
+  --accent:  oklch(0.55 0.12 220);
+  --success: oklch(0.60 0.15 150);
+  --warning: oklch(0.65 0.14 80);
+  --danger:  oklch(0.55 0.18 30);
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0d1117; color: #c9d1d9; padding: 24px; }
-h1 { color: #58a6ff; font-size: 1.5em; }
-h2 { color: #58a6ff; font-size: 1.15em; margin: 20px 0 12px; }
-a { color: #58a6ff; text-decoration: none; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, system-ui, sans-serif; background: var(--bg); color: var(--ink); padding: 24px; font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+h1 { color: var(--ink); font-size: 1.25rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { color: var(--ink); font-size: 0.9375rem; font-weight: 600; margin: 24px 0 12px; letter-spacing: -0.005em; }
+a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
-table { width: 100%; border-collapse: collapse; }
-th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #30363d; font-size: 0.9em; }
-th { color: #8b949e; font-weight: 600; }
-tr:hover { background: #161b22; }
-code { background: #161b22; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
-.status-completed, .badge-completed { color: #3fb950; }
-.status-running, .status-active, .badge-running { color: #d29922; }
-.status-failed, .badge-failed { color: #f85149; }
-.status-pending, .badge-pending { color: #8b949e; }
-.badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.8em; font-weight: 600; }
-.badge-completed { background: rgba(63,185,80,0.15); color: #3fb950; }
-.badge-running { background: rgba(210,153,34,0.15); color: #d29922; }
-.badge-failed { background: rgba(248,81,73,0.15); color: #f85149; }
-.badge-pending { background: rgba(139,148,158,0.15); color: #8b949e; }
-.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
-.header-right { display: flex; gap: 12px; align-items: center; }
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px; }
-.stat { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
-.stat-value { font-size: 1.6em; font-weight: 700; color: #f0f6fc; }
-.stat-label { font-size: 0.75em; color: #8b949e; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
-.stat-bar { height: 4px; border-radius: 2px; margin-top: 8px; background: #30363d; overflow: hidden; }
-.stat-bar-fill { height: 100%; border-radius: 2px; transition: width 0.5s; }
-.filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-.filter-btn { padding: 6px 14px; border: 1px solid #30363d; border-radius: 20px; background: transparent; color: #8b949e; cursor: pointer; font-size: 0.85em; transition: all 0.15s; }
-.filter-btn:hover { border-color: #58a6ff; color: #58a6ff; }
-.filter-btn.active { background: rgba(88,166,255,0.15); border-color: #58a6ff; color: #58a6ff; }
-.search-box { display: flex; gap: 8px; margin-bottom: 16px; }
-.search-box input { flex: 1; padding: 8px 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 0.9em; outline: none; }
-.search-box input:focus { border-color: #58a6ff; }
-.search-box button { padding: 8px 16px; background: #238636; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; }
-.search-box button:hover { background: #2ea043; }
-.conf-bar { display: inline-block; width: 60px; height: 6px; border-radius: 3px; background: #30363d; vertical-align: middle; margin-right: 6px; overflow: hidden; }
-.conf-fill { height: 100%; border-radius: 3px; }
-.conf-high .conf-fill { background: #f85149; width: 100%; }
-.conf-med .conf-fill { background: #d29922; width: 66%; }
-.conf-low .conf-fill { background: #3fb950; width: 33%; }
-.auto-refresh { font-size: 0.8em; color: #8b949e; }
-.auto-refresh .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #3fb950; margin-right: 4px; animation: pulse 2s infinite; }
+table { width: 100%; border-collapse: separate; border-spacing: 0; }
+th { padding: 10px 14px; text-align: left; font-size: 0.75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--border); white-space: nowrap; }
+td { padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 0.875rem; vertical-align: middle; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--surface-hover); }
+code { background: var(--surface); padding: 2px 6px; border-radius: 4px; font-size: 0.85em; }
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 100px; font-size: 0.75rem; font-weight: 600; line-height: 1; }
+.badge-completed { background: oklch(0.60 0.15 150 / 0.15); color: var(--success); }
+.badge-running { background: oklch(0.65 0.14 80 / 0.15); color: var(--warning); }
+.badge-failed { background: oklch(0.55 0.18 30 / 0.15); color: var(--danger); }
+.badge-pending { background: oklch(0.50 0.02 60 / 0.15); color: var(--muted); }
+.badge::before { content: ''; display: inline-block; width: 5px; height: 5px; border-radius: 50%; }
+.badge-completed::before { background: var(--success); }
+.badge-running::before { background: var(--warning); }
+.badge-failed::before { background: var(--danger); }
+.badge-pending::before { background: var(--muted); }
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+.header-right { display: flex; gap: 16px; align-items: center; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 24px; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px; position: relative; overflow: hidden; }
+.stat::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+.stat:nth-child(1)::after { background: var(--accent); }
+.stat:nth-child(2)::after { background: var(--primary); }
+.stat:nth-child(3)::after { background: var(--success); }
+.stat:nth-child(4)::after { background: var(--warning); }
+.stat-value { font-size: 1.75rem; font-weight: 700; color: var(--ink); letter-spacing: -0.02em; line-height: 1.2; }
+.stat-label { font-size: 0.6875rem; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+.stat-bar { height: 3px; border-radius: 2px; margin-top: 10px; background: var(--border); overflow: hidden; }
+.stat-bar-fill { height: 100%; border-radius: 2px; transition: width 0.5s ease; }
+.filters { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+.filter-btn { display: inline-flex; align-items: center; padding: 6px 14px; border: 1px solid var(--border); border-radius: 100px; background: transparent; color: var(--muted); cursor: pointer; font-size: 0.8125rem; font-weight: 500; transition: all 0.15s ease; line-height: 1; }
+.filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+.filter-btn.active { background: oklch(0.55 0.12 220 / 0.12); border-color: var(--accent); color: var(--accent); }
+.search-box { display: flex; gap: 0; margin-bottom: 16px; }
+.search-box input { flex: 1; padding: 9px 14px; background: var(--surface); border: 1px solid var(--border); border-right: none; border-radius: 8px 0 0 8px; color: var(--ink); font-size: 0.875rem; outline: none; transition: border-color 0.15s; }
+.search-box input:focus { border-color: var(--accent); }
+.search-box input::placeholder { color: var(--muted); opacity: 0.7; }
+.search-box button { padding: 9px 16px; background: var(--primary); color: oklch(0.93 0.008 60); border: none; border-radius: 0 8px 8px 0; cursor: pointer; font-weight: 600; font-size: 0.8125rem; transition: background 0.15s; }
+.search-box button:hover { background: var(--primary-dim); }
+.conf-bar { display: inline-flex; align-items: center; gap: 6px; }
+.conf-bar-track { width: 64px; height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; display: inline-block; vertical-align: middle; }
+.conf-bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
+.conf-high .conf-bar-fill { background: var(--danger); }
+.conf-med .conf-bar-fill { background: var(--warning); }
+.conf-low .conf-bar-fill { background: var(--success); }
+.auto-refresh { font-size: 0.75rem; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+.auto-refresh .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); animation: pulse 2s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
-.nav { display: flex; gap: 16px; }
-.nav a { color: #8b949e; font-size: 0.9em; padding-bottom: 2px; border-bottom: 2px solid transparent; }
-.nav a:hover { color: #c9d1d9; }
-.nav a.active { color: #58a6ff; border-bottom-color: #58a6ff; }
-.timeline-event { display: flex; gap: 12px; padding: 8px 0; border-bottom: 1px solid #21262d; font-size: 0.85em; align-items: flex-start; }
+.nav { display: flex; gap: 4px; }
+.nav a { padding: 6px 12px; border-radius: 6px; font-size: 0.8125rem; font-weight: 500; color: var(--muted); transition: all 0.15s; }
+.nav a:hover { color: var(--ink); background: var(--surface-hover); text-decoration: none; }
+.nav a.active { background: oklch(0.55 0.12 220 / 0.1); color: var(--accent); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-top: 16px; }
+.field { display: flex; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.875rem; }
+.field:last-child { border-bottom: none; }
+.label { color: var(--muted); min-width: 120px; font-size: 0.8125rem; }
+.report { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-top: 12px; white-space: pre-wrap; font-family: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', Consolas, monospace; font-size: 0.8125rem; line-height: 1.6; color: var(--ink); }
+.tag { display: inline-flex; align-items: center; background: oklch(0.55 0.12 220 / 0.08); color: var(--accent); padding: 4px 10px; border-radius: 6px; font-size: 0.8125rem; margin: 2px; font-family: 'SF Mono', 'Cascadia Code', monospace; }
+.tag code { background: none; padding: 0; }
+.timeline-event { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 0.8125rem; align-items: flex-start; }
 .timeline-event:last-child { border-bottom: none; }
-.tl-time { color: #8b949e; min-width: 160px; font-family: monospace; font-size: 0.9em; }
-.tl-type { color: #58a6ff; min-width: 120px; font-weight: 600; }
-.tl-summary { color: #c9d1d9; }
-@media (max-width: 768px) { .stats { grid-template-columns: repeat(2, 1fr); } body { padding: 12px; } }
+.tl-time { color: var(--muted); min-width: 155px; font-family: 'SF Mono', 'Cascadia Code', monospace; font-size: 0.8125rem; }
+.tl-type { color: var(--accent); min-width: 120px; font-weight: 600; font-size: 0.8125rem; }
+.tl-summary { color: var(--ink); font-size: 0.8125rem; }
+.empty-state { text-align: center; padding: 48px 24px; color: var(--muted); }
+.empty-state p { font-size: 0.875rem; margin-top: 8px; }
+@media (max-width: 768px) { .stats { grid-template-columns: repeat(2, 1fr); } body { padding: 12px; } .tl-time { min-width: 100px; } }
 `
 
 func (dh *DashboardHandler) index(w http.ResponseWriter, r *http.Request) {
@@ -167,32 +200,35 @@ func (dh *DashboardHandler) index(w http.ResponseWriter, r *http.Request) {
 <a href="/?status=pending" class="filter-btn` + filterClass("pending", statusFilter) + `">` + locale.T("dashboard_pending") + `</a>
 </div>
 
-<h2>` + locale.T("dashboard_investigations") + `</h2>
-<table><thead><tr><th>` + locale.T("dashboard_id") + `</th><th>` + locale.T("dashboard_edge") + `</th><th>` + locale.T("dashboard_status") + `</th><th>` + locale.T("dashboard_intent") + `</th><th>` + locale.T("dashboard_confidence") + `</th><th>` + locale.T("dashboard_created") + `</th></tr></thead><tbody>`)
+<table class="card" style="padding:0;margin-top:0"><thead><tr><th>` + locale.T("dashboard_id") + `</th><th>` + locale.T("dashboard_edge") + `</th><th>` + locale.T("dashboard_status") + `</th><th>` + locale.T("dashboard_intent") + `</th><th>` + locale.T("dashboard_confidence") + `</th><th>` + locale.T("dashboard_created") + `</th></tr></thead><tbody>`)
 
-	for _, inv := range invs {
-		conf := "—"
-		if inv.Confidence != nil {
-			conf = confBarVisual(*inv.Confidence)
+	if len(invs) == 0 {
+		b.WriteString(`<tr><td colspan="6"><div class="empty-state"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.4"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/><path d="M11 8v6"/><path d="M8 11h6"/></svg><p>` + locale.T("dashboard_no_results") + `</p></div></td></tr>`)
+	} else {
+		for _, inv := range invs {
+			conf := "—"
+			if inv.Confidence != nil {
+				conf = confBarVisual(*inv.Confidence)
+			}
+			id := inv.ID
+			if len(id) > 12 {
+				id = id[:12]
+			}
+			edge := inv.SourceEdge
+			if len(edge) > 12 {
+				edge = edge[:12]
+			}
+			intent := inv.Intent
+			if len(intent) > 60 {
+				intent = intent[:57] + "..."
+			}
+			fmt.Fprintf(&b, `<tr><td><a href="/investigations/%s">%s</a></td><td>%s</td><td><span class="badge badge-%s">%s</span></td><td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">%s</td><td>%s</td><td style="white-space:nowrap;color:var(--muted);font-size:0.8125rem">%s</td></tr>`,
+				html.EscapeString(inv.ID), html.EscapeString(id),
+				html.EscapeString(edge),
+				inv.Status, html.EscapeString(inv.Status),
+				html.EscapeString(intent), conf,
+				html.EscapeString(inv.CreatedAt))
 		}
-		id := inv.ID
-		if len(id) > 12 {
-			id = id[:12]
-		}
-		edge := inv.SourceEdge
-		if len(edge) > 12 {
-			edge = edge[:12]
-		}
-		intent := inv.Intent
-		if len(intent) > 60 {
-			intent = intent[:57] + "..."
-		}
-		fmt.Fprintf(&b, `<tr><td><a href="/investigations/%s">%s</a></td><td>%s</td><td><span class="badge badge-%s">%s</span></td><td>%s</td><td>%s</td><td style="white-space:nowrap">%s</td></tr>`,
-			html.EscapeString(inv.ID), html.EscapeString(id),
-			html.EscapeString(edge),
-			inv.Status, html.EscapeString(inv.Status),
-			html.EscapeString(intent), conf,
-			html.EscapeString(inv.CreatedAt))
 	}
 
 	b.WriteString(`</tbody></table>
@@ -268,12 +304,6 @@ func (dh *DashboardHandler) detail(w http.ResponseWriter, r *http.Request) {
 <title>` + locale.T("dashboard_detail") + ` — ` + html.EscapeString(inv.ID[:12]) + `</title>
 <style>` + pageStyle + `
 body { max-width: 960px; margin: 0 auto; }
-.card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-top: 20px; }
-.field { display: flex; padding: 6px 0; border-bottom: 1px solid #161b22; }
-.field:last-child { border-bottom: none; }
-.label { color: #8b949e; min-width: 120px; font-size: 0.85em; }
-.report { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-top: 16px; white-space: pre-wrap; font-family: monospace; font-size: 0.85em; line-height: 1.6; }
-.tag { display: inline-block; background: rgba(88,166,255,0.1); color: #58a6ff; padding: 2px 8px; border-radius: 4px; font-size: 0.8em; margin: 2px; }
 </style></head><body>
 <div class="header"><h1>` + locale.T("dashboard_detail") + ` ` + html.EscapeString(inv.ID[:12]) + `</h1>
 <a href="/">` + locale.T("dashboard_back") + `</a></div>
@@ -369,13 +399,13 @@ func (dh *DashboardHandler) correlations(w http.ResponseWriter, r *http.Request)
 <div class="nav"><a href="/">Dashboard</a><a href="/correlations" class="active">Correlations</a></div></div>
 
 <div class="stats">
-<div class="stat"><div class="stat-value" style="color:#f85149">` + fmt.Sprintf("%d", highCount) + `</div><div class="stat-label">High Confidence (3+ nodes)</div></div>
-<div class="stat"><div class="stat-value" style="color:#d29922">` + fmt.Sprintf("%d", medCount) + `</div><div class="stat-label">Medium (2 nodes)</div></div>
-<div class="stat"><div class="stat-value">` + fmt.Sprintf("%d", lowCount) + `</div><div class="stat-label">Low (1 node)</div></div>
+<div class="stat"><div class="stat-value" style="color:var(--danger)">` + fmt.Sprintf("%d", highCount) + `</div><div class="stat-label">High Confidence (3+ nodes)</div></div>
+<div class="stat"><div class="stat-value" style="color:var(--warning)">` + fmt.Sprintf("%d", medCount) + `</div><div class="stat-label">Medium (2 nodes)</div></div>
+<div class="stat"><div class="stat-value" style="color:var(--success)">` + fmt.Sprintf("%d", lowCount) + `</div><div class="stat-label">Low (1 node)</div></div>
 <div class="stat"><div class="stat-value">` + fmt.Sprintf("%d", len(corrs)) + `</div><div class="stat-label">Total IOCs</div></div>
 </div>
 
-<p style="color:#8b949e;margin-bottom:16px;font-size:0.9em">IOCs seen on 3+ nodes indicate broader campaigns with high confidence.</p>`)
+<p style="color:var(--muted);margin-bottom:16px;font-size:0.875rem">IOCs seen on 3+ nodes indicate broader campaigns with high confidence.</p>`)
 
 	if len(corrs) > 0 {
 		b.WriteString(`<table><thead><tr><th>IOC</th><th>Nodes</th><th>Confidence</th><th>First Seen</th><th>Last Seen</th></tr></thead><tbody>`)
@@ -384,11 +414,11 @@ func (dh *DashboardHandler) correlations(w http.ResponseWriter, r *http.Request)
 			count, _ := c["node_count"].(float64)
 			conf, _ := c["confidence"].(float64)
 
-			clr := "#8b949e"
+			clr := "var(--muted)"
 			if conf >= 0.8 {
-				clr = "#f85149"
+				clr = "var(--danger)"
 			} else if conf >= 0.6 {
-				clr = "#d29922"
+				clr = "var(--warning)"
 			}
 
 			first, _ := c["first_seen"].(string)
@@ -413,15 +443,7 @@ func (dh *DashboardHandler) correlations(w http.ResponseWriter, r *http.Request)
 }
 
 func confBar(pct float64, count int) string {
-	clr := "#3fb950"
-	if pct > 75 {
-		clr = "#3fb950"
-	} else if pct > 50 {
-		clr = "#d29922"
-	} else {
-		clr = "#f85149"
-	}
-	return fmt.Sprintf(`<div class="stat-bar"><div class="stat-bar-fill" style="width:%.0f%%;background:%s"></div></div>`, pct, clr)
+	return fmt.Sprintf(`<div class="stat-bar"><div class="stat-bar-fill" style="width:%.0f%%;background:var(--accent)"></div></div>`, pct)
 }
 
 func jsStr(s string) string {
@@ -430,16 +452,13 @@ func jsStr(s string) string {
 
 func confBarVisual(conf float64) string {
 	cls := "conf-low"
-	clr := "#3fb950"
 	pct := conf * 100
 	if conf >= 0.7 {
 		cls = "conf-high"
-		clr = "#f85149"
 	} else if conf >= 0.4 {
 		cls = "conf-med"
-		clr = "#d29922"
 	}
-	return fmt.Sprintf(`<div class="conf-bar %s"><div class="conf-fill" style="width:%.0f%%;background:%s"></div></div>`, cls, pct, clr)
+	return fmt.Sprintf(`<span class="conf-bar %s"><span class="conf-bar-track"><span class="conf-bar-fill" style="width:%.0f%%"></span></span><span style="font-size:0.75rem;color:var(--muted)">%.0f%%</span></span>`, cls, pct, pct)
 }
 
 func filterClass(status, current string) string {
@@ -451,12 +470,12 @@ func filterClass(status, current string) string {
 
 func statusColor(compl, fail, run int) string {
 	if fail > 0 {
-		return "#f85149"
+		return "var(--danger)"
 	}
 	if run > 0 {
-		return "#d29922"
+		return "var(--warning)"
 	}
-	return "#3fb950"
+	return "var(--success)"
 }
 
 func init() {
