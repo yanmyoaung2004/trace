@@ -28,7 +28,11 @@ func RunServer(cfg *config.Config, database *db.DB, invMgr *investigation.Manage
 	log.Printf("[server] starting in server mode")
 	log.Printf("[server] HTTP API + dashboard: %s", httpAddr)
 
-	srv, err := ServeHTTP(httpAddr, mgr, mgr)
+	srv, err := ServeHTTP(ServeOptions{
+		ListenAddr: httpAddr,
+		CertFile:   cfg.Server.TLS.CertFile,
+		KeyFile:    cfg.Server.TLS.KeyFile,
+	}, mgr, mgr)
 	if err != nil {
 		return fmt.Errorf("start HTTP server: %w", err)
 	}

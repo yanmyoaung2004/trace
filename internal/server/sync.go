@@ -178,7 +178,13 @@ func (h *SyncHandler) handleCorrelations(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, corrs)
 }
 
-func ServeHTTP(listenAddr string, mgr *ServerManager, dashboard DashboardDataProvider) (*http.Server, error) {
+type ServeOptions struct {
+	ListenAddr string
+	CertFile   string
+	KeyFile    string
+}
+
+func ServeHTTP(opts ServeOptions, mgr *ServerManager, dashboard DashboardDataProvider) (*http.Server, error) {
 	mux := http.NewServeMux()
 
 	sync := NewSyncHandler(mgr)
@@ -192,14 +198,25 @@ func ServeHTTP(listenAddr string, mgr *ServerManager, dashboard DashboardDataPro
 	})
 
 	srv := &http.Server{
-		Addr:    listenAddr,
-		Handler: mux,
+		Addr:              opts.ListenAddr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	go func() {
-		log.Printf("[server] HTTP API + dashboard on %s", listenAddr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("[server] HTTP error: %v", err)
+		if opts.CertFile != "" && opts.KeyFile != "" {
+			log.Printf("[server] HTTPS API + dashboard on %s (TLS)", opts.ListenAddr)
+			if err := srv.ListenAndServeTLS(opts.CertFile, opts.KeyFile); err != nil && err != http.ErrServerClosed {
+				log.Printf("[server] HTTPS error: %v", err)
+			}
+		} else {
+			log.Printf("[server] HTTP API + dashboard on %s", opts.ListenAddr)
+			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("[server] HTTP error: %v", err)
+			}
 		}
 	}()
 

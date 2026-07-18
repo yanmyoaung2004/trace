@@ -9,7 +9,3 @@ steps:
     action: block_ip
     params:
       ip: ${input.ip}
-  - agent: host
-    action: synthesize_report
-    params:
-      investigation_id: ${investigation.id}

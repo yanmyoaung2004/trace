@@ -67,6 +67,9 @@ func (a *Agent) sendSlack(ctx context.Context, input agent.Input) (agent.Output,
 	if webhookURL == "" {
 		return agent.Output{"status": "error", "error": "webhook_url is required"}, nil
 	}
+	if !isHTTPURL(webhookURL) {
+		return agent.Output{"status": "error", "error": "invalid webhook URL"}, nil
+	}
 	if message == "" && title == "" {
 		return agent.Output{"status": "error", "error": "message or title is required"}, nil
 	}
@@ -94,6 +97,9 @@ func (a *Agent) sendDiscord(ctx context.Context, input agent.Input) (agent.Outpu
 
 	if webhookURL == "" {
 		return agent.Output{"status": "error", "error": "webhook_url is required"}, nil
+	}
+	if !isHTTPURL(webhookURL) {
+		return agent.Output{"status": "error", "error": "invalid webhook URL"}, nil
 	}
 
 	payload := discordPayload{}
@@ -133,4 +139,8 @@ func (a *Agent) postWebhook(ctx context.Context, url string, payload any) (agent
 	}
 
 	return agent.Output{"status": "sent", "provider": url, "http_status": resp.StatusCode}, nil
+}
+
+func isHTTPURL(s string) bool {
+	return (len(s) > 7 && s[:7] == "http://") || (len(s) > 8 && s[:8] == "https://")
 }

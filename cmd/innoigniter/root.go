@@ -184,6 +184,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newHistoryCmd())
 	cmd.AddCommand(newApprovalCmd())
 	cmd.AddCommand(newReportCmd())
+	cmd.AddCommand(newGenKeyCmd())
 	cmd.AddCommand(newInitCmd())
 	cmd.AddCommand(newPluginCmd())
 	cmd.AddCommand(newServerCmd())

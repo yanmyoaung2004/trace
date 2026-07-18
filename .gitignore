@@ -28,3 +28,7 @@ intel/*.db
 
 # Data
 .innoigniter/
+
+# Stray test artifacts
+internal/response/start
+internal/response/stop

@@ -511,6 +511,9 @@ func formatMarkdownReport(intent, investigationID string, confidence float64, su
 }
 
 func pickPlaybook(intent string, engine *playbook.Engine, input agent.Input) string {
+	if engine == nil {
+		return "hash-lookup"
+	}
 	if v, ok := input["action"]; ok && v == "plan_investigation" {
 		return ""
 	}

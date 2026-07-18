@@ -36,10 +36,17 @@ type SIEMConfig struct {
 	SyslogAddr string `json:"syslog_addr"`
 }
 
-type ServerConfig struct {
+type TLSConfig struct {
 	Enabled  bool   `json:"enabled"`
-	GRPCAddr string `json:"grpc_addr"`
-	HTTPAddr string `json:"http_addr"`
+	CertFile string `json:"cert_file"`
+	KeyFile  string `json:"key_file"`
+}
+
+type ServerConfig struct {
+	Enabled  bool      `json:"enabled"`
+	GRPCAddr string    `json:"grpc_addr"`
+	HTTPAddr string    `json:"http_addr"`
+	TLS      TLSConfig `json:"tls"`
 }
 
 func repoDir() string {

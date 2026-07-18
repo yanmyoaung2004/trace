@@ -27,6 +27,13 @@ Examples:
 			if httpAddr != "" {
 				app.cfg.Server.HTTPAddr = httpAddr
 			}
+			if cert, _ := cmdCobra.Flags().GetString("tls-cert"); cert != "" {
+				app.cfg.Server.TLS.CertFile = cert
+				app.cfg.Server.TLS.Enabled = true
+			}
+			if key, _ := cmdCobra.Flags().GetString("tls-key"); key != "" {
+				app.cfg.Server.TLS.KeyFile = key
+			}
 			app.cfg.Server.Enabled = true
 
 			fmt.Printf("InnoIgniterAI v%s — Server Mode\n", Version)
@@ -35,5 +42,7 @@ Examples:
 	}
 
 	cmd.Flags().String("http-addr", ":8080", "HTTP API + dashboard address")
+	cmd.Flags().String("tls-cert", "", "TLS certificate file path")
+	cmd.Flags().String("tls-key", "", "TLS private key file path")
 	return cmd
 }
