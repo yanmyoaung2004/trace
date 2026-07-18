@@ -14,14 +14,20 @@ type Config struct {
 	Playbook string `json:"playbook_dir"`
 	IntelDir string `json:"intel_dir"`
 
-	SIEM   SIEMConfig   `json:"siem"`
-	Server ServerConfig `json:"server"`
+	Telemetry TelemetryConfig `json:"telemetry"`
+	SIEM      SIEMConfig      `json:"siem"`
+	Server    ServerConfig    `json:"server"`
 
 	LLMProvider  string `json:"llm_provider"`
 	LLMURL       string `json:"llm_url"`
 	LLMAPIKey    string `json:"llm_api_key"`
 	VTAPIKey     string `json:"vt_api_key"`
 	WebSearchKey string `json:"web_search_key"`
+}
+
+type TelemetryConfig struct {
+	Enabled bool   `json:"enabled"`
+	URL     string `json:"url,omitempty"`
 }
 
 type SIEMConfig struct {

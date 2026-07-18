@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"github.com/innoigniter/edge/internal/plugins/exporter"
 	"github.com/innoigniter/edge/internal/response"
 	"github.com/innoigniter/edge/internal/taskqueue"
+	"github.com/innoigniter/edge/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -31,6 +33,7 @@ type App struct {
 	logWriter   *investigation.LogWriter
 	taskQueue   *taskqueue.Queue
 	hostAgent   *host.Agent
+	telemetry   *telemetry.Telemetry
 }
 
 func (a *App) initConfig(cfgPath string) error {
@@ -107,6 +110,21 @@ func (a *App) initServices() error {
 	}
 	a.taskQueue = taskqueue.New(a.database)
 	a.executor = playbook.NewExecutor(a.registry, a.invManager, a.logWriter)
+
+	telURL := "https://telemetry.innoigniter.io/v1/report"
+	if a.cfg.Telemetry.URL != "" {
+		telURL = a.cfg.Telemetry.URL
+	}
+	a.telemetry = telemetry.New(a.cfg.Telemetry.Enabled, Version, telURL)
+	a.telemetry.WithCounts(
+		func() int { return len(a.registry.List()) },
+		func() int {
+			ctx := context.Background()
+			invs, _ := a.invManager.ListRecent(ctx, 1000)
+			return len(invs)
+		},
+	)
+
 	return nil
 }
 
@@ -160,8 +178,10 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newHistoryCmd())
 	cmd.AddCommand(newApprovalCmd())
 	cmd.AddCommand(newReportCmd())
+	cmd.AddCommand(newInitCmd())
 	cmd.AddCommand(newPluginCmd())
 	cmd.AddCommand(newServerCmd())
+	cmd.AddCommand(newUpdateCmd())
 	cmd.AddCommand(newVersionCmd())
 
 	return cmd

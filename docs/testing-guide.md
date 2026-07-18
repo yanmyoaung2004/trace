@@ -445,25 +445,95 @@ curl -H "Authorization: Bearer sk-xxxxxxxxxxxxx" http://localhost:8080/api/v1/no
 
 ## Phase 10 — Polish
 
+### Build and unit tests
+
 ```powershell
-# First-run setup
+go build -o innoigniter.exe ./cmd/innoigniter
+go vet ./...
+go test ./... -count=1
+```
+Expected: Build succeeds, vet clean, all tests pass.
+
+### First-run setup
+
+```powershell
+# Run the setup wizard
 .\innoigniter.exe init
 ```
+Expected: Interactive prompts for VT key, LLM URL, web search key, SIEM, telemetry.
+Creates `~/.innoigniter/config.json`. Pressing Enter on all skips creates a minimal config.
 
 ```powershell
-# Update binary
-.\innoigniter.exe update
+# Config file is created
+type $env:USERPROFILE\.innoigniter\config.json
+```
+Expected: JSON with default paths and any options you provided.
+
+### Self-update
+
+```powershell
+# Check update command
+.\innoigniter.exe update self --help
+```
+Expected: Downloads the latest release binary from GitHub, verifies signature if available,
+creates backup, performs atomic swap.
+
+```powershell
+# Update won't actually run without a release server — test the command structure
+.\innoigniter.exe update self
+```
+Expected: Fails gracefully (HTTP error or connection refused) — not a crash.
+
+### Intel and playbook updates
+
+```powershell
+# Refresh intel database
+.\innoigniter.exe update intel --help
 ```
 
 ```powershell
-# Update intel cache
-.\innoigniter.exe update-intel
+# Fetch latest playbook library
+.\innoigniter.exe update playbooks --help
 ```
+Expected: Both show usage. Download from release server when available.
+
+### Cross-compile
 
 ```powershell
-# Cross-compile for all platforms
+# Build for all platforms
 make cross
 ```
+Expected: 5 binaries created (linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64).
+
+### GitHub Actions CI
+
+The `.github/workflows/` directory contains:
+- `ci.yml` — build + vet + test + cross-compile on every push/PR
+- `release.yml` — triggered by `v*` tags, builds all platforms, creates GitHub release with checksums
+
+Check workflow syntax:
+```powershell
+# Go to repo root and validate YAML
+# GitHub validates these server-side on push
+```
+
+### Telemetry
+
+Telemetry is opt-in (enabled via `init` wizard or config `telemetry.enabled: true`).
+Reports once on startup and every 24h: version, OS, arch, plugin count, investigation count, uptime.
+
+```powershell
+# Enable via config
+# Add to ~/.innoigniter/config.json:
+# "telemetry": { "enabled": true }
+```
+
+### Documentation
+
+Check that the following docs exist:
+- `README.md` — quickstart, CLI ref, architecture, playbook list
+- `docs/playbook-authoring.md` — YAML structure, fields, interpolation, conditions
+- `docs/plugin-development.md` — Go plugin interface, build, install, distribution
 
 ## Quick smoke test (full pipeline)
 

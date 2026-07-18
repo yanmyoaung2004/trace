@@ -63,6 +63,8 @@ Examples:
 				defer engine.Stop()
 			}
 
+			app.telemetry.Start()
+
 			exportAddr, _ := cmd.Flags().GetString("export")
 			if exportAddr != "" {
 				exporterAgent := app.registry.Get("exporter")
