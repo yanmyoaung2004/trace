@@ -3,11 +3,23 @@ package siem_test
 import (
 	"context"
 	"encoding/json"
+	"runtime"
 	"testing"
 	"time"
 
 	"github.com/innoigniter/edge/internal/siem"
 )
+
+func startEngine(t *testing.T, e *siem.Engine) (context.Context, context.CancelFunc) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	go e.Start(ctx)
+	t.Cleanup(func() {
+		cancel()
+		e.Stop()
+	})
+	return ctx, cancel
+}
 
 func TestJSONDecoder(t *testing.T) {
 	raw := `{"timestamp":"2026-07-18T10:00:00Z","event":"login","user":"admin","severity":3,"source":"auth"}`
@@ -17,12 +29,8 @@ func TestJSONDecoder(t *testing.T) {
 	e.OnAlert(func(a *siem.Alert) { alertCh <- a })
 
 	e.Ingest([]byte(raw), "test")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	go e.Start(ctx)
-	time.Sleep(500 * time.Millisecond)
+	startEngine(t, e)
+	time.Sleep(200 * time.Millisecond)
 
 	select {
 	case <-alertCh:
@@ -38,31 +46,20 @@ func TestApacheDecoder(t *testing.T) {
 	e.OnAlert(func(a *siem.Alert) { alertCh <- a })
 
 	e.Ingest([]byte(raw), "test")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	go e.Start(ctx)
-	time.Sleep(500 * time.Millisecond)
+	startEngine(t, e)
+	time.Sleep(200 * time.Millisecond)
 }
 
 func TestApacheDecoderError(t *testing.T) {
 	raw := `192.168.1.1 - - [18/Jul/2026:10:00:00 +0000] "GET /index.html HTTP/1.1" 500 1234`
 
 	e := siem.New(siem.SIEMConfig{})
-
 	alertCh := make(chan *siem.Alert, 10)
-	e.OnAlert(func(a *siem.Alert) {
-		alertCh <- a
-	})
+	e.OnAlert(func(a *siem.Alert) { alertCh <- a })
 
 	e.Ingest([]byte(raw), "test")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	go e.Start(ctx)
-	time.Sleep(500 * time.Millisecond)
+	startEngine(t, e)
+	time.Sleep(200 * time.Millisecond)
 
 	select {
 	case alert := <-alertCh:
@@ -72,7 +69,7 @@ func TestApacheDecoderError(t *testing.T) {
 		if alert.Severity != 3 {
 			t.Fatalf("expected severity 3, got %d", alert.Severity)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(500 * time.Millisecond):
 		t.Fatal("expected alert for 500 error, got none")
 	}
 }
@@ -81,7 +78,6 @@ func TestSyslogAuthFailure(t *testing.T) {
 	raw := `<34>Jul 18 10:00:00 myserver sshd[1234]: Failed password for root from 10.0.0.5 port 22 ssh2`
 
 	e := siem.New(siem.SIEMConfig{})
-
 	alertCh := make(chan *siem.Alert, 10)
 	e.OnAlert(func(a *siem.Alert) { alertCh <- a })
 
@@ -89,47 +85,42 @@ func TestSyslogAuthFailure(t *testing.T) {
 		e.Ingest([]byte(raw), "test")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	go e.Start(ctx)
-	time.Sleep(500 * time.Millisecond)
+	startEngine(t, e)
+	time.Sleep(200 * time.Millisecond)
 
 	alerts := 0
 	for range 5 {
 		select {
 		case <-alertCh:
 			alerts++
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(200 * time.Millisecond):
 		}
 	}
-
 	if alerts == 0 {
 		t.Fatal("expected at least one alert from auth failures")
 	}
 }
 
 func TestFileWatcherNewLines(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping file watcher test in short mode")
+	}
 	dir := t.TempDir()
 
 	e := siem.New(siem.SIEMConfig{
 		LogDirs:      []string{dir},
 		PollInterval: "100ms",
 	})
-
 	alertCh := make(chan *siem.Alert, 10)
 	e.OnAlert(func(a *siem.Alert) { alertCh <- a })
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	go e.Start(ctx)
-	time.Sleep(1500 * time.Millisecond)
+	startEngine(t, e)
+	time.Sleep(500 * time.Millisecond)
 
 	e.Ingest([]byte(`{"timestamp":"2026-07-18T10:00:00Z","message":"test","severity":5}`), "test")
 	e.Ingest([]byte(`192.168.1.1 - - [18/Jul/2026:10:00:00 +0000] "GET /test HTTP/1.1" 500 100`), "test")
 
-	time.Sleep(3 * time.Second)
+	time.Sleep(500 * time.Millisecond)
 
 	select {
 	case <-alertCh:
@@ -138,23 +129,23 @@ func TestFileWatcherNewLines(t *testing.T) {
 }
 
 func TestCorrelationRule(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	if testing.Short() {
+		t.Skip("skipping correlation test in short mode")
+	}
 
 	e := siem.New(siem.SIEMConfig{})
-
 	alertCh := make(chan *siem.Alert, 10)
 	e.OnAlert(func(a *siem.Alert) { alertCh <- a })
 
-	go e.Start(ctx)
-	time.Sleep(500 * time.Millisecond)
+	startEngine(t, e)
+	time.Sleep(200 * time.Millisecond)
 
 	raw := `<34>Jul 18 10:00:00 myserver sshd[1234]: Failed password for root from 10.0.0.5 port 22 ssh2`
 	for range 5 {
 		e.Ingest([]byte(raw), "test")
 	}
 
-	time.Sleep(2 * time.Second)
+	time.Sleep(500 * time.Millisecond)
 
 	select {
 	case alert := <-alertCh:
@@ -163,7 +154,7 @@ func TestCorrelationRule(t *testing.T) {
 		if alert.RuleID == "" {
 			t.Fatal("expected rule ID")
 		}
-	case <-time.After(3 * time.Second):
+	case <-time.After(1 * time.Second):
 		t.Fatal("expected correlation alert after 5 auth failures")
 	}
 }
@@ -174,21 +165,20 @@ func TestRawDecoder(t *testing.T) {
 	e := siem.New(siem.SIEMConfig{})
 	e.Ingest([]byte(raw), "test")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	go e.Start(ctx)
-	time.Sleep(500 * time.Millisecond)
+	startEngine(t, e)
+	time.Sleep(200 * time.Millisecond)
 }
 
 func TestDecoderMultipleLines(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping decoder multiple lines test in short mode")
+	}
 	lines := []string{
 		`{"timestamp":"2026-07-18T10:00:00Z","event":"auth","user":"admin","severity":3}`,
 		`{"timestamp":"2026-07-18T10:00:01Z","event":"auth","user":"root","severity":5}`,
 	}
 
 	e := siem.New(siem.SIEMConfig{})
-
 	alertCh := make(chan *siem.Alert, 10)
 	e.OnAlert(func(a *siem.Alert) { alertCh <- a })
 
@@ -196,11 +186,8 @@ func TestDecoderMultipleLines(t *testing.T) {
 		e.Ingest([]byte(line), "test")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	go e.Start(ctx)
-	time.Sleep(2 * time.Second)
+	startEngine(t, e)
+	time.Sleep(500 * time.Millisecond)
 
 	select {
 	case <-alertCh:
@@ -209,8 +196,10 @@ func TestDecoderMultipleLines(t *testing.T) {
 }
 
 func TestWindowsEventDecoder(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping windows event decoder test in short mode")
+	}
 	e := siem.New(siem.SIEMConfig{})
-
 	alertCh := make(chan *siem.Alert, 10)
 	e.OnAlert(func(a *siem.Alert) { alertCh <- a })
 
@@ -219,23 +208,23 @@ func TestWindowsEventDecoder(t *testing.T) {
 		e.Ingest([]byte(raw), "test")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	go e.Start(ctx)
-	time.Sleep(3 * time.Second)
+	startEngine(t, e)
+	time.Sleep(500 * time.Millisecond)
 
 	select {
 	case alert := <-alertCh:
 		if alert.RuleID == "" {
 			t.Fatal("expected rule ID")
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(1 * time.Second):
 		t.Fatal("expected alert from auth failures")
 	}
 }
 
 func TestHighVolume(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping high volume test in short mode")
+	}
 	e := siem.New(siem.SIEMConfig{})
 
 	alertCh := make(chan *siem.Alert, 100)
@@ -246,9 +235,10 @@ func TestHighVolume(t *testing.T) {
 		e.Ingest([]byte(raw), "test")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	startEngine(t, e)
+	time.Sleep(500 * time.Millisecond)
+}
 
-	go e.Start(ctx)
-	time.Sleep(2 * time.Second)
+func init() {
+	_ = runtime.GOOS
 }

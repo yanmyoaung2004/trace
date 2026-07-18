@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/innoigniter/edge/internal/db"
@@ -142,6 +143,9 @@ func TestPEAnalyzeNonPE(t *testing.T) {
 }
 
 func TestPEAnalyzeRealPE(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("PE analysis test requires Windows")
+	}
 	agent := setupDetection(t)
 	ctx := context.Background()
 

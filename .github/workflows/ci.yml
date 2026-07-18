@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,5 +26,9 @@ jobs:
       - name: Build
         run: go build -o innoigniter ./cmd/innoigniter
 
-      - name: Test
-        run: go test ./... -v -count=1
+      - name: Test (short mode)
+        run: go test ./... -short -count=1 -p 2
+
+      - name: Test (full, no parallelism)
+        if: github.ref == 'refs/heads/main'
+        run: go test ./... -count=1 -p 1 -timeout 300s

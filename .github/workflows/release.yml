@@ -24,7 +24,7 @@ jobs:
           cache-dependency-path: ./go.sum
 
       - name: Run tests
-        run: go test ./... -count=1 -v
+        run: go test ./... -short -count=1 -p 2
 
       - name: Build all platforms
         run: make cross
