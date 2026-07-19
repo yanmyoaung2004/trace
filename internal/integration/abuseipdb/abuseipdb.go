@@ -2,9 +2,11 @@ package abuseipdb
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/yanmyoaung2004/trace/internal/agent"
@@ -13,12 +15,15 @@ import (
 type Client struct {
 	apiKey     string
 	httpClient *http.Client
+	cacheDB    *sql.DB
+	mu         sync.Mutex
 }
 
-func New(apiKey string) *Client {
+func New(apiKey string, cacheDB *sql.DB) *Client {
 	return &Client{
 		apiKey:     apiKey,
 		httpClient: &http.Client{Timeout: 15 * time.Second},
+		cacheDB:    cacheDB,
 	}
 }
 
@@ -42,6 +47,21 @@ type AbuseData struct {
 func (c *Client) CheckIP(ctx context.Context, ip string) (*AbuseData, error) {
 	if c.apiKey == "" {
 		return nil, nil
+	}
+
+	if c.cacheDB != nil {
+		c.mu.Lock()
+		var data string
+		err := c.cacheDB.QueryRowContext(ctx,
+			`SELECT value FROM cache WHERE key = ? AND ttl > CAST(strftime('%s','now') AS INTEGER)`,
+			"abuse:"+ip).Scan(&data)
+		c.mu.Unlock()
+		if err == nil && data != "" {
+			var cached AbuseData
+			if json.Unmarshal([]byte(data), &cached) == nil {
+				return &cached, nil
+			}
+		}
 	}
 
 	url := fmt.Sprintf("https://api.abuseipdb.com/api/v2/check?ipAddress=%s&maxAgeInDays=90", ip)
@@ -72,6 +92,16 @@ func (c *Client) CheckIP(ctx context.Context, ip string) (*AbuseData, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("abuseipdb decode: %w", err)
 	}
+
+	if c.cacheDB != nil {
+		data, _ := json.Marshal(result.Data)
+		c.mu.Lock()
+		c.cacheDB.ExecContext(ctx,
+			`INSERT OR REPLACE INTO cache (key, value, ttl) VALUES (?, ?, CAST(strftime('%s','now') AS INTEGER) + ?)`,
+			"abuse:"+ip, string(data), 3600)
+		c.mu.Unlock()
+	}
+
 	return &result.Data, nil
 }
 
@@ -79,8 +109,8 @@ type Agent struct {
 	client *Client
 }
 
-func NewAgent(apiKey string) *Agent {
-	return &Agent{client: New(apiKey)}
+func NewAgent(apiKey string, cacheDB *sql.DB) *Agent {
+	return &Agent{client: New(apiKey, cacheDB)}
 }
 
 func (a *Agent) Name() string { return "abuseipdb" }

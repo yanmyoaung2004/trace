@@ -1,16 +1,27 @@
 name: ip-reputation
-description: Check an IP address against threat intel and VT
+description: Check an IP address against AbuseIPDB, OTX, VT, and local intel
 triggers:
   - ip
   - address
   - reputation
   - check ip
 steps:
+  - agent: abuseipdb
+    action: ip_reputation
+    params:
+      ip: ${input.ip}
+    optional: true
+  - agent: otx
+    action: indicator_check
+    params:
+      indicator: ${input.ip}
+    optional: true
   - agent: sift
     action: vt_lookup
     params:
       indicator: ${input.ip}
     optional: true
+    timeout: 30s
   - agent: archive
     action: ioc_enrich
     params:

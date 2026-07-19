@@ -51,7 +51,7 @@ func TestPlaybookByName(t *testing.T) {
 		want int
 	}{
 		{"hash-lookup", 4},
-		{"ip-reputation", 2},
+		{"ip-reputation", 4},
 		{"file-analysis", 4},
 		{"domain-reputation", 3},
 		{"email-analysis", 5},
