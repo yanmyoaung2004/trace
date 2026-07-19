@@ -6,9 +6,10 @@ Trace takes security seriously. If you discover a vulnerability, please report i
 
 **Do not** report security issues through public GitHub issues.
 
-Instead, send details to: [opencode.trust@gmail.com](mailto:opencode.trust@gmail.com)
+Instead, send details to: [ymyo44277@gmail.com](mailto:ymyo44277@gmail.com)
 
 Please include:
+
 - Description of the vulnerability
 - Steps to reproduce
 - Potential impact
@@ -19,6 +20,7 @@ You should receive a response within 48 hours. If you don't, follow up.
 ## Scope
 
 Security issues in any of the following are in scope:
+
 - The main Trace binary and its source code at `github.com/yanmyoaung2004/trace`
 - Official Docker images
 - Official releases

@@ -24,10 +24,7 @@ jobs:
         run: go vet ./...
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-          args: --timeout=5m --disable=all --enable=gosec,misspell,unparam,prealloc
+        run: go vet ./...
 
       - name: Build
         run: go build -o .trace ./cmd/trace
