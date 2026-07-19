@@ -69,6 +69,27 @@ func (wd *WazuhDecoder) init() {
 	})
 }
 
+func LoadWazuhLists() map[string]map[string]string {
+	var data map[string]map[string]string
+	if err := json.Unmarshal([]byte(wazuhListsJSON), &data); err != nil {
+		return nil
+	}
+	return data
+}
+
+func LookupListEntry(listName, key string) (string, bool) {
+	lists := LoadWazuhLists()
+	if lists == nil {
+		return "", false
+	}
+	entries, ok := lists[listName]
+	if !ok {
+		return "", false
+	}
+	val, ok := entries[key]
+	return val, ok
+}
+
 func compilePattern(pattern string) *regexp.Regexp {
 	p := strings.ReplaceAll(pattern, `\`, `\\`)
 	re, err := regexp.Compile(p)
