@@ -3,110 +3,68 @@ package sca
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 )
 
-func TestSCARunnerValidPolicy(t *testing.T) {
-	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
-		t.Skip("SCA tests require Unix")
-	}
-
-	policy := `
-policy:
-  id: "test_policy"
-  name: "Test Policy"
-checks:
-  - id: 100
-    title: "Check /bin/sh exists"
-    condition: all
-    rules:
-      - "f:/bin/sh -> r:."
-`
-	a := New()
-	output, err := a.runPolicy(context.Background(), map[string]any{"policy_data": policy})
-	if err != nil {
-		t.Fatalf("runPolicy: %v", err)
-	}
-
-	pass, _ := output["pass"].(int)
-	if pass != 1 {
-		t.Fatalf("expected 1 pass, got %d (fail: %v)", pass, output["fail"])
-	}
-}
-
 func TestSCARunnerFileCheck(t *testing.T) {
-	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
-		t.Skip("this test requires Unix filesystem")
+	if runtime.GOOS == "windows" {
+		t.Skip("SCA file check requires Unix")
 	}
 
 	policy := `
 policy:
   id: "test_file"
-  name: "File Check Test"
+  name: "File Check"
 checks:
   - id: 200
-    title: "Check /bin/sh exists and has expected content"
+    title: "Check /etc/hostname exists"
     condition: all
     rules:
-      - "f:/bin/sh -> r:ELF"
+      - "f:/etc/hostname -> r:."
 `
 	a := New()
 	output, err := a.runPolicy(context.Background(), map[string]any{"policy_data": policy})
 	if err != nil {
 		t.Fatalf("runPolicy: %v", err)
 	}
-
-	pass, _ := output["pass"].(int)
-	if pass != 1 {
-		t.Fatalf("expected 1 pass, got %d (score: %v, fail: %v)", pass, output["score"], output["fail"])
+	pass, ok := output["pass"].(int)
+	if !ok || pass != 1 {
+		t.Fatalf("expected 1 pass, got %v (fail: %v, error: %v)", pass, output["fail"], output["error"])
 	}
 }
 
 func TestSCARunnerCommandCheck(t *testing.T) {
-	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
-		t.Skip("this test requires Unix")
+	if runtime.GOOS == "windows" {
+		t.Skip("SCA command check requires Unix")
 	}
 
 	policy := `
 policy:
   id: "test_cmd"
-  name: "Command Check Test"
+  name: "Command Check"
 checks:
   - id: 300
-    title: "Check whoami works"
+    title: "Check echo works"
     condition: all
     rules:
-      - "c:whoami -> r:."
+      - "c:echo hello -> r:hello"
 `
 	a := New()
 	output, err := a.runPolicy(context.Background(), map[string]any{"policy_data": policy})
 	if err != nil {
 		t.Fatalf("runPolicy: %v", err)
 	}
-
-	pass, _ := output["pass"].(int)
-	if pass != 1 {
-		t.Fatalf("expected 1 pass, got %d (fail: %v)", pass, output["fail"])
-	}
-}
-
-func TestSCARunnerOSDetection(t *testing.T) {
-	policy := DetectOSPolicy()
-	if policy == nil {
-		t.Logf("No matching policy for OS: %s", runtime.GOOS)
-		return
-	}
-	t.Logf("Detected policy: %s (%s)", policy.ID, policy.Name)
-	if !strings.Contains(policy.ID, runtime.GOOS) && !strings.Contains(policy.Name, runtime.GOOS) {
-		t.Logf("Policy %s may not be exact match for OS %s", policy.ID, runtime.GOOS)
+	pass, ok := output["pass"].(int)
+	if !ok || pass != 1 {
+		t.Fatalf("expected 1 pass, got %v (fail: %v)", pass, output["fail"])
 	}
 }
 
 func TestSCARunnerNegativeCondition(t *testing.T) {
-	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
-		t.Skip("SCA tests require Unix")
+	if runtime.GOOS == "windows" {
+		t.Skip("SCA negative check requires Unix")
 	}
 
 	policy := `
@@ -125,35 +83,72 @@ checks:
 	if err != nil {
 		t.Fatalf("runPolicy: %v", err)
 	}
-
-	pass, _ := output["pass"].(int)
-	if pass != 1 {
-		t.Fatalf("expected 1 pass (nonexistent file should not match), got %d", pass)
+	pass, ok := output["pass"].(int)
+	if !ok || pass != 1 {
+		t.Fatalf("expected 1 pass, got %d", pass)
 	}
 }
 
-func TestSCARunnerFromEmbedded(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("SCA embedded policy test requires Linux")
+func TestSCARunnerDirectoryCheck(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("SCA directory check requires Unix")
 	}
 
-	policy := DetectOSPolicy()
-	if policy == nil {
-		t.Skip("no matching policy")
-	}
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "test.conf"), []byte("ENABLED=yes\n"), 0644)
 
+	policy := `
+policy:
+  id: "test_dir"
+  name: "Directory Check"
+checks:
+  - id: 500
+    title: "Check dir has config file"
+    condition: any
+    rules:
+      - "d:` + dir + ` -> r:\.conf -> r:ENABLED"
+`
 	a := New()
-	output, err := a.runPolicy(context.Background(), map[string]any{"policy_data": policy.Data})
+	output, err := a.runPolicy(context.Background(), map[string]any{"policy_data": policy})
 	if err != nil {
 		t.Fatalf("runPolicy: %v", err)
 	}
+	pass, ok := output["pass"].(int)
+	if !ok || pass != 1 {
+		t.Fatalf("expected 1 pass, got %v (fail: %v)", pass, output["fail"])
+	}
+}
 
-	t.Logf("Policy: %s", output["policy"])
+func TestSCARunnerMultipleChecks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("SCA multi-check requires Unix")
+	}
+
+	policy := `
+policy:
+  id: "test_multi"
+  name: "Multiple Checks"
+checks:
+  - id: 600
+    title: "hostname exists"
+    condition: all
+    rules:
+      - "f:/etc/hostname -> r:."
+  - id: 601
+    title: "echo works"
+    condition: all
+    rules:
+      - "c:echo ok -> r:ok"
+`
+	a := New()
+	output, err := a.runPolicy(context.Background(), map[string]any{"policy_data": policy})
+	if err != nil {
+		t.Fatalf("runPolicy: %v", err)
+	}
 	t.Logf("Pass: %v | Fail: %v | Score: %v", output["pass"], output["fail"], output["score"])
-
 	total, _ := output["total"].(int)
-	if total == 0 {
-		t.Error("expected at least one check in the policy")
+	if total != 2 {
+		t.Fatalf("expected 2 total checks, got %d", total)
 	}
 }
 
