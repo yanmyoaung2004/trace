@@ -20,6 +20,7 @@ import (
 	"github.com/yanmyoaung2004/trace/internal/integration/splunk"
 	"github.com/yanmyoaung2004/trace/internal/investigation"
 	"github.com/yanmyoaung2004/trace/internal/archive"
+	"github.com/yanmyoaung2004/trace/internal/cases"
 	"github.com/yanmyoaung2004/trace/internal/playbook"
 	"github.com/yanmyoaung2004/trace/internal/plugin"
 	"github.com/yanmyoaung2004/trace/internal/plugins/exporter"
@@ -43,6 +44,7 @@ type App struct {
 	dispatchAgent   *dispatch.Agent
 	huntManager     *hunt.Manager
 	huntScheduler   *hunt.Scheduler
+	caseManager     *cases.Manager
 	telemetry       *telemetry.Telemetry
 }
 
@@ -132,6 +134,7 @@ func (a *App) initServices() error {
 	a.executor = playbook.NewExecutor(a.registry, a.invManager, a.logWriter)
 	a.huntManager = hunt.NewManager(a.database)
 	a.huntScheduler = hunt.NewScheduler(a.huntManager, a.invManager, a.executor, a.playbooks, a.dispatchAgent, a.logWriter)
+	a.caseManager = cases.NewManager(a.database)
 
 	telURL := "https://telemetry.trace.sh/v1/report"
 	if a.cfg.Telemetry.URL != "" {
@@ -205,6 +208,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newPluginCmd())
 	cmd.AddCommand(newServerCmd())
 	cmd.AddCommand(newHuntCmd())
+	cmd.AddCommand(newCaseCmd())
 	cmd.AddCommand(newUpdateCmd())
 	cmd.AddCommand(newVersionCmd())
 

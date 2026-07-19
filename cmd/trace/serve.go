@@ -55,6 +55,17 @@ Examples:
 				engine.OnAlert(func(alert *siem.Alert) {
 					log.Printf("[ALERT] %s (severity: %d, rule: %s)", alert.Title, alert.Severity, alert.RuleID)
 
+					if alert.Severity >= 4 {
+						caseTitle := fmt.Sprintf("SIEM: %s", alert.Title)
+						sev := "medium"
+						if alert.Severity >= 7 { sev = "high" }
+						if alert.Severity >= 10 { sev = "critical" }
+						if c, err := app.caseManager.Create(context.Background(), caseTitle, alert.RuleID, sev); err == nil {
+							app.caseManager.AddEvent(context.Background(), c.ID, "alert", fmt.Sprintf("SIEM alert: %s (severity: %d)", alert.Title, alert.Severity), "siem")
+							app.caseManager.AddIOC(context.Background(), c.ID, "ip", fmt.Sprintf("%v", alert.Event.Fields["client_ip"]), "")
+						}
+					}
+
 					for _, action := range alert.Actions {
 						go func(a siem.RuleAction) {
 							defer func() {

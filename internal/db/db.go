@@ -125,6 +125,38 @@ func (d *DB) migrate() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_hunts_next_run ON hunts(next_run)`,
 		`CREATE INDEX IF NOT EXISTS idx_hunts_status ON hunts(status)`,
+		`CREATE TABLE IF NOT EXISTS cases (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL,
+			description TEXT,
+			status TEXT NOT NULL DEFAULT 'open',
+			severity TEXT NOT NULL DEFAULT 'medium',
+			assignee TEXT,
+			tags TEXT,
+			resolution TEXT,
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+			closed_at TEXT
+		)`,
+		`CREATE TABLE IF NOT EXISTS case_events (
+			id TEXT PRIMARY KEY,
+			case_id TEXT REFERENCES cases(id),
+			event_type TEXT NOT NULL,
+			content TEXT NOT NULL,
+			source TEXT NOT NULL DEFAULT 'manual',
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		)`,
+		`CREATE TABLE IF NOT EXISTS case_iocs (
+			id TEXT PRIMARY KEY,
+			case_id TEXT REFERENCES cases(id),
+			ioc_type TEXT NOT NULL,
+			value TEXT NOT NULL,
+			description TEXT,
+			source TEXT NOT NULL DEFAULT 'manual',
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_cases_status ON cases(status)`,
+		`CREATE INDEX IF NOT EXISTS idx_cases_severity ON cases(severity)`,
 		`CREATE INDEX IF NOT EXISTS idx_cache_ttl ON cache(ttl)`,
 	}
 
