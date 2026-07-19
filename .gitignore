@@ -29,6 +29,9 @@ intel/*.db
 # Data
 .trace/
 
+# Config (local API keys, paths)
+config.json
+
 # Search cache
 .firecrawl/
 

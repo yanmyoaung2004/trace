@@ -1,22 +1,19 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo.png">
-    <img src="docs/assets/logo.png" alt="Trace" width="200">
-  </picture>
+  <img src="docs/assets/logo.png" alt="Trace" width="200">
 </p>
 
-<p align="center">
-  <b>One binary. Full SOC.</b><br>
-  Multi-agent SIEM + SOAR + Threat Intel + Compliance.<br>
-  462 detection rules. 1,567 log decoders. Zero dependencies.
-</p>
+# Trace — One binary. Full SOC.
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Version-0.1.1-3fb950?style=flat-square" alt="Version">
-  <img src="https://img.shields.io/badge/Go-1.26-00ADD8?style=flat-square" alt="Go 1.26">
-  <img src="https://img.shields.io/badge/Platform-Windows_Linux_macOS-8A2BE2?style=flat-square" alt="Platforms">
-  <img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="MIT">
-</p>
+![Version](https://img.shields.io/badge/Version-0.1.1-brightgreen?style=flat-square)
+![Go](https://img.shields.io/badge/Go-1.26-007d9c?style=flat-square)
+![Platform](https://img.shields.io/badge/Platform-Windows%20Linux%20macOS-6f42c1?style=flat-square)
+![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)
+
+**Trace** is an open-source cybersecurity operations platform that fits in one binary.  
+It watches logs, detects threats, enriches indicators, runs investigations, and responds — automatically.
+
+No Docker required. No Python runtime. No Elasticsearch cluster. No SIEM license fees.  
+Just a single statically-linked Go binary that runs anywhere.
 
 ---
 

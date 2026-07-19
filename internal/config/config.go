@@ -99,7 +99,17 @@ func Default() *Config {
 func Load(path string) (*Config, error) {
 	cfg := Default()
 
-	if path != "" {
+	if path == "" {
+		home, _ := os.UserHomeDir()
+		path = filepath.Join(home, ".trace", "config.json")
+	}
+
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		if data, err := json.MarshalIndent(cfg, "", "  "); err == nil {
+			os.MkdirAll(filepath.Dir(path), 0755)
+			os.WriteFile(path, data, 0644)
+		}
+	} else {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return nil, fmt.Errorf("read config: %w", err)
