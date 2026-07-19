@@ -21,6 +21,7 @@ type Config struct {
 	LLMProvider  string `json:"llm_provider"`
 	LLMURL       string `json:"llm_url"`
 	LLMAPIKey    string `json:"llm_api_key"`
+	LLMModel     string `json:"llm_model"`
 	VTAPIKey     string `json:"vt_api_key"`
 	AbuseIPDBKey string `json:"abuseipdb_key"`
 	OTXAPIKey    string `json:"otx_api_key"`
@@ -119,6 +120,9 @@ func Load(path string) (*Config, error) {
 	}
 	if v := os.Getenv("TRACE_LLM_URL"); v != "" {
 		cfg.LLMURL = v
+	}
+	if v := os.Getenv("TRACE_LLM_MODEL"); v != "" {
+		cfg.LLMModel = v
 	}
 	if v := os.Getenv("TRACE_ABUSEIPDB_KEY"); v != "" {
 		cfg.AbuseIPDBKey = v

@@ -64,9 +64,12 @@ You can skip any step — the tool works without external API keys.`,
 
 			if llmURL := prompt(reader, "LLM provider URL (optional, e.g. https://api.openai.com/v1/chat/completions): "); llmURL != "" {
 				cfg["llm_url"] = llmURL
-				if llmKey := prompt(reader, "LLM API key: "); llmKey != "" {
-					cfg["llm_api_key"] = llmKey
-				}
+		if llmKey := prompt(reader, "LLM API key: "); llmKey != "" {
+				cfg["llm_api_key"] = llmKey
+			}
+			if llmModel := prompt(reader, "LLM model (e.g. gpt-4, claude-3-haiku, llama3) [gpt-4]: "); llmModel != "" {
+				cfg["llm_model"] = llmModel
+			}
 				cfg["llm_provider"] = "openai"
 			}
 

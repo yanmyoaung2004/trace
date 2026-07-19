@@ -28,9 +28,9 @@ func New(playbooks *playbook.Engine) *Agent {
 	}
 }
 
-func (a *Agent) WithPlanner(provider, url, apiKey string) *Agent {
+func (a *Agent) WithPlanner(provider, url, apiKey string) *LLMPlanner {
 	a.planner = NewLLMPlanner(provider, url, apiKey)
-	return a
+	return a.planner
 }
 
 func (a *Agent) Name() string { return "dispatch" }
@@ -161,6 +161,7 @@ type LLMPlanner struct {
 	Provider string
 	URL      string
 	APIKey   string
+	Model    string
 	client   *http.Client
 }
 
@@ -173,17 +174,30 @@ func NewLLMPlanner(provider, url, apiKey string) *LLMPlanner {
 	}
 }
 
-type llmResponse struct {
-	Choices []struct {
-		Message struct {
-			Content string `json:"content"`
-		} `json:"message"`
-	} `json:"choices"`
+func (lp *LLMPlanner) WithModel(model string) *LLMPlanner {
+	lp.Model = model
+	return lp
+}
+
+type openAIChoice struct {
+	Message struct {
+		Content string `json:"content"`
+	} `json:"message"`
+}
+
+type openAIResp struct {
+	Choices []openAIChoice `json:"choices"`
+}
+
+type anthropicResp struct {
+	Content []struct {
+		Text string `json:"text"`
+	} `json:"content"`
 }
 
 func (lp *LLMPlanner) Plan(ctx context.Context, intent string, availablePlaybooks []string) (string, map[string]any, error) {
-	if lp.URL == "" || lp.APIKey == "" {
-		return "", nil, fmt.Errorf("LLM planner not configured")
+	if lp.URL == "" {
+		return "", nil, fmt.Errorf("LLM planner not configured (set TRACE_LLM_URL)")
 	}
 
 	prompt := fmt.Sprintf(`You are a cybersecurity investigation planner. Given the user's intent, select the best playbook from: %s.
@@ -191,24 +205,38 @@ Return ONLY valid JSON: {"playbook": "name", "parameters": {"key": "value"}}
 If no playbook matches, return {"playbook": "", "parameters": {}}.
 Intent: %s`, strings.Join(availablePlaybooks, ", "), intent)
 
-	body := map[string]any{
-		"model": "gpt-4",
-		"messages": []map[string]string{
-			{"role": "system", "content": "You select playbooks and extract parameters from security investigation requests. Return only JSON."},
-			{"role": "user", "content": prompt},
-		},
-		"temperature": 0.1,
-		"max_tokens":  300,
+	var payload []byte
+	var err error
+
+	switch lp.Provider {
+	case "anthropic":
+		payload, err = lp.buildAnthropicPayload(prompt)
+	case "ollama":
+		payload, err = lp.buildOllamaPayload(prompt)
+	default:
+		payload, err = lp.buildOpenAIPayload(prompt)
+	}
+	if err != nil {
+		return "", nil, fmt.Errorf("build payload: %w", err)
 	}
 
-	payload, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, "POST", lp.URL, bytes.NewReader(payload))
 	if err != nil {
 		return "", nil, fmt.Errorf("create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+lp.APIKey)
+
+	switch lp.Provider {
+	case "anthropic":
+		req.Header.Set("x-api-key", lp.APIKey)
+		req.Header.Set("anthropic-version", "2023-06-01")
+	case "ollama":
+	default:
+		if lp.APIKey != "" {
+			req.Header.Set("Authorization", "Bearer "+lp.APIKey)
+		}
+	}
 
 	resp, err := lp.client.Do(req)
 	if err != nil {
@@ -218,33 +246,100 @@ Intent: %s`, strings.Join(availablePlaybooks, ", "), intent)
 
 	respBody, _ := io.ReadAll(resp.Body)
 
-	var openAIResp llmResponse
-	if err := json.Unmarshal(respBody, &openAIResp); err == nil && len(openAIResp.Choices) > 0 {
-		content := strings.TrimSpace(openAIResp.Choices[0].Message.Content)
-		content = strings.TrimPrefix(content, "```json")
-		content = strings.TrimPrefix(content, "```")
-		content = strings.TrimSuffix(content, "```")
-		content = strings.TrimSpace(content)
-
-		var result struct {
-			Playbook   string         `json:"playbook"`
-			Parameters map[string]any `json:"parameters"`
-		}
-		if err := json.Unmarshal([]byte(content), &result); err == nil && result.Playbook != "" {
-			return result.Playbook, result.Parameters, nil
-		}
+	if resp.StatusCode != 200 {
+		return "", nil, fmt.Errorf("llm returned HTTP %d: %s", resp.StatusCode, string(respBody[:min(len(respBody), 200)]))
 	}
 
-	type planResult struct {
+	content := lp.extractContent(respBody)
+	if content == "" {
+		return "", nil, fmt.Errorf("llm returned empty response")
+	}
+
+	content = strings.TrimSpace(content)
+	content = strings.TrimPrefix(content, "```json")
+	content = strings.TrimPrefix(content, "```")
+	content = strings.TrimSuffix(content, "```")
+	content = strings.TrimSpace(content)
+
+	var result struct {
 		Playbook   string         `json:"playbook"`
 		Parameters map[string]any `json:"parameters"`
 	}
-	var direct planResult
-	if err := json.Unmarshal(respBody, &direct); err == nil && direct.Playbook != "" {
-		return direct.Playbook, direct.Parameters, nil
+	if err := json.Unmarshal([]byte(content), &result); err != nil {
+		return "", nil, fmt.Errorf("parse llm response: %w", err)
 	}
 
-	return "", nil, fmt.Errorf("llm returned no valid playbook")
+	if result.Playbook == "" {
+		return "", nil, fmt.Errorf("llm didn't select a playbook")
+	}
+
+	return result.Playbook, result.Parameters, nil
+}
+
+func (lp *LLMPlanner) buildOpenAIPayload(prompt string) ([]byte, error) {
+	model := lp.Model
+	if model == "" {
+		model = "gpt-4"
+	}
+	body := map[string]any{
+		"model": model,
+		"messages": []map[string]string{
+			{"role": "system", "content": "You select playbooks and extract parameters from security investigation requests. Return only JSON."},
+			{"role": "user", "content": prompt},
+		},
+		"temperature": 0.1,
+		"max_tokens":  300,
+	}
+	return json.Marshal(body)
+}
+
+func (lp *LLMPlanner) buildAnthropicPayload(prompt string) ([]byte, error) {
+	model := lp.Model
+	if model == "" {
+		model = "claude-3-haiku-20240307"
+	}
+	body := map[string]any{
+		"model":      model,
+		"max_tokens": 300,
+		"messages": []map[string]string{
+			{"role": "user", "content": prompt},
+		},
+	}
+	return json.Marshal(body)
+}
+
+func (lp *LLMPlanner) buildOllamaPayload(prompt string) ([]byte, error) {
+	model := lp.Model
+	if model == "" {
+		model = "llama3"
+	}
+	body := map[string]any{
+		"model":  model,
+		"prompt": prompt,
+		"stream": false,
+	}
+	return json.Marshal(body)
+}
+
+func (lp *LLMPlanner) extractContent(body []byte) string {
+	var openAI openAIResp
+	if json.Unmarshal(body, &openAI) == nil && len(openAI.Choices) > 0 {
+		return openAI.Choices[0].Message.Content
+	}
+
+	var anthropic anthropicResp
+	if json.Unmarshal(body, &anthropic) == nil && len(anthropic.Content) > 0 {
+		return anthropic.Content[0].Text
+	}
+
+	var ollama struct {
+		Response string `json:"response"`
+	}
+	if json.Unmarshal(body, &ollama) == nil && ollama.Response != "" {
+		return ollama.Response
+	}
+
+	return ""
 }
 
 func (a *Agent) calculateConfidenceFromResults(results map[string]any) float64 {

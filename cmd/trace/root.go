@@ -86,8 +86,11 @@ func (a *App) initRegistry() error {
 	a.registry.Register(elastic.New())
 
 	a.dispatchAgent = dispatch.New(a.playbooks)
-	if a.cfg.LLMURL != "" && a.cfg.LLMAPIKey != "" {
-		a.dispatchAgent.WithPlanner(a.cfg.LLMProvider, a.cfg.LLMURL, a.cfg.LLMAPIKey)
+	if a.cfg.LLMURL != "" {
+		planner := a.dispatchAgent.WithPlanner(a.cfg.LLMProvider, a.cfg.LLMURL, a.cfg.LLMAPIKey)
+		if a.cfg.LLMModel != "" {
+			planner.WithModel(a.cfg.LLMModel)
+		}
 	}
 	a.registry.Register(a.dispatchAgent)
 

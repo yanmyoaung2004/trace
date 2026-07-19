@@ -19,8 +19,11 @@ func RunServer(cfg *config.Config, database *db.DB, invMgr *investigation.Manage
 	if err := mgr.Migrate(); err != nil {
 		return fmt.Errorf("server migrate: %w", err)
 	}
-	if err := mgr.SeedDefaultUser(context.Background()); err != nil {
+	if key, err := mgr.SeedDefaultUser(context.Background()); err != nil {
 		log.Printf("[server] seed user warning: %v", err)
+	} else if key != "" {
+		fmt.Printf("\n  API Key: %s\n\n", key)
+		fmt.Printf("  Use this key to authenticate: api_key=%s\n", key)
 	}
 
 	httpAddr := cfg.Server.HTTPAddr

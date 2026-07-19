@@ -315,31 +315,43 @@ func (m *ServerManager) GetCorrelations(ctx context.Context, minCount int) ([]ma
 	return out, nil
 }
 
-func (m *ServerManager) CreateUser(ctx context.Context, email, passwordHash, role string) (string, error) {
+
+func (m *ServerManager) SeedDefaultUser(ctx context.Context) (string, error) {
+	var count int
+	m.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM server_users`).Scan(&count)
+	if count == 0 {
+		defaultKey := uuid.New().String()[:24]
+		_, err := m.db.ExecContext(ctx,
+			`INSERT INTO server_users (id, email, password_hash, role, api_key) VALUES (?, ?, ?, ?, ?)`,
+			uuid.New().String(), "admin@trace.local", "", "admin", defaultKey)
+		if err != nil {
+			return "", fmt.Errorf("seed default user: %w", err)
+		}
+		log.Printf("[server] created default admin user")
+		return defaultKey, nil
+	}
+	return "", nil
+}
+
+func (m *ServerManager) CreateUser(ctx context.Context, email, apiKey, role string) (string, error) {
 	id := uuid.New().String()
 	_, err := m.db.ExecContext(ctx,
-		`INSERT INTO server_users (id, email, password_hash, role) VALUES (?, ?, ?, ?)`,
-		id, email, passwordHash, role)
+		`INSERT INTO server_users (id, email, password_hash, role, api_key) VALUES (?, ?, ?, ?, ?)`,
+		id, email, "", role, apiKey)
 	if err != nil {
 		return "", fmt.Errorf("create user: %w", err)
 	}
 	return id, nil
 }
 
-func (m *ServerManager) SeedDefaultUser(ctx context.Context) error {
-	var count int
-	m.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM server_users`).Scan(&count)
-	if count > 0 {
-		return nil
-	}
+func (m *ServerManager) RotateAPIKey(ctx context.Context, email string) (string, error) {
+	newKey := uuid.New().String()
 	_, err := m.db.ExecContext(ctx,
-		`INSERT INTO server_users (id, email, password_hash, role, api_key) VALUES (?, ?, ?, ?, ?)`,
-		uuid.New().String(), "admin@trace.local", "", "admin", "trace-dev-key")
+		`UPDATE server_users SET api_key = ? WHERE email = ?`, newKey, email)
 	if err != nil {
-		return fmt.Errorf("seed default user: %w", err)
+		return "", err
 	}
-	log.Printf("[server] created default admin user (api_key: trace-dev-key)")
-	return nil
+	return newKey, nil
 }
 
 func (m *ServerManager) Authenticate(ctx context.Context, apiKey string) (string, string, error) {

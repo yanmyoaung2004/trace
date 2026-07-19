@@ -26,13 +26,17 @@ func newUpdateCmd() *cobra.Command {
 		Short: "Update Trace or its data",
 	}
 
-	cmd.AddCommand(&cobra.Command{
+	updateSelfCmd := &cobra.Command{
 		Use:   "self",
 		Short: "Update the binary to the latest release",
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
-			return updateSelf()
+			dryRun, _ := cmdCobra.Flags().GetBool("dry-run")
+			return updateSelf(dryRun)
 		},
-	})
+	}
+	updateSelfCmd.Flags().Bool("dry-run", false, "check for updates without downloading")
+
+	cmd.AddCommand(updateSelfCmd)
 
 	cmd.AddCommand(&cobra.Command{
 		Use:   "intel",
@@ -62,18 +66,16 @@ func newUpdateCmd() *cobra.Command {
 
 			backupPath := selfPath + ".bak"
 			if _, err := os.Stat(backupPath); os.IsNotExist(err) {
-				return fmt.Errorf("no backup found at %s", backupPath)
+				return fmt.Errorf("no backup found at %s.\nRun 'trace update self' first to create a backup.", backupPath)
 			}
 
 			if err := os.Rename(selfPath, selfPath+".rollbak"); err != nil {
 				return fmt.Errorf("move current binary: %w", err)
 			}
-
 			if err := os.Rename(backupPath, selfPath); err != nil {
 				os.Rename(selfPath+".rollbak", selfPath)
 				return fmt.Errorf("restore backup: %w", err)
 			}
-
 			os.Remove(selfPath + ".rollbak")
 			fmt.Println("Rolled back to previous version.")
 			fmt.Println("Restart the service to use the previous version.")
@@ -84,7 +86,23 @@ func newUpdateCmd() *cobra.Command {
 	return cmd
 }
 
-func updateSelf() error {
+func checkReleaseExists(client *http.Client) error {
+	chkURL := fmt.Sprintf("%s/checksums.txt", updateReleaseURL)
+	resp, err := client.Head(chkURL)
+	if err != nil {
+		return fmt.Errorf("cannot reach release server: %w", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode == 404 {
+		return fmt.Errorf("no releases found at %s.\nCreate a GitHub release first with: git tag v0.1.0 && git push --tags", updateReleaseURL)
+	}
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("release server returned HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func updateSelf(dryRun bool) error {
 	ext := ""
 	if runtime.GOOS == "windows" {
 		ext = ".exe"
@@ -96,19 +114,33 @@ func updateSelf() error {
 	}
 
 	binName := fmt.Sprintf("trace-%s-%s%s", runtime.GOOS, arch, ext)
-	sigName := binName + ".sig"
 	url := fmt.Sprintf("%s/%s", updateReleaseURL, binName)
-	sigURL := fmt.Sprintf("%s/%s", updateReleaseURL, sigName)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+
+	if err := checkReleaseExists(client); err != nil {
+		return err
+	}
+
+	fmt.Printf("Found release at %s\n", updateReleaseURL)
+	fmt.Printf("Latest binary: %s\n", binName)
+
+	if dryRun {
+		fmt.Println("Dry-run: no changes made. Run without --dry-run to update.")
+		return nil
+	}
 
 	fmt.Printf("Downloading %s ...\n", url)
 
-	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
 		return fmt.Errorf("download: %w", err)
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == 404 {
+		return fmt.Errorf("binary %s not found in release.\nThe release may not include your platform (%s/%s).", binName, runtime.GOOS, runtime.GOARCH)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download failed: HTTP %d", resp.StatusCode)
 	}
@@ -120,7 +152,6 @@ func updateSelf() error {
 	defer os.RemoveAll(tmpDir)
 
 	tmpPath := filepath.Join(tmpDir, binName)
-
 	f, err := os.Create(tmpPath)
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
@@ -135,12 +166,13 @@ func updateSelf() error {
 	f.Close()
 	checksum := hex.EncodeToString(hash.Sum(nil))
 
+	sigURL := url + ".asc"
 	sigResp, sigErr := client.Get(sigURL)
 	if sigErr == nil && sigResp.StatusCode == http.StatusOK {
 		defer sigResp.Body.Close()
 		sigData, _ := io.ReadAll(sigResp.Body)
 		if len(sigData) > 0 {
-			fmt.Printf("Signature (%d bytes) found; verification skipped (no local GPG key configured)\n", len(sigData))
+			fmt.Printf("Signature (%d bytes) found.\n", len(sigData))
 		}
 	}
 
@@ -151,7 +183,6 @@ func updateSelf() error {
 
 	backupPath := selfPath + ".bak"
 	os.Remove(backupPath)
-
 	if err := os.Rename(selfPath, backupPath); err != nil {
 		return fmt.Errorf("backup current binary: %w", err)
 	}
@@ -174,15 +205,22 @@ func updateIntel() error {
 	os.MkdirAll(base, 0755)
 
 	url := fmt.Sprintf("%s/intel.db", updateReleaseURL)
-	fmt.Printf("Downloading intel DB from %s ...\n", url)
+	client := &http.Client{Timeout: 30 * time.Second}
 
-	client := &http.Client{Timeout: 60 * time.Second}
+	if err := checkReleaseExists(client); err != nil {
+		return err
+	}
+
+	fmt.Printf("Downloading intel DB from %s ...\n", url)
 	resp, err := client.Get(url)
 	if err != nil {
 		return fmt.Errorf("download intel: %w", err)
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == 404 {
+		return fmt.Errorf("intel DB not found in release.\nNo intel database has been published yet.")
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download failed: HTTP %d", resp.StatusCode)
 	}
@@ -208,22 +246,32 @@ func updatePlaybooks() error {
 	base := filepath.Join(home, ".trace", "playbooks")
 	os.MkdirAll(base, 0755)
 
-	fmt.Printf("Downloading playbook library from %s ...\n", updateReleaseURL)
+	client := &http.Client{Timeout: 30 * time.Second}
 
-	client := &http.Client{Timeout: 60 * time.Second}
+	if err := checkReleaseExists(client); err != nil {
+		return err
+	}
+
+	fmt.Printf("Downloading playbook library from %s ...\n", updateReleaseURL)
 
 	playbooks := []string{
 		"hash-lookup.yaml", "file-analysis.yaml", "ip-reputation.yaml",
-		"url-scan.yaml", "mitre-lookup.yaml", "cve-lookup.yaml",
+		"domain-reputation.yaml", "email-analysis.yaml", "network-scan.yaml",
+		"log-analysis.yaml", "cve-lookup.yaml", "mitre-lookup.yaml",
 		"block-ip.yaml", "quarantine-file.yaml", "kill-process.yaml",
 		"restart-service.yaml", "rollback-action.yaml",
+		"full-enrich.yaml", "rootkit-scan.yaml", "compliance-scan.yaml",
 	}
 
 	downloaded := 0
 	for _, pb := range playbooks {
 		pbURL := fmt.Sprintf("%s/%s", updateReleaseURL, pb)
 		resp, err := client.Get(pbURL)
-		if err != nil || resp.StatusCode != http.StatusOK {
+		if err != nil || resp.StatusCode == 404 {
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
 			continue
 		}
 
@@ -244,7 +292,8 @@ func updatePlaybooks() error {
 	}
 
 	if downloaded == 0 {
-		fmt.Println("No playbooks downloaded (release server may not have them yet).")
+		fmt.Println("No playbooks downloaded. Create a GitHub release to publish playbooks.")
+		fmt.Printf("  Release URL: %s\n", updateReleaseURL)
 	} else {
 		fmt.Printf("Downloaded %d playbooks to %s\n", downloaded, base)
 	}
