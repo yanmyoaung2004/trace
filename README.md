@@ -12,11 +12,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.1-3fb950?style=flat-square&logo=go" alt="Version">
-  <img src="https://img.shields.io/badge/Go-1.26-00ADD8?style=flat-square&logo=go" alt="Go 1.26">
-  <img src="https://img.shields.io/badge/platform-Windows%20|%20Linux%20|%20macOS-8A2BE2?style=flat-square" alt="Platforms">
-  <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT">
-  <img src="https://img.shields.io/github/stars/yanmyoaung2004/trace?style=flat-square" alt="Stars">
+  <img src="https://img.shields.io/badge/Version-0.1.1-3fb950?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/Go-1.26-00ADD8?style=flat-square" alt="Go 1.26">
+  <img src="https://img.shields.io/badge/Platform-Windows_Linux_macOS-8A2BE2?style=flat-square" alt="Platforms">
+  <img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="MIT">
 </p>
 
 ---
