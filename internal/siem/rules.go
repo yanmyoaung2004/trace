@@ -1,6 +1,7 @@
 package siem
 
 import (
+	"embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+//go:embed rules/*.yaml
+var embeddedRuleFS embed.FS
 
 type RuleSet struct {
 	Name     string
@@ -109,6 +113,26 @@ func (re *RuleEngine) LoadYAML(data []byte) error {
 			cr.Actions = []RuleAction{{Playbook: yr.Playbook, Params: params}}
 		}
 		re.rules = append(re.rules, cr)
+	}
+	return nil
+}
+
+func (re *RuleEngine) LoadBuiltinYAML() error {
+	entries, err := embeddedRuleFS.ReadDir("rules")
+	if err != nil {
+		return nil
+	}
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".yaml" {
+			continue
+		}
+		data, err := embeddedRuleFS.ReadFile("rules/" + e.Name())
+		if err != nil {
+			return fmt.Errorf("read builtin %s: %w", e.Name(), err)
+		}
+		if err := re.LoadYAML(data); err != nil {
+			return fmt.Errorf("load builtin %s: %w", e.Name(), err)
+		}
 	}
 	return nil
 }

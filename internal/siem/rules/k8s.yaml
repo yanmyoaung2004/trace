@@ -1,0 +1,66 @@
+rules:
+  - rule_id: K8S_EXEC_INTO_POD
+    description: kubectl exec into a running pod — potential container escape or investigation
+    severity: 3
+    mitre: T1609
+    condition: "tag:k8s:exec"
+    threshold: 1
+
+  - rule_id: K8S_SECRET_ACCESS
+    description: Secret accessed by a user — potential credential theft
+    severity: 4
+    mitre: T1552.007
+    condition: "tag:k8s:secret-access"
+    threshold: 1
+
+  - rule_id: K8S_RBAC_ESCALATION
+    description: ClusterRole or ClusterRoleBinding modified — potential privilege escalation
+    severity: 5
+    mitre: T1098
+    condition: "tag:k8s:rbac-change"
+    threshold: 1
+
+  - rule_id: K8S_IMPERSONATION
+    description: User impersonation detected — potential privilege escalation
+    severity: 4
+    mitre: T1098
+    condition: "tag:k8s:impersonation"
+    threshold: 1
+
+  - rule_id: K8S_UNAUTHORIZED_ACCESS
+    description: Unauthorized API access (403) — potential scanning or reconnaissance
+    severity: 2
+    mitre: T1595
+    condition: "tag:k8s:unauthorized"
+    threshold: 5
+    window: 300s
+
+  - rule_id: K8S_POD_CREATE_ANOMALY
+    description: Pod creation event — monitor for unusual deployments
+    severity: 2
+    condition: "tag:k8s:pod-create"
+    threshold: 10
+    window: 600s
+
+  - rule_id: K8S_DELETE_EVENT
+    description: Resource deletion — potential sabotage or cleanup
+    severity: 2
+    condition: "tag:k8s:delete"
+    threshold: 5
+    window: 300s
+
+  - rule_id: K8S_SECRET_ACCESS_BURST
+    description: Multiple secret accesses in short window — credential harvesting
+    severity: 5
+    mitre: T1552.007
+    condition: "tag:k8s:secret-access"
+    threshold: 3
+    window: 60s
+
+  - rule_id: K8S_RBAC_BURST
+    description: Multiple RBAC changes — potential privilege escalation campaign
+    severity: 5
+    mitre: T1098
+    condition: "tag:k8s:rbac-change"
+    threshold: 3
+    window: 120s
