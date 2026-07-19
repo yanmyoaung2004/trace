@@ -1,0 +1,13 @@
+name: telegram-notify
+description: Send an alert to a Telegram chat
+triggers:
+  - telegram
+  - notify
+  - alert
+steps:
+  - agent: notifier
+    action: telegram
+    params:
+      bot_token: ${input.bot_token}
+      chat_id: ${input.chat_id}
+      message: ${input.message}

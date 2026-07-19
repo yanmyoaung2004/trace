@@ -30,6 +30,7 @@ Security issues in any of the following are in scope:
 | Version | Supported          |
 | ------- | ------------------ |
 | 0.1.x   | :white_check_mark: |
+| 0.2.x   | :white_check_mark: (development) |
 
 ## Disclosure Policy
 
