@@ -28,6 +28,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1562.001",
 			condition:   "field:message ~= (?i)Agent disconnected",
+			Actions:     []RuleAction{{Playbook: "file-analysis", Params: map[string]any{"path": "${file_path}"}}},
 		},
 		{
 			RuleID:      "WAZUH_505",
@@ -35,6 +36,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1562.001",
 			condition:   "field:message ~= (?i)Agent removed",
+			Actions:     []RuleAction{{Playbook: "file-analysis", Params: map[string]any{"path": "${file_path}"}}},
 		},
 		{
 			RuleID:      "WAZUH_506",
@@ -42,6 +44,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1562.001",
 			condition:   "field:message ~= (?i)Agent stopped",
+			Actions:     []RuleAction{{Playbook: "file-analysis", Params: map[string]any{"path": "${file_path}"}}},
 		},
 		{
 			RuleID:      "WAZUH_512",
@@ -54,6 +57,7 @@ func loadWazuhRules() []CompiledRule {
 			Description: "Windows malware detected.",
 			Severity:    9,
 			condition:   "field:message ~= ^Windows Malware",
+			Actions:     []RuleAction{{Playbook: "file-analysis", Params: map[string]any{}}},
 		},
 		{
 			RuleID:      "WAZUH_516",
@@ -73,6 +77,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    9,
 			MITRE:       "T1072",
 			condition:   "field:message ~= (?i)Adware\\|Spyware",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_519",
@@ -92,6 +97,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    11,
 			MITRE:       "T1014",
 			condition:   "field:message ~= (?i)Possible kernel level rootkit",
+			Actions:     []RuleAction{{Playbook: "rootkit-scan", Params: map[string]any{}}},
 		},
 		{
 			RuleID:      "WAZUH_531",
@@ -129,6 +135,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    8,
 			MITRE:       "T1565.001",
 			condition:   "field:message ~= ^ossec: File size reduced",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_593",
@@ -136,6 +143,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    9,
 			MITRE:       "T1070",
 			condition:   "field:message ~= ^ossec: Event log cleared",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_220",
@@ -155,6 +163,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    10,
 			MITRE:       "T1110",
 			condition:   "field:message ~= (?i)IP blocked due to exceeded number of logins attempts",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_3102",
@@ -203,6 +212,7 @@ func loadWazuhRules() []CompiledRule {
 			Description: "sendmail: Sendmail save mail panic.",
 			Severity:    8,
 			condition:   "field:message ~= (?i)savemail panic",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_3191",
@@ -229,12 +239,14 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= ^LOGIN,",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_4338",
 			Description: "PIX: Firewall failover pair communication problem.",
 			Severity:    8,
 			condition:   "field:message ~= (?i)Failed\\|Lost Failover",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_4560",
@@ -248,6 +260,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= (?i)session opened for user ",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_5502",
@@ -261,6 +274,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    5,
 			MITRE:       "T1110.001",
 			condition:   "field:message ~= (?i)authentication failure; logname=",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_5504",
@@ -292,6 +306,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    5,
 			MITRE:       "T1110.001",
 			condition:   "field:message ~= (?i)password check failed ",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_5601",
@@ -325,6 +340,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    8,
 			MITRE:       "T1190",
 			condition:   "field:message ~= (?i)Bad protocol version identification",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_5702",
@@ -351,6 +367,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    14,
 			MITRE:       "T1210,T1068",
 			condition:   "field:message ~= (?i)fatal: buffer_get_string: bad string",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_5710",
@@ -358,6 +375,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    5,
 			MITRE:       "T1110.001,T1021.004",
 			condition:   "field:message ~= (?i)illegal user\\|invalid user",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_5713",
@@ -373,6 +391,7 @@ func loadWazuhRules() []CompiledRule {
 			condition:   "field:message ~= (?i)Local: crc32 compensation attack",
 			threshold:   3,
 			windowDur:   120 * time.Second,
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_5715",
@@ -380,6 +399,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078,T1021",
 			condition:   "field:message ~= ^Accepted|authenticated.$",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_5716",
@@ -387,6 +407,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    5,
 			MITRE:       "T1110",
 			condition:   "field:message ~= ^Failed|^error: PAM: Authentication",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_5717",
@@ -400,6 +421,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    5,
 			MITRE:       "T1110",
 			condition:   "field:message ~= (?i)not allowed because",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_5726",
@@ -516,6 +538,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    8,
 			MITRE:       "T1110",
 			condition:   "field:message ~= ^error: maximum authentication attempts exceeded ",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_5760",
@@ -523,6 +546,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    5,
 			MITRE:       "T1110.001,T1021.004",
 			condition:   "field:message ~= (?i)Failed password\\|Failed keyboard\\|authentication error",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_5762",
@@ -536,6 +560,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= ^login",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_6104",
@@ -549,6 +574,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= ^su ",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_6106",
@@ -609,6 +635,7 @@ func loadWazuhRules() []CompiledRule {
 			Description: "Arpwatch: \"flip flop\" message. IP address/MAC relation changing too often.",
 			Severity:    9,
 			condition:   "field:message ~= (?i)flip flop ",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_7203",
@@ -621,6 +648,7 @@ func loadWazuhRules() []CompiledRule {
 			Description: "Arpwatch: Changed network interface for ip address.",
 			Severity:    9,
 			condition:   "field:message ~= (?i)changed ethernet address ",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_7209",
@@ -646,6 +674,7 @@ func loadWazuhRules() []CompiledRule {
 			Description: "Horde IMP emergency message.",
 			Severity:    9,
 			condition:   "field:message ~= ^[emergency]",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_9305",
@@ -653,6 +682,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= (?i)Login success for ",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_9306",
@@ -672,6 +702,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= (?i)Successful login",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_9501",
@@ -685,6 +716,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= (?i)User logged in",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_9503",
@@ -723,6 +755,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    12,
 			MITRE:       "T1499",
 			condition:   "field:message ~= (?i)Server stopped",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_9701",
@@ -730,6 +763,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= (?i)login: Login: ",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_9702",
@@ -797,6 +831,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= (?i) login success ",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_11101",
@@ -816,6 +851,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    5,
 			MITRE:       "T1095",
 			condition:   "field:message ~= (?i)refused connect from",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_11108",
@@ -829,6 +865,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    10,
 			MITRE:       "T1110",
 			condition:   "field:message ~= (?i)repeated login failures",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_11110",
@@ -842,6 +879,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    9,
 			MITRE:       "T1110",
 			condition:   "field:message ~= (?i)PAM_ERROR_MSG: Account is disabled",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_11112",
@@ -879,6 +917,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= (?i)Login successful",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_11206",
@@ -905,6 +944,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    14,
 			MITRE:       "T1071",
 			condition:   "field:message ~= (?i)Refused PORT ",
+			Actions:     []RuleAction{{Playbook: "domain-reputation", Params: map[string]any{"domain": "${domain}"}}},
 		},
 		{
 			RuleID:      "WAZUH_11210",
@@ -912,6 +952,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    10,
 			MITRE:       "T1110",
 			condition:   "field:message ~= (?i)Maximum login attempts ",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_11211",
@@ -961,6 +1002,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    12,
 			MITRE:       "T1210",
 			condition:   "field:message ~= (?i)ProFTPD terminating \\(signal 11\\)",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_11219",
@@ -968,6 +1010,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    12,
 			MITRE:       "T1499",
 			condition:   "field:message ~= (?i)Reallocating sreaddir buffer",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_11220",
@@ -1005,6 +1048,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= (?i)\\[INFO\\] \\S\\+ is now logged in\\| is now logged in",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_11401",
@@ -1018,6 +1062,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= (?i)OK LOGIN: ",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_11403",
@@ -1031,12 +1076,14 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    12,
 			MITRE:       "T1071,T1499",
 			condition:   "field:message ~= (?i)dropping source port zero packet from",
+			Actions:     []RuleAction{{Playbook: "domain-reputation", Params: map[string]any{"domain": "${domain}"}}},
 		},
 		{
 			RuleID:      "WAZUH_12102",
 			Description: "Failed attempt to perform a zone transfer.",
 			Severity:    9,
 			condition:   "field:message ~= (?i)denied AXFR from",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_12103",
@@ -1073,18 +1120,21 @@ func loadWazuhRules() []CompiledRule {
 			Description: "Named fatal error. DNS service going down.",
 			Severity:    12,
 			condition:   "field:message ~= (?i)exiting \\(due to fatal error\\)",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_12110",
 			Description: "than stored.",
 			Severity:    8,
 			condition:   "field:message ~= \\S+ \\S ours (\\S+)",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_12111",
 			Description: "Unable to perform zone transfer.",
 			Severity:    8,
 			condition:   "field:message ~= ^transfer of \\S+ from \\S+ failed while receiving \\S+ REFUSED",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_12112",
@@ -1139,6 +1189,7 @@ func loadWazuhRules() []CompiledRule {
 			Description: "Server does not have enough memory to reload the configuration.",
 			Severity:    9,
 			condition:   "field:message ~= (?i)reloading configuration failed: out of memory",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_13102",
@@ -1182,6 +1233,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= (?i)ISAKMP-SA established ",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_7718",
@@ -1195,6 +1247,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= (?i)logged in\\$",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_19111",
@@ -1208,6 +1261,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= (?i)Accepted password for\\|login from",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_19113",
@@ -1221,6 +1275,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    8,
 			MITRE:       "T1529",
 			condition:   "field:message ~= (?i)-> VM_STATE_OFF",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_19121",
@@ -1246,6 +1301,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    6,
 			MITRE:       "T1190",
 			condition:   "field:message ~= %2Bchar\\(\\d+\\)%2Bchar\\(\\d+\\)%2Bchar\\(\\d+\\)%2Bchar\\(\\d+\\)%2Bchar\\(\\d+\\)%2Bchar\\(\\d+\\)",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_31166",
@@ -1253,6 +1309,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    6,
 			MITRE:       "T1068,T1190",
 			condition:   "field:message ~= \"\\(\\)\\s*{\\s*\\w*:;\\s*}\\s*;|\"\\(\\)\\s*{\\s*\\w*;\\s*}\\s*;",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_31167",
@@ -1260,6 +1317,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    6,
 			MITRE:       "T1068,T1190",
 			condition:   "field:message ~= \"\\(\\)\\s*{\\s*_;\\.*}\\s*>_[\\$\\(\\$\\(\\)\\)]\\s*{",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_31168",
@@ -1267,6 +1325,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    15,
 			MITRE:       "T1068,T1190",
 			condition:   "field:message ~= \"\\(\\)\\s*{\\s*\\w*:;\\s*}\\s*;|\"\\(\\)\\s*{\\s*\\w*;\\s*}\\s*;",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_31169",
@@ -1274,12 +1333,14 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    15,
 			MITRE:       "T1068,T1190",
 			condition:   "field:message ~= \"\\(\\)\\s*{\\s*_;\\.*}\\s*>_[\\$\\(\\$\\(\\)\\)]\\s*{",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_30104",
 			Description: "Apache: Segmentation fault.",
 			Severity:    12,
 			condition:   "field:message ~= (?i)exit signal Segmentation Fault",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_30105",
@@ -1311,6 +1372,7 @@ func loadWazuhRules() []CompiledRule {
 			Description: "Apache: Attempt to login using a non-existent user.",
 			Severity:    9,
 			condition:   "field:message ~= user \\S+ not found|user \\S+ in realm \\.* not found",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_30110",
@@ -1329,18 +1391,21 @@ func loadWazuhRules() []CompiledRule {
 			Description: "Apache: Invalid URI, file name too long.",
 			Severity:    10,
 			condition:   "field:message ~= (?i)File name too long\\|request failed: URI too long",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_30118",
 			Description: "ModSecurity: Access attempt blocked.",
 			Severity:    6,
 			condition:   "field:message ~= (?i)mod_security: Access denied\\|ModSecurity: Access denied",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_30120",
 			Description: "Apache: without resources to run.",
 			Severity:    12,
 			condition:   "field:message ~= (?i)Resource temporarily unavailable:",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_30201",
@@ -1353,6 +1418,7 @@ func loadWazuhRules() []CompiledRule {
 			Description: "Apache: Segmentation fault.",
 			Severity:    12,
 			condition:   "field:message ~= (?i)exit signal Segmentation Fault",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_30318",
@@ -1378,18 +1444,21 @@ func loadWazuhRules() []CompiledRule {
 			Description: "Zeus serious log.",
 			Severity:    9,
 			condition:   "field:message ~= ^[\\S+ \\S+] SERIOUS:",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_31204",
 			Description: "Zeus fatal log.",
 			Severity:    12,
 			condition:   "field:message ~= ^[\\S+ \\S+] FATAL:",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_31205",
 			Description: "Zeus: Admin authentication failed.",
 			Severity:    8,
 			condition:   "field:message ~= (?i)admin:Authentication failure",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_31301",
@@ -1420,6 +1489,7 @@ func loadWazuhRules() []CompiledRule {
 			Description: "Nginx: Invalid URI, file name too long.",
 			Severity:    10,
 			condition:   "field:message ~= (?i)failed \\(36: File name too long\\)",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_31333",
@@ -1447,6 +1517,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    6,
 			MITRE:       "T1190,T1071.001",
 			condition:   "field:message ~= (?i) expects parameter 1 to be string, array given in",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_31412",
@@ -1487,6 +1558,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    6,
 			MITRE:       "T1190",
 			condition:   "field:message ~=  \"POST /\\S+.php/login.php?cPath=",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_31504",
@@ -1494,6 +1566,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    6,
 			MITRE:       "T1078",
 			condition:   "field:message ~= /admin/\\w+.php/login.php",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_31505",
@@ -1508,6 +1581,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    6,
 			MITRE:       "T1210,T1190",
 			condition:   "field:message ~=  \"GET /\\S+cart.php?\\S+templatefile=../",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_31508",
@@ -1521,6 +1595,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1110.001",
 			condition:   "field:message ~= ] \"POST \\S+wp-login.php| \"POST /administrator",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_31512",
@@ -1579,6 +1654,7 @@ func loadWazuhRules() []CompiledRule {
 			Description: "firewalld: Incorrect chain/target/match.",
 			Severity:    3,
 			condition:   "field:message ~= (?i) No chain/target/match by that name\\.\\$",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_50105",
@@ -1586,12 +1662,14 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= ^MySQL log: \\d+ \\S+ \\d+ Connect",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_50106",
 			Description: "MySQL: authentication failure.",
 			Severity:    9,
 			condition:   "field:message ~= (?i)Access denied for user",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_50108",
@@ -1605,6 +1683,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    12,
 			MITRE:       "T1529",
 			condition:   "field:message ~= (?i)mysqld ended\\|Shutdown complete",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_50121",
@@ -1624,6 +1703,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    12,
 			MITRE:       "T1499",
 			condition:   "field:message ~= (?i)Fatal error:",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_50181",
@@ -1637,6 +1717,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    12,
 			MITRE:       "T1499",
 			condition:   "field:message ~= (?i)Fatal error:",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_50511",
@@ -1644,12 +1725,14 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= (?i)connection authorized",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_50512",
 			Description: "PostgreSQL: Database authentication failure.",
 			Severity:    9,
 			condition:   "field:message ~= (?i)authentication failed",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_50520",
@@ -1657,6 +1740,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    12,
 			MITRE:       "T1529",
 			condition:   "field:message ~= (?i)terminating connection due",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_50521",
@@ -1664,6 +1748,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    12,
 			MITRE:       "T1529",
 			condition:   "field:message ~= (?i)aborting any active transactions\\|shutting down",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_51003",
@@ -1731,12 +1816,14 @@ func loadWazuhRules() []CompiledRule {
 			Description: "ClamAV: Virus detected",
 			Severity:    8,
 			condition:   "field:message ~= (?i)FOUND",
+			Actions:     []RuleAction{{Playbook: "file-analysis", Params: map[string]any{}}},
 		},
 		{
 			RuleID:      "WAZUH_52503",
 			Description: "Clamd error",
 			Severity:    10,
 			condition:   "field:message ~= ^ERROR: ",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_52504",
@@ -1774,6 +1861,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    6,
 			MITRE:       "T1562.001",
 			condition:   "field:message ~= (?i)stop\\|Stop",
+			Actions:     []RuleAction{{Playbook: "file-analysis", Params: map[string]any{"path": "${file_path}"}}},
 		},
 		{
 			RuleID:      "WAZUH_53508",
@@ -1858,6 +1946,7 @@ func loadWazuhRules() []CompiledRule {
 			Description: "Puppet Agent: connection refused",
 			Severity:    10,
 			condition:   "field:message ~= (?i)Connection refused - connect",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_80059",
@@ -1889,6 +1978,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    10,
 			MITRE:       "T1070.004",
 			condition:   "field:message ~= (?i)UI CMD_EXECUTED\\|API CMD_EXECUTED",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_80107",
@@ -1896,6 +1986,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= (?i)SSLVPN LOGIN",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_80108",
@@ -1915,6 +2006,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    5,
 			MITRE:       "T1133,T1083",
 			condition:   "field:message ~= (?i)SSLVPN HTTP_RESOURCEACCESS_DENIED",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_80115",
@@ -1922,6 +2014,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    5,
 			MITRE:       "T1133",
 			condition:   "field:message ~= (?i)SSLVPN CLISEC_CHECK",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_80116",
@@ -1929,6 +2022,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    5,
 			MITRE:       "T1133",
 			condition:   "field:message ~= (?i)SSLVPN CLISEC_EXP_EVAL",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_80125",
@@ -1947,18 +2041,21 @@ func loadWazuhRules() []CompiledRule {
 			Description: "Netscaler: Firewall violation",
 			Severity:    3,
 			condition:   "field:message ~= (?i)APPFW APPFW_STARTURL\\|APPFW APPFW_DENYURL\\|APPFW APPFW_CONTENT_TYPE\\|APPFW APPFW_REFERER_HEADER\\|APPFW APPFW_CSRF_TAG\\|APPFW APPFW_XSS\\|APPFW APPFW_XML_XSS\\|APPFW APPFW_SQL\\|APPFW APPFW_XML_SQL\\|APPFW APPFW_COOKIE\\|APPFW APPFW_FIELDCONSISTENCY\\|APPFWAPPFW_BUFFEROVERFLOW_URL\\|APPFW APPFW_BUFFEROVER FLOW_COOKIE\\|APPFW APPFW_BUFFEROVERFLOW_HDR\\|APPFW APPFW_FIELDFORMAT\\|APPFW APPFW_SAFECOMMERCE\\|APPFW APPFW_SAFECOMMERCE_XFORM\\|APPFW APPFW_SAFEOBJECT\\|APPFW APPFW_SIGNATURE_MATCH\\|APPFW_RESP APPFW_XML_XSS\\|APPFW_RESP APPFW_XML_SQL",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_80128",
 			Description: "Netscaler: Firewall: Appsecure uthread at 0x%x had a stack error",
 			Severity:    5,
 			condition:   "field:message ~= (?i)APPFW AF_UTHREAD_STACK_ERR",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_80129",
 			Description: "Netscaler: Firewall: DOS\\DDOS error",
 			Severity:    4,
 			condition:   "field:message ~= (?i)APPFW APPFW_XML_ERR_DOS\\|APPFW APPFW_XML_DDOS_ERR\\|APPFW_RESP APPFW_XML_DDOS_ERR_MSG_SEND_FAI\\|APPFW_RESP APPFW_XML_DOS_ERR_CHAR_DATA_LENGTH",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_80134",
@@ -1966,6 +2063,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= (?i)AAATM LOGIN",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_80135",
@@ -1985,6 +2083,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= (?i)UI CMD_EXECUTED\\|API CMD_EXECUTED",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_80139",
@@ -1998,6 +2097,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= (?i)logged in",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_80504",
@@ -2043,6 +2143,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    4,
 			MITRE:       "T1110",
 			condition:   "field:message ~= (?i)Permission denied",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_80523",
@@ -2050,6 +2151,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    4,
 			MITRE:       "T1110",
 			condition:   "field:message ~= (?i)Permission denied",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_80524",
@@ -2057,12 +2159,14 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    4,
 			MITRE:       "T1110",
 			condition:   "field:message ~= (?i)SESS_PERMISSION_DENIED",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_80710",
 			Description: "Auditd: Device enables promiscuous mode.",
 			Severity:    10,
 			condition:   "field:message ~= (?i)prom=256",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_80790",
@@ -2196,6 +2300,7 @@ func loadWazuhRules() []CompiledRule {
 			Description: "Fortigate: URL Blocked by Firewall.",
 			Severity:    3,
 			condition:   "field:message ~= (?i)level=warning\\|level=\"warning\"",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_81622",
@@ -2203,6 +2308,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= (?i)level=information\\|level=\"information\"",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_81624",
@@ -2215,12 +2321,14 @@ func loadWazuhRules() []CompiledRule {
 			Description: "Fortigate: User successfully logged into firewall interface.",
 			Severity:    3,
 			condition:   "field:message ~= (?i)ui",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_81628",
 			Description: "Fortigate attack detected.",
 			Severity:    11,
 			condition:   "field:message ~= (?i)attack",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_81629",
@@ -2239,18 +2347,21 @@ func loadWazuhRules() []CompiledRule {
 			Description: "Fortigate: App passed by firewall.",
 			Severity:    3,
 			condition:   "field:message ~= (?i)subtype=\"app-ctrl\"\\|subtype=app-ctrl",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_81634",
 			Description: "Fortigate: App blocked by firewall.",
 			Severity:    5,
 			condition:   "field:message ~= (?i)subtype=\"app-ctrl\"\\|subtype=app-ctrl",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_81638",
 			Description: "Fortigate: Virus detected.",
 			Severity:    6,
 			condition:   "field:message ~= (?i)subtype=virus\\|subtype=\"virus\"",
+			Actions:     []RuleAction{{Playbook: "file-analysis", Params: map[string]any{}}},
 		},
 		{
 			RuleID:      "WAZUH_81642",
@@ -2269,18 +2380,21 @@ func loadWazuhRules() []CompiledRule {
 			Description: "Fortigate: Blocked URL belongs to a denied category in policy.",
 			Severity:    6,
 			condition:   "field:message ~= (?i)type=\"utm\" subtype=\"webfilter\"\\|type=utm subtype=webfilter",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_81645",
 			Description: "Fortigate: SSL anomalies. Blocked connection.",
 			Severity:    5,
 			condition:   "field:message ~= (?i)type=\"utm\" subtype=\"ssl\" eventtype=\"ssl-anomalies\"\\|type=utm subtype=ssl eventtype=ssl-anomalies",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_81646",
 			Description: "Fortigate: File was blocked by file filter.",
 			Severity:    5,
 			condition:   "field:message ~= (?i)type=\"utm\" subtype=\"cifs\" eventtype=\"cifs-filefilter\"\\|type=utm subtype=cifs eventtype=cifs-filefilter",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_81709",
@@ -2294,6 +2408,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= (?i)Peer Connection Initiated with",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_81803",
@@ -2301,6 +2416,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    4,
 			MITRE:       "T1133",
 			condition:   "field:message ~= (?i)TLS Error\\|TLS Auth Error",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_81805",
@@ -2380,6 +2496,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    9,
 			MITRE:       "T1071.004",
 			condition:   "field:message ~= (?i)DNS request for potential malware",
+			Actions:     []RuleAction{{Playbook: "file-analysis", Params: map[string]any{}}},
 		},
 		{
 			RuleID:      "WAZUH_85001",
@@ -2459,6 +2576,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= (?i)Successfully authenticated",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_85759",
@@ -2514,12 +2632,14 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    7,
 			MITRE:       "T1110",
 			condition:   "field:message ~= Maximum authentication retries for user (\\w+) exceeded",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_86804",
 			Description: "Host is trying to connect to VShell server but exists in the deny file.",
 			Severity:    10,
 			condition:   "field:message ~= Connection from (\\d+.\\d+.\\d+.\\d+) rejected by Deny Hosts file",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_86805",
@@ -2539,6 +2659,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= (?i) successful auth for user ",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_87301",
@@ -2595,6 +2716,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "field:message ~= (?i)Authentication success for ",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_24001",
@@ -2643,6 +2765,7 @@ func loadWazuhRules() []CompiledRule {
 			Description: "ASA: Firewall failover pair communication problem.",
 			Severity:    8,
 			condition:   "field:message ~= (?i)Failed\\|Lost Failover",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_88212",
@@ -2717,6 +2840,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    6,
 			MITRE:       "T1059.006",
 			condition:   "field:message ~= (?i)a\\d=\"\\w\\+\\\\.py\"\\.\\+cwd=\"/tmp\"\\|a\\d=\"/tmp/\\.\\+\\\\.py",
+			Actions:     []RuleAction{{Playbook: "log-analysis", Params: map[string]any{"event_id": "${event_id}"}}},
 		},
 		{
 			RuleID:      "WAZUH_92602",
@@ -2724,12 +2848,14 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    12,
 			MITRE:       "T1059.006,T1550.002",
 			condition:   "field:message ~= (?i)\\(psexec\\.py\\|smbexec\\.py\\)\\.\\+a\\d=\"-hashes\"\\.\\+a\\d=\"\\.\\+:\\.\\+",
+			Actions:     []RuleAction{{Playbook: "log-analysis", Params: map[string]any{"event_id": "${event_id}"}}},
 		},
 		{
 			RuleID:      "WAZUH_91520",
 			Description: "FTD: Firewall failover pair communication problem.",
 			Severity:    8,
 			condition:   "field:message ~= (?i)Failed\\|Lost Failover",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_89600",
@@ -2751,6 +2877,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "tag:macOS_loginwindow",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_89603",
@@ -2758,6 +2885,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "tag:macOS_loginwindow",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_89604",
@@ -2765,6 +2893,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "tag:macOS_sessionlogoutd",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_89605",
@@ -2772,6 +2901,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1078",
 			condition:   "tag:macOS_loginwindow",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_89606",
@@ -2779,6 +2909,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    5,
 			MITRE:       "T1021,T1078",
 			condition:   "tag:macOS_screensharingd",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_89607",
@@ -2786,6 +2917,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    3,
 			MITRE:       "T1021,T1078",
 			condition:   "tag:macOS_screensharingd",
+			Actions:     []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
 		},
 		{
 			RuleID:      "WAZUH_89608",
@@ -2805,6 +2937,7 @@ func loadWazuhRules() []CompiledRule {
 			Severity:    12,
 			MITRE:       "T1098.001",
 			condition:   "field:message ~= (?i)sts:AssumeRole",
+			Actions:     []RuleAction{{Playbook: "full-enrich", Params: map[string]any{"indicator": "${srcip}"}}},
 		},
 	}
 }

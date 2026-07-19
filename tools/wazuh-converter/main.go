@@ -473,6 +473,66 @@ type OutputRule struct {
 	Condition   string            `yaml:"condition"`
 	WindowDur   string            `yaml:"window,omitempty"`
 	Threshold   int               `yaml:"threshold,omitempty"`
+	Playbook    string            `yaml:"playbook,omitempty"`
+	PlaybookParams map[string]string `yaml:"params,omitempty"`
+}
+
+func mapPlaybook(mitreIDs string, severity int, desc string) (string, map[string]string) {
+	mitreList := strings.Split(mitreIDs, ",")
+	for _, m := range mitreList {
+		m = strings.TrimSpace(m)
+		switch m {
+		case "T1110", "T1110.001", "T1110.002", "T1110.003", "T1110.004":
+			return "ip-reputation", map[string]string{"ip": "${source_ip}"}
+		case "T1190", "T1133":
+			return "ip-reputation", map[string]string{"ip": "${source_ip}"}
+		case "T1204", "T1204.002":
+			return "file-analysis", map[string]string{"path": "${file_path}"}
+		case "T1566", "T1566.001", "T1566.002", "T1566.003":
+			return "email-analysis", map[string]string{"sender_ip": "${source_ip}", "subject": "${subject}"}
+		case "T1059", "T1059.001", "T1059.003", "T1059.005", "T1059.006", "T1059.007":
+			return "log-analysis", map[string]string{"event_id": "${event_id}"}
+		case "T1547", "T1547.001":
+			return "registry-check", map[string]string{"registry_key": "${registry_key}"}
+		case "T1543", "T1543.003":
+			return "file-analysis", map[string]string{"path": "${file_path}"}
+		case "T1053", "T1053.005":
+			return "file-analysis", map[string]string{"path": "${file_path}"}
+		case "T1003":
+			return "file-analysis", map[string]string{"hash": "${hash}"}
+		case "T1021", "T1021.001", "T1021.002":
+			return "ip-reputation", map[string]string{"ip": "${source_ip}"}
+		case "T1071", "T1071.001":
+			return "domain-reputation", map[string]string{"domain": "${domain}"}
+		case "T1562", "T1562.001":
+			return "file-analysis", map[string]string{"path": "${file_path}"}
+		case "T1078", "T1078.003":
+			return "ip-reputation", map[string]string{"ip": "${source_ip}"}
+		}
+	}
+
+	descLower := strings.ToLower(desc)
+	switch {
+	case strings.Contains(descLower, "ssh") && strings.Contains(descLower, "brute"):
+		return "ip-reputation", map[string]string{"ip": "${source_ip}"}
+	case strings.Contains(descLower, "mail") && strings.Contains(descLower, "virus"):
+		return "email-analysis", map[string]string{}
+	case strings.Contains(descLower, "rootkit"):
+		return "rootkit-scan", map[string]string{}
+	case strings.Contains(descLower, "compliance") || strings.Contains(descLower, "cis "):
+		return "compliance-scan", map[string]string{}
+	case strings.Contains(descLower, "malware") || strings.Contains(descLower, "virus"):
+		return "file-analysis", map[string]string{}
+	case strings.Contains(descLower, "firewall") || strings.Contains(descLower, "blocked"):
+		return "ip-reputation", map[string]string{"ip": "${source_ip}"}
+	case severity >= 10:
+		return "full-enrich", map[string]string{"indicator": "${srcip}"}
+	}
+
+	if severity >= 8 {
+		return "full-enrich", map[string]string{"indicator": "${srcip}"}
+	}
+	return "", nil
 }
 
 var severityNames = map[int]string{
@@ -565,6 +625,8 @@ func convertRule(r WazuhRule) *OutputRule {
 		desc = "Wazuh rule " + r.ID
 	}
 
+	pb, pbParams := mapPlaybook(mitreIDs, level, desc)
+
 	return &OutputRule{
 		RuleID:      "WAZUH_" + r.ID,
 		Description: desc,
@@ -573,6 +635,8 @@ func convertRule(r WazuhRule) *OutputRule {
 		Condition:   condition,
 		WindowDur:   windowDur,
 		Threshold:   threshold,
+		Playbook:    pb,
+		PlaybookParams: pbParams,
 	}
 }
 
@@ -673,6 +737,19 @@ func main() {
 			}
 			if r.WindowDur != "" {
 				goBuf.WriteString(fmt.Sprintf("\t\t\twindowDur:   %s,\n", r.WindowDur))
+			}
+
+			if r.Playbook != "" {
+				goBuf.WriteString(fmt.Sprintf("\t\t\tActions:     []RuleAction{{Playbook: %q, Params: map[string]any{", r.Playbook))
+				first := true
+				for k, v := range r.PlaybookParams {
+					if !first {
+						goBuf.WriteString(", ")
+					}
+					goBuf.WriteString(fmt.Sprintf("%q: %q", k, v))
+					first = false
+				}
+				goBuf.WriteString("}}},\n")
 			}
 
 			goBuf.WriteString("\t\t},\n")

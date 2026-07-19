@@ -1,0 +1,44 @@
+name: full-enrich
+description: Enrich an indicator against all available sources (VT, AbuseIPDB, OTX, intel, web)
+triggers:
+  - enrich
+  - investigate
+  - full
+  - deep
+steps:
+  - agent: sift
+    action: vt_lookup
+    params:
+      indicator: ${input.indicator}
+    optional: true
+    timeout: 30s
+  - agent: abuseipdb
+    action: ip_reputation
+    params:
+      ip: ${input.indicator}
+    optional: true
+  - agent: otx
+    action: indicator_check
+    params:
+      indicator: ${input.indicator}
+    optional: true
+  - agent: archive
+    action: mitre_lookup
+    params:
+      technique: ${input.mitre_id}
+    optional: true
+  - agent: archive
+    action: ioc_enrich
+    params:
+      ioc: ${input.indicator}
+    optional: true
+  - agent: archive
+    action: web_search
+    params:
+      query: ${input.indicator}
+    optional: true
+  - agent: sift
+    action: scan_rootkits
+    params:
+      path: ${input.path}
+    optional: true

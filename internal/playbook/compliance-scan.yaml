@@ -1,0 +1,16 @@
+name: compliance-scan
+description: Run CIS benchmark compliance scan against the current system
+triggers:
+  - compliance
+  - cis
+  - benchmark
+  - audit
+  - hardening
+steps:
+  - agent: sca
+    action: scan_system
+    params: {}
+  - agent: dispatch
+    action: synthesize_report
+    params:
+      results: ${outputs}

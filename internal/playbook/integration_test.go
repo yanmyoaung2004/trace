@@ -66,6 +66,9 @@ func TestPlaybookByName(t *testing.T) {
 		{"kill-process", 1},
 		{"restart-service", 1},
 		{"rollback-action", 1},
+		{"full-enrich", 7},
+		{"rootkit-scan", 4},
+		{"compliance-scan", 2},
 	}
 
 	for _, tt := range tests {
@@ -219,6 +222,7 @@ var validAgents = map[string]bool{
 	"exporter":   true,
 	"abuseipdb":  true,
 	"otx":        true,
+	"sca":        true,
 }
 
 func init() {

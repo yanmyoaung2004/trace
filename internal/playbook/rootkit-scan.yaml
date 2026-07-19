@@ -1,0 +1,28 @@
+name: rootkit-scan
+description: Scan system for known rootkit files and trojan binaries
+triggers:
+  - rootkit
+  - trojan
+  - malware scan
+  - filesystem
+steps:
+  - agent: sift
+    action: scan_rootkits
+    params:
+      path: ${input.path}
+    optional: true
+  - agent: sift
+    action: check_trojans
+    params:
+      binary: ${input.binary}
+    optional: true
+  - agent: sift
+    action: hash_lookup
+    params:
+      hash: ${input.hash}
+    optional: true
+  - agent: archive
+    action: ioc_enrich
+    params:
+      ioc: ${input.hash}
+    optional: true
