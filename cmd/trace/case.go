@@ -202,6 +202,29 @@ Examples:
 		},
 	}
 
-	cmd.AddCommand(createCmd, listCmd, viewCmd, noteCmd, iocCmd, assignCmd, closeCmd, exportCmd)
+	exportPdfCmd := &cobra.Command{
+		Use:   "export-pdf [id]",
+		Short: "Export a case as PDF",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmdCobra *cobra.Command, args []string) error {
+			output, _ := cmdCobra.Flags().GetString("output")
+			pdfData, err := app.caseManager.ExportPDF(context.Background(), args[0])
+			if err != nil {
+				return err
+			}
+			if output != "" {
+				if err := os.WriteFile(output, pdfData, 0644); err != nil {
+					return fmt.Errorf("write pdf: %w", err)
+				}
+				fmt.Printf("PDF saved to %s (%d bytes)\n", output, len(pdfData))
+			} else {
+				os.Stdout.Write(pdfData)
+			}
+			return nil
+		},
+	}
+	exportPdfCmd.Flags().String("output", "o", "output file path")
+
+	cmd.AddCommand(createCmd, listCmd, viewCmd, noteCmd, iocCmd, assignCmd, closeCmd, exportCmd, exportPdfCmd)
 	return cmd
 }

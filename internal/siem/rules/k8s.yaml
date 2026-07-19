@@ -1,4 +1,5 @@
 rules:
+  # === EXECUTION ===
   - rule_id: K8S_EXEC_INTO_POD
     description: kubectl exec into a running pod — potential container escape or investigation
     severity: 3
@@ -6,6 +7,22 @@ rules:
     condition: "tag:k8s:exec"
     threshold: 1
 
+  - rule_id: K8S_EXEC_BURST
+    description: Multiple exec sessions into pods — active compromise
+    severity: 4
+    mitre: T1609
+    condition: "tag:k8s:exec"
+    threshold: 3
+    window: 120s
+
+  - rule_id: K8S_CRONJOB_CREATE
+    description: CronJob created — potential persistence via scheduled task
+    severity: 3
+    mitre: T1053.007
+    condition: "field:resource ~= cronjobs"
+    threshold: 1
+
+  # === CREDENTIAL ACCESS ===
   - rule_id: K8S_SECRET_ACCESS
     description: Secret accessed by a user — potential credential theft
     severity: 4
@@ -13,8 +30,75 @@ rules:
     condition: "tag:k8s:secret-access"
     threshold: 1
 
+  - rule_id: K8S_SECRET_ACCESS_BURST
+    description: Multiple secret accesses in short window — credential harvesting
+    severity: 5
+    mitre: T1552.007
+    condition: "tag:k8s:secret-access"
+    threshold: 3
+    window: 60s
+
+  - rule_id: K8S_SECRET_CREATE
+    description: Secret created — may contain attacker-generated credentials
+    severity: 3
+    mitre: T1552.007
+    condition: "field:resource ~= secrets"
+    threshold: 1
+
+  - rule_id: K8S_SERVICE_ACCOUNT_TOKEN_ACCESS
+    description: Service account token accessed by non-service-account user
+    severity: 4
+    mitre: T1552.007
+    condition: "field:resource ~= serviceaccounts/token"
+    threshold: 1
+
+  - rule_id: K8S_CONFIGMAP_SENSITIVE
+    description: ConfigMap accessed with name matching sensitive patterns
+    severity: 3
+    mitre: T1552.007
+    condition: "field:resource ~= configmaps"
+    threshold: 1
+
+  # === PERSISTENCE ===
+  - rule_id: K8S_DAEMONSET_CREATE
+    description: DaemonSet created — potential persistence across all nodes
+    severity: 4
+    mitre: T1543
+    condition: "field:resource ~= daemonsets"
+    threshold: 1
+
+  - rule_id: K8S_DEPLOYMENT_ANOMALY
+    description: Deployment with suspicious image from unknown registry
+    severity: 3
+    mitre: T1525
+    condition: "field:resource ~= deployments"
+    threshold: 1
+
+  - rule_id: K8S_STATEFULSET_CREATE
+    description: StatefulSet created with hostPath volume — potential node access
+    severity: 4
+    mitre: T1611
+    condition: "field:resource ~= statefulsets"
+    threshold: 1
+
+  # === PRIVILEGE ESCALATION ===
   - rule_id: K8S_RBAC_ESCALATION
     description: ClusterRole or ClusterRoleBinding modified — potential privilege escalation
+    severity: 5
+    mitre: T1098
+    condition: "tag:k8s:rbac-change"
+    threshold: 1
+
+  - rule_id: K8S_RBAC_BURST
+    description: Multiple RBAC changes — potential privilege escalation campaign
+    severity: 5
+    mitre: T1098
+    condition: "tag:k8s:rbac-change"
+    threshold: 3
+    window: 120s
+
+  - rule_id: K8S_CLUSTER_ADMIN_BINDING
+    description: User bound to cluster-admin role — full cluster compromise
     severity: 5
     mitre: T1098
     condition: "tag:k8s:rbac-change"
@@ -27,6 +111,57 @@ rules:
     condition: "tag:k8s:impersonation"
     threshold: 1
 
+  - rule_id: K8S_POD_SECURITY_POLICY_BYPASS
+    description: Pod created with privileged security context
+    severity: 5
+    mitre: T1611
+    condition: "field:resource ~= pods"
+    threshold: 1
+
+  - rule_id: K8S_HOST_NETWORK_ACCESS
+    description: Pod created with hostNetwork=true — potential node network access
+    severity: 4
+    mitre: T1611
+    condition: "field:resource ~= pods"
+    threshold: 1
+
+  - rule_id: K8S_HOST_PATH_VOLUME
+    description: Pod with hostPath volume — filesystem access to host
+    severity: 4
+    mitre: T1611
+    condition: "field:resource ~= pods"
+    threshold: 1
+
+  # === DEFENSE EVASION ===
+  - rule_id: K8S_MUTATING_WEBHOOK
+    description: MutatingWebhookConfiguration created — potential interception
+    severity: 5
+    mitre: T1562
+    condition: "field:resource ~= mutatingwebhookconfigurations"
+    threshold: 1
+
+  - rule_id: K8S_VALIDATING_WEBHOOK
+    description: ValidatingWebhookConfiguration modified — defense bypass
+    severity: 4
+    mitre: T1562
+    condition: "field:resource ~= validatingwebhookconfigurations"
+    threshold: 1
+
+  - rule_id: K8S_NETWORK_POLICY_DELETE
+    description: NetworkPolicy deleted — potential lateral movement preparation
+    severity: 4
+    mitre: T1562
+    condition: "field:resource ~= networkpolicies"
+    threshold: 1
+
+  - rule_id: K8S_NAMESPACE_DELETE
+    description: Namespace deleted — potential evidence destruction
+    severity: 3
+    mitre: T1485
+    condition: "field:resource ~= namespaces"
+    threshold: 1
+
+  # === DISCOVERY ===
   - rule_id: K8S_UNAUTHORIZED_ACCESS
     description: Unauthorized API access (403) — potential scanning or reconnaissance
     severity: 2
@@ -35,6 +170,28 @@ rules:
     threshold: 5
     window: 300s
 
+  - rule_id: K8S_API_SCAN
+    description: Access to multiple API resources from same source — reconnaissance
+    severity: 3
+    mitre: T1595
+    condition: "tag:k8s:unauthorized"
+    threshold: 10
+    window: 600s
+
+  - rule_id: K8S_POD_LIST
+    description: Pod listing across namespaces — attacker reconnaissance
+    severity: 2
+    mitre: T1595
+    condition: "field:verb ~= list"
+    threshold: 1
+
+  - rule_id: K8S_DISCOVERY_TOOL
+    description: User running kubectl or API calls with suspicious user-agent
+    severity: 2
+    condition: "field:resource ~= pods"
+    threshold: 1
+
+  # === LATERAL MOVEMENT ===
   - rule_id: K8S_POD_CREATE_ANOMALY
     description: Pod creation event — monitor for unusual deployments
     severity: 2
@@ -42,6 +199,26 @@ rules:
     threshold: 10
     window: 600s
 
+  - rule_id: K8S_SERVICE_CREATE
+    description: Service created — may expose internal services externally
+    severity: 3
+    condition: "field:resource ~= services"
+    threshold: 1
+
+  - rule_id: K8S_INGRESS_CREATE
+    description: Ingress created — may expose internal services to internet
+    severity: 3
+    mitre: T1046
+    condition: "field:resource ~= ingresses"
+    threshold: 1
+
+  - rule_id: K8S_NODE_PORT_SERVICE
+    description: Service with NodePort type — port exposed on all node IPs
+    severity: 3
+    condition: "field:resource ~= services"
+    threshold: 1
+
+  # === IMPACT ===
   - rule_id: K8S_DELETE_EVENT
     description: Resource deletion — potential sabotage or cleanup
     severity: 2
@@ -49,18 +226,24 @@ rules:
     threshold: 5
     window: 300s
 
-  - rule_id: K8S_SECRET_ACCESS_BURST
-    description: Multiple secret accesses in short window — credential harvesting
+  - rule_id: K8S_MASS_DELETION
+    description: Mass resource deletion — potential ransomware or sabotage
     severity: 5
-    mitre: T1552.007
-    condition: "tag:k8s:secret-access"
-    threshold: 3
-    window: 60s
+    mitre: T1485
+    condition: "tag:k8s:delete"
+    threshold: 20
+    window: 300s
 
-  - rule_id: K8S_RBAC_BURST
-    description: Multiple RBAC changes — potential privilege escalation campaign
-    severity: 5
-    mitre: T1098
-    condition: "tag:k8s:rbac-change"
-    threshold: 3
-    window: 120s
+  - rule_id: K8S_PVC_DELETE
+    description: PersistentVolumeClaim deleted — potential data destruction
+    severity: 4
+    mitre: T1485
+    condition: "field:resource ~= persistentvolumeclaims"
+    threshold: 1
+
+  - rule_id: K8S_RESOURCE_QUOTA_ABUSE
+    description: ResourceQuota modified — potential DoS against cluster
+    severity: 3
+    mitre: T1499
+    condition: "field:resource ~= resourcequotas"
+    threshold: 1

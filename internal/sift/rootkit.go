@@ -52,6 +52,7 @@ func (s *RootkitScanner) Capabilities() []agent.Capability {
 	return []agent.Capability{
 		{Action: "scan_rootkits", Inputs: []string{"path"}, Outputs: []string{"matches", "count"}},
 		{Action: "check_trojans", Inputs: []string{"binary"}, Outputs: []string{"matches", "count"}},
+		{Action: "behavior_scan", Inputs: []string{}, Outputs: []string{"results", "suspicious_count", "total_checks"}},
 	}
 }
 
@@ -62,9 +63,26 @@ func (s *RootkitScanner) Execute(ctx context.Context, input agent.Input) (agent.
 		return s.scanRootkits(ctx, input)
 	case "check_trojans":
 		return s.checkTrojan(ctx, input)
+	case "behavior_scan":
+		return s.behaviorScan(ctx)
 	default:
 		return nil, fmt.Errorf("unknown action: %s", action)
 	}
+}
+
+func (s *RootkitScanner) behaviorScan(ctx context.Context) (agent.Output, error) {
+	results := RunBehaviorChecks(ctx)
+	suspicious := 0
+	for _, r := range results {
+		if status, _ := r["status"].(string); status == "suspicious" {
+			suspicious++
+		}
+	}
+	return agent.Output{
+		"results":         results,
+		"suspicious_count": suspicious,
+		"total_checks":    len(results),
+	}, nil
 }
 
 func (s *RootkitScanner) scanRootkits(ctx context.Context, input agent.Input) (agent.Output, error) {
