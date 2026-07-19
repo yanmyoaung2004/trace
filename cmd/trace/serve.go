@@ -112,6 +112,7 @@ Examples:
 			}
 
 			app.telemetry.Start()
+			go app.huntScheduler.Start(ctx)
 
 			exportAddr, _ := cmd.Flags().GetString("export")
 			if exportAddr != "" {

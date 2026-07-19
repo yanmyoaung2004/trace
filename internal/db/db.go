@@ -108,6 +108,23 @@ func (d *DB) migrate() error {
 			rollback_status TEXT,
 			created_at TEXT NOT NULL DEFAULT (datetime('now'))
 		)`,
+		`CREATE TABLE IF NOT EXISTS hunts (
+			id TEXT PRIMARY KEY,
+			name TEXT UNIQUE NOT NULL,
+			description TEXT,
+			schedule TEXT NOT NULL,
+			playbook TEXT NOT NULL,
+			params TEXT NOT NULL DEFAULT '{}',
+			scope TEXT NOT NULL DEFAULT 'self',
+			notify_severity INTEGER NOT NULL DEFAULT 0,
+			status TEXT NOT NULL DEFAULT 'active',
+			last_run TEXT,
+			next_run TEXT,
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_hunts_next_run ON hunts(next_run)`,
+		`CREATE INDEX IF NOT EXISTS idx_hunts_status ON hunts(status)`,
 		`CREATE INDEX IF NOT EXISTS idx_cache_ttl ON cache(ttl)`,
 	}
 

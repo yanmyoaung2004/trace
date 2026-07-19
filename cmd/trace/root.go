@@ -9,8 +9,9 @@ import (
 
 	"github.com/yanmyoaung2004/trace/internal/config"
 	"github.com/yanmyoaung2004/trace/internal/db"
-	"github.com/yanmyoaung2004/trace/internal/sift"
 	"github.com/yanmyoaung2004/trace/internal/dispatch"
+	"github.com/yanmyoaung2004/trace/internal/sift"
+	"github.com/yanmyoaung2004/trace/internal/hunt"
 	"github.com/yanmyoaung2004/trace/internal/integration/abuseipdb"
 	"github.com/yanmyoaung2004/trace/internal/integration/elastic"
 	"github.com/yanmyoaung2004/trace/internal/integration/notifier"
@@ -39,7 +40,9 @@ type App struct {
 	logWriter   *investigation.LogWriter
 	taskQueue   *taskqueue.Queue
 	dispatchAgent   *dispatch.Agent
-	telemetry   *telemetry.Telemetry
+	huntManager     *hunt.Manager
+	huntScheduler   *hunt.Scheduler
+	telemetry       *telemetry.Telemetry
 }
 
 func (a *App) initConfig(cfgPath string) error {
@@ -125,6 +128,8 @@ func (a *App) initServices() error {
 	}
 	a.taskQueue = taskqueue.New(a.database)
 	a.executor = playbook.NewExecutor(a.registry, a.invManager, a.logWriter)
+	a.huntManager = hunt.NewManager(a.database)
+	a.huntScheduler = hunt.NewScheduler(a.huntManager, a.invManager, a.executor, a.playbooks, a.dispatchAgent, a.logWriter)
 
 	telURL := "https://telemetry.trace.sh/v1/report"
 	if a.cfg.Telemetry.URL != "" {
@@ -197,6 +202,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newInitCmd())
 	cmd.AddCommand(newPluginCmd())
 	cmd.AddCommand(newServerCmd())
+	cmd.AddCommand(newHuntCmd())
 	cmd.AddCommand(newUpdateCmd())
 	cmd.AddCommand(newVersionCmd())
 
