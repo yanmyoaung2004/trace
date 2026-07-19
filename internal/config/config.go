@@ -102,21 +102,21 @@ func Load(path string) (*Config, error) {
 	if path == "" {
 		home, _ := os.UserHomeDir()
 		path = filepath.Join(home, ".trace", "config.json")
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			if data, err := json.MarshalIndent(cfg, "", "  "); err == nil {
+				os.MkdirAll(filepath.Dir(path), 0755)
+				os.WriteFile(path, data, 0644)
+			}
+			return cfg, nil
+		}
 	}
 
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		if data, err := json.MarshalIndent(cfg, "", "  "); err == nil {
-			os.MkdirAll(filepath.Dir(path), 0755)
-			os.WriteFile(path, data, 0644)
-		}
-	} else {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, fmt.Errorf("read config: %w", err)
-		}
-		if err := json.Unmarshal(data, cfg); err != nil {
-			return nil, fmt.Errorf("parse config: %w", err)
-		}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read config: %w", err)
+	}
+	if err := json.Unmarshal(data, cfg); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
 	if v := os.Getenv("TRACE_DB_PATH"); v != "" {
