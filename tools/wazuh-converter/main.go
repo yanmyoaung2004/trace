@@ -14,7 +14,7 @@ import (
 
 type WazuhDecoderDef struct {
 	Name        string `xml:"name,attr"`
-	Parent      string `xml:"parent,attr"`
+	Parent      string `xml:"parent"`
 	ProgramName string `xml:"program_name"`
 	PreMatch    string `xml:"prematch"`
 	Regex       string `xml:"regex"`
