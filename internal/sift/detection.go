@@ -9,9 +9,10 @@ import (
 )
 
 type Agent struct {
-	yaraScanner *YaraScanner
-	hashCache   *HashCache
-	vtClient    *VTClient
+	yaraScanner   *YaraScanner
+	hashCache     *HashCache
+	vtClient      *VTClient
+	rootkitScanner *RootkitScanner
 }
 
 func New(cacheDB *sql.DB, vtAPIKey string) *Agent {
@@ -24,9 +25,10 @@ func New(cacheDB *sql.DB, vtAPIKey string) *Agent {
 	vt := NewVTClient(vtAPIKey, cacheDB)
 
 	return &Agent{
-		yaraScanner: ys,
-		hashCache:   hc,
-		vtClient:    vt,
+		yaraScanner:   ys,
+		hashCache:     hc,
+		vtClient:      vt,
+		rootkitScanner: NewRootkitScanner(),
 	}
 }
 
@@ -52,6 +54,10 @@ func (a *Agent) Execute(ctx context.Context, input agent.Input) (agent.Output, e
 		return a.hashLookup(ctx, input)
 	case "vt_lookup":
 		return a.vtLookup(ctx, input)
+	case "scan_rootkits":
+		return a.rootkitScanner.scanRootkits(ctx, input)
+	case "check_trojans":
+		return a.rootkitScanner.checkTrojan(ctx, input)
 	default:
 		return nil, fmt.Errorf("unknown action: %s", action)
 	}
