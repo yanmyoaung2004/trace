@@ -379,6 +379,9 @@ func (d *EVTXDecoder) Decode(raw []byte) (*Event, error) {
 	case "4740":
 		tags = append(tags, "account_lockout")
 		if sev < 3 { sev = 3 }
+	case "4798", "4799":
+		tags = append(tags, "user_enumeration", "reconnaissance")
+		if sev < 2 { sev = 2 }
 	}
 
 	ts := time.Now().UTC()
