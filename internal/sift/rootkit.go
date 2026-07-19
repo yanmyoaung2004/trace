@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/yanmyoaung2004/trace/internal/agent"
@@ -71,16 +72,56 @@ func (s *RootkitScanner) scanRootkits(ctx context.Context, input agent.Input) (a
 	if path == "" {
 		path, _ = input["dir"].(string)
 	}
-	if path == "" {
-		return agent.Output{"error": "path is required", "count": 0}, nil
+
+	var globalPatterns []rootkitFileEntry
+	var localPatterns []rootkitFileEntry
+
+	for _, rk := range s.files {
+		if strings.HasPrefix(rk.Pattern, "*") {
+			globalPatterns = append(globalPatterns, rk)
+		} else {
+			localPatterns = append(localPatterns, rk)
+		}
 	}
 
 	var matches []map[string]string
+	visited := make(map[string]bool)
+
+	scanFile := func(fullPath string) {
+		if visited[fullPath] {
+			return
+		}
+		visited[fullPath] = true
+		for _, rk := range globalPatterns {
+			pattern := strings.TrimPrefix(rk.Pattern, "*")
+			if strings.Contains(fullPath, pattern) {
+				matches = append(matches, map[string]string{
+					"file":    fullPath,
+					"name":    rk.Name,
+					"pattern": rk.Pattern,
+					"ref":     rk.Ref,
+				})
+				return
+			}
+		}
+	}
+
 	walkFn := func(p string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
 		if info.IsDir() {
+			for _, rk := range localPatterns {
+				if strings.Contains(p, rk.Pattern) {
+					matches = append(matches, map[string]string{
+						"file":    p,
+						"name":    rk.Name,
+						"pattern": rk.Pattern,
+						"ref":     rk.Ref,
+						"type":    "directory",
+					})
+				}
+			}
 			return nil
 		}
 		select {
@@ -88,33 +129,58 @@ func (s *RootkitScanner) scanRootkits(ctx context.Context, input agent.Input) (a
 			return ctx.Err()
 		default:
 		}
-		for _, rk := range s.files {
-			pattern := rk.Pattern
-			globalSearch := strings.HasPrefix(pattern, "*")
-			if globalSearch {
-				pattern = strings.TrimPrefix(pattern, "*")
-			}
-			if strings.Contains(p, pattern) {
+		scanFile(p)
+		for _, rk := range localPatterns {
+			if strings.Contains(p, rk.Pattern) {
 				matches = append(matches, map[string]string{
 					"file":    p,
 					"name":    rk.Name,
 					"pattern": rk.Pattern,
 					"ref":     rk.Ref,
+					"type":    "file",
 				})
-				break
+				return nil
 			}
 		}
 		return nil
 	}
 
-	if err := filepath.Walk(path, walkFn); err != nil {
-		return agent.Output{"error": err.Error(), "count": len(matches), "matches": matches}, nil
+	if path != "" {
+		if err := filepath.Walk(path, walkFn); err != nil {
+			return agent.Output{"error": err.Error(), "count": len(matches), "matches": matches}, nil
+		}
+	}
+
+	if len(globalPatterns) > 0 {
+		for _, root := range getSystemRoots() {
+			if err := filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
+				if err != nil || info.IsDir() {
+					return nil
+				}
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				default:
+				}
+				scanFile(p)
+				return nil
+			}); err != nil {
+				continue
+			}
+		}
 	}
 
 	return agent.Output{
 		"matches": matches,
 		"count":   len(matches),
 	}, nil
+}
+
+func getSystemRoots() []string {
+	if runtime.GOOS == "windows" {
+		return []string{"C:\\Windows\\System32", "C:\\Windows\\SysWOW64", "C:\\ProgramData"}
+	}
+	return []string{"/bin", "/sbin", "/usr/bin", "/usr/sbin", "/tmp", "/var/tmp", "/dev/shm", "/lib", "/usr/lib"}
 }
 
 func (s *RootkitScanner) checkTrojan(ctx context.Context, input agent.Input) (agent.Output, error) {

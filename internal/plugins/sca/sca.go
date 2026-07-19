@@ -52,6 +52,8 @@ func (a *Agent) Name() string { return "sca" }
 func (a *Agent) Capabilities() []agent.Capability {
 	return []agent.Capability{
 		{Action: "run_policy", Inputs: []string{"policy_data"}, Outputs: []string{"results", "pass", "fail", "total"}},
+		{Action: "scan_system", Inputs: []string{}, Outputs: []string{"policy", "score", "results"}},
+		{Action: "list_policies", Inputs: []string{}, Outputs: []string{"policies"}},
 	}
 }
 
@@ -60,9 +62,29 @@ func (a *Agent) Execute(ctx context.Context, input agent.Input) (agent.Output, e
 	switch action {
 	case "run_policy":
 		return a.runPolicy(ctx, input)
+	case "scan_system":
+		return a.scanSystem(ctx)
+	case "list_policies":
+		return a.listPolicies()
 	default:
 		return nil, fmt.Errorf("unknown action: %s", action)
 	}
+}
+
+func (a *Agent) listPolicies() (agent.Output, error) {
+	var list []map[string]string
+	for _, p := range ListPolicies() {
+		list = append(list, map[string]string{"id": p.ID, "name": p.Name})
+	}
+	return agent.Output{"policies": list, "count": len(list)}, nil
+}
+
+func (a *Agent) scanSystem(ctx context.Context) (agent.Output, error) {
+	policy := DetectOSPolicy()
+	if policy == nil {
+		return agent.Output{"error": "no matching policy for this OS"}, nil
+	}
+	return a.runPolicy(ctx, agent.Input{"policy_data": policy.Data, "policy_name": policy.ID})
 }
 
 type checkResult struct {
@@ -133,8 +155,13 @@ func (a *Agent) runPolicy(ctx context.Context, input agent.Input) (agent.Output,
 		results = append(results, res)
 	}
 
+	policyID := policy.Policy.ID
+	if policyID == "" {
+		policyID, _ = input["policy_name"].(string)
+	}
+
 	return agent.Output{
-		"policy":   policy.Policy.ID,
+		"policy":   policyID,
 		"results":  results,
 		"pass":     passCount,
 		"fail":     failCount,
