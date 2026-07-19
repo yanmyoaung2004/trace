@@ -21,6 +21,7 @@ import (
 	"github.com/yanmyoaung2004/trace/internal/playbook"
 	"github.com/yanmyoaung2004/trace/internal/plugin"
 	"github.com/yanmyoaung2004/trace/internal/plugins/exporter"
+	"github.com/yanmyoaung2004/trace/internal/plugins/sca"
 	"github.com/yanmyoaung2004/trace/internal/response"
 	"github.com/yanmyoaung2004/trace/internal/taskqueue"
 	"github.com/yanmyoaung2004/trace/internal/telemetry"
@@ -78,6 +79,7 @@ func (a *App) initRegistry() error {
 	a.registry.Register(response.New(a.sqlDB))
 	a.registry.Register(exporter.New(a.sqlDB))
 	a.registry.Register(notifier.New())
+	a.registry.Register(sca.New())
 	a.registry.Register(abuseipdb.NewAgent(a.cfg.AbuseIPDBKey, a.sqlDB))
 	a.registry.Register(otx.NewAgent(a.cfg.OTXAPIKey, a.sqlDB))
 	a.registry.Register(splunk.New())
