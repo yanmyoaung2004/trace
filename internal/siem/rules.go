@@ -2,11 +2,15 @@ package siem
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 type RuleSet struct {
@@ -54,81 +58,134 @@ func NewRuleEngine() *RuleEngine {
 	}
 }
 
+type YAMLRule struct {
+	RuleID      string            `yaml:"rule_id"`
+	Description string            `yaml:"description"`
+	Severity    int               `yaml:"severity"`
+	MITRE       string            `yaml:"mitre,omitempty"`
+	Condition   string            `yaml:"condition"`
+	WindowDur   string            `yaml:"window,omitempty"`
+	Threshold   int               `yaml:"threshold,omitempty"`
+	Suppress    string            `yaml:"suppress,omitempty"`
+	Playbook    string            `yaml:"playbook,omitempty"`
+	Params      map[string]string `yaml:"params,omitempty"`
+}
+
+type YAMLRuleFile struct {
+	Rules []YAMLRule `yaml:"rules"`
+}
+
+func parseDuration(s string) time.Duration {
+	d, err := time.ParseDuration(s)
+	if err == nil {
+		return d
+	}
+	return 0
+}
+
+func (re *RuleEngine) LoadYAML(data []byte) error {
+	var file YAMLRuleFile
+	if err := yaml.Unmarshal(data, &file); err != nil {
+		return fmt.Errorf("parse yaml: %w", err)
+	}
+	re.mu.Lock()
+	defer re.mu.Unlock()
+	for _, yr := range file.Rules {
+		cr := CompiledRule{
+			RuleID:      yr.RuleID,
+			Description: yr.Description,
+			Severity:    yr.Severity,
+			MITRE:       yr.MITRE,
+			condition:   yr.Condition,
+			windowDur:   parseDuration(yr.WindowDur),
+			threshold:   yr.Threshold,
+			suppress:    parseDuration(yr.Suppress),
+		}
+		if yr.Playbook != "" {
+			params := make(map[string]any)
+			for k, v := range yr.Params {
+				params[k] = v
+			}
+			cr.Actions = []RuleAction{{Playbook: yr.Playbook, Params: params}}
+		}
+		re.rules = append(re.rules, cr)
+	}
+	return nil
+}
+
+func (re *RuleEngine) LoadYAMLDir(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".yaml" {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			return fmt.Errorf("read %s: %w", e.Name(), err)
+		}
+		if err := re.LoadYAML(data); err != nil {
+			return fmt.Errorf("load %s: %w", e.Name(), err)
+		}
+	}
+	return nil
+}
+
 func (re *RuleEngine) LoadDefault() {
 	re.mu.Lock()
 	defer re.mu.Unlock()
 
-	re.rules = []CompiledRule{
-		{
-			RuleID: "MULTIPLE_FAILED_LOGINS", Description: "Multiple failed login attempts from same source",
+	re.rules = loadWazuhRules()
+	re.rules = append(re.rules, builtinRules()...)
+
+	fmt.Printf("[siem] loaded %d external + %d built-in rules\n", len(loadWazuhRules()), len(builtinRules()))
+}
+
+func builtinRules() []CompiledRule {
+	return []CompiledRule{
+		{RuleID: "MULTIPLE_FAILED_LOGINS", Description: "Multiple failed login attempts from same source",
 			Severity: 4, MITRE: "T1110.003", condition: "tag:auth_failure", threshold: 5, windowDur: 60 * time.Second,
-			Actions: []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}},
-		},
-		{
-			RuleID: "FAILED_LOGIN_BRUTE", Description: "Single source brute-forcing login",
-			Severity: 5, MITRE: "T1110", condition: "tag:auth_failure", threshold: 20, windowDur: 60 * time.Second,
-		},
-		{
-			RuleID: "HTTP_5XX_ERROR", Description: "Server error response",
-			Severity: 3, condition: "tag:http_error", threshold: 1,
-		},
-		{
-			RuleID: "HTTP_4XX_BURST", Description: "Multiple client errors from same source",
+			Actions: []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${source_ip}"}}}},
+		{RuleID: "FAILED_LOGIN_BRUTE", Description: "Single source brute-forcing login",
+			Severity: 5, MITRE: "T1110", condition: "tag:auth_failure", threshold: 20, windowDur: 60 * time.Second},
+		{RuleID: "HTTP_5XX_ERROR", Description: "Server error response",
+			Severity: 3, condition: "tag:http_error", threshold: 1},
+		{RuleID: "HTTP_4XX_BURST", Description: "Multiple client errors from same source",
 			Severity: 2, condition: "tag:http_client_error", threshold: 10, windowDur: 60 * time.Second,
-			Actions: []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${client_ip}"}}},
-		},
-		{
-			RuleID: "SUSPICIOUS_PROCESS", Description: "Suspicious process execution detected",
+			Actions: []RuleAction{{Playbook: "ip-reputation", Params: map[string]any{"ip": "${client_ip}"}}}},
+		{RuleID: "SUSPICIOUS_PROCESS", Description: "Suspicious process execution detected",
 			Severity: 4, MITRE: "T1059", condition: "tag:process",
-			Actions: []RuleAction{{Playbook: "file-analysis", Params: map[string]any{"path": "${process_path}"}}},
-		},
-		{
-			RuleID: "HIGH_SEVERITY_ERROR", Description: "High severity error in system logs",
-			Severity: 3, condition: "tag:error", threshold: 1,
-		},
-		{
-			RuleID: "WINDOWS_EVENT_4625_BURST", Description: "Multiple Windows failed logon events",
-			Severity: 4, MITRE: "T1110.003", condition: "tag:auth_failure", threshold: 5, windowDur: 60 * time.Second,
-		},
-		{
-			RuleID: "BRUTE_FORCE_FALLBACK", Description: "Multiple auth failures from same source (any service)",
-			Severity: 3, MITRE: "T1110", condition: "field:message ~= (?i)failed", threshold: 10, windowDur: 120 * time.Second,
-		},
-		{
-			RuleID: "WIN_POWERSHELL_4104", Description: "PowerShell script block logging (Event 4104)",
+			Actions: []RuleAction{{Playbook: "file-analysis", Params: map[string]any{"path": "${process_path}"}}}},
+		{RuleID: "HIGH_SEVERITY_ERROR", Description: "High severity error in system logs",
+			Severity: 3, condition: "tag:error", threshold: 1},
+		{RuleID: "WINDOWS_EVENT_4625_BURST", Description: "Multiple Windows failed logon events",
+			Severity: 4, MITRE: "T1110.003", condition: "tag:auth_failure", threshold: 5, windowDur: 60 * time.Second},
+		{RuleID: "BRUTE_FORCE_FALLBACK", Description: "Multiple auth failures from same source (any service)",
+			Severity: 3, MITRE: "T1110", condition: "field:message ~= (?i)failed", threshold: 10, windowDur: 120 * time.Second},
+		{RuleID: "WIN_POWERSHELL_4104", Description: "PowerShell script block logging (Event 4104)",
 			Severity: 3, MITRE: "T1059.001", condition: "tag:powershell", threshold: 1,
-			Actions: []RuleAction{{Playbook: "log-analysis", Params: map[string]any{"event_id": "4104"}}},
-		},
-		{
-			RuleID: "WIN_SCHEDULED_TASK_4698", Description: "Scheduled task created (Event 4698) — potential persistence",
+			Actions: []RuleAction{{Playbook: "log-analysis", Params: map[string]any{"event_id": "4104"}}}},
+		{RuleID: "WIN_SCHEDULED_TASK_4698", Description: "Scheduled task created (Event 4698) — potential persistence",
 			Severity: 4, MITRE: "T1053.005", condition: "tag:persistence", threshold: 1,
-			Actions: []RuleAction{{Playbook: "file-analysis", Params: map[string]any{"path": "${process_path}"}}},
-		},
-		{
-			RuleID: "WIN_SERVICE_INSTALL_7045", Description: "New service installed (Event 7045)",
-			Severity: 4, MITRE: "T1543.003", condition: "tag:service_install", threshold: 1,
-		},
-		{
-			RuleID: "WIN_DEFENDER_1116", Description: "Windows Defender detected malware (Event 1116)",
+			Actions: []RuleAction{{Playbook: "file-analysis", Params: map[string]any{"path": "${process_path}"}}}},
+		{RuleID: "WIN_SERVICE_INSTALL_7045", Description: "New service installed (Event 7045)",
+			Severity: 4, MITRE: "T1543.003", condition: "tag:service_install", threshold: 1},
+		{RuleID: "WIN_DEFENDER_1116", Description: "Windows Defender detected malware (Event 1116)",
 			Severity: 5, MITRE: "T1204", condition: "tag:malware_detection", threshold: 1,
-			Actions: []RuleAction{{Playbook: "file-analysis", Params: map[string]any{"path": "${file_path}"}}},
-		},
-		{
-			RuleID: "WIN_PROCESS_4688_CREATION", Description: "Process creation with command line (Event 4688)",
-			Severity: 2, MITRE: "T1059", condition: "tag:process_creation", threshold: 1,
-		},
-		{
-			RuleID: "WIN_REGISTRY_PERSISTENCE", Description: "Registry persistence modification (Event 4657)",
-			Severity: 3, MITRE: "T1547.001", condition: "tag:registry_change", threshold: 1,
-		},
-		{
-			RuleID: "WIN_RDP_LOGIN_4625", Description: "RDP failed login (Event 4625, LogonType 10)",
-			Severity: 3, MITRE: "T1021.001", condition: "field:logontype == 10", threshold: 1,
-		},
-		{
-			RuleID: "WIN_ACCOUNT_LOCKOUT_4740", Description: "User account locked out (Event 4740)",
-			Severity: 3, MITRE: "T1110", condition: "tag:account_lockout", threshold: 1,
-		},
+			Actions: []RuleAction{{Playbook: "file-analysis", Params: map[string]any{"path": "${file_path}"}}}},
+		{RuleID: "WIN_PROCESS_4688_CREATION", Description: "Process creation with command line (Event 4688)",
+			Severity: 2, MITRE: "T1059", condition: "tag:process_creation", threshold: 1},
+		{RuleID: "WIN_REGISTRY_PERSISTENCE", Description: "Registry persistence modification (Event 4657)",
+			Severity: 3, MITRE: "T1547.001", condition: "tag:registry_change", threshold: 1},
+		{RuleID: "WIN_RDP_LOGIN_4625", Description: "RDP failed login (Event 4625, LogonType 10)",
+			Severity: 3, MITRE: "T1021.001", condition: "field:logontype == 10", threshold: 1},
+		{RuleID: "WIN_ACCOUNT_LOCKOUT_4740", Description: "User account locked out (Event 4740)",
+			Severity: 3, MITRE: "T1110", condition: "tag:account_lockout", threshold: 1},
 	}
 }
 

@@ -1,0 +1,267 @@
+package main
+
+import (
+	"encoding/xml"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+)
+
+type WazuhRule struct {
+	XMLName     xml.Name `xml:"rule"`
+	ID          string   `xml:"id,attr"`
+	Level       string   `xml:"level,attr"`
+	Frequency   string   `xml:"frequency,attr"`
+	Timeframe   string   `xml:"timeframe,attr"`
+	NoAlert     string   `xml:"noalert,attr"`
+	Match       string   `xml:"match"`
+	Regex       string   `xml:"regex"`
+	Description string   `xml:"description"`
+	Group       string   `xml:"group"`
+	IfSID       string   `xml:"if_sid"`
+	IfMatchedSID string  `xml:"if_matched_sid"`
+	SameSourceIP string  `xml:"same_source_ip"`
+	SameUser    string   `xml:"same_user"`
+	SameLocation string  `xml:"same_location"`
+	Mitre       struct {
+		IDs []string `xml:"id"`
+	} `xml:"mitre"`
+	DecodedAs string `xml:"decoded_as"`
+	Field     string `xml:"field"`
+}
+
+type WazuhGroup struct {
+	XMLName xml.Name    `xml:"group"`
+	Name    string      `xml:"name,attr"`
+	Rules   []WazuhRule `xml:"rule"`
+}
+
+type OutputRule struct {
+	RuleID      string            `yaml:"rule_id"`
+	Description string            `yaml:"description"`
+	Severity    int               `yaml:"severity"`
+	MITRE       string            `yaml:"mitre,omitempty"`
+	Condition   string            `yaml:"condition"`
+	WindowDur   string            `yaml:"window,omitempty"`
+	Threshold   int               `yaml:"threshold,omitempty"`
+}
+
+var severityNames = map[int]string{
+	0:  "disabled",
+	1:  "info",
+	2:  "low",
+	3:  "low",
+	4:  "medium",
+	5:  "medium",
+	6:  "medium",
+	7:  "high",
+	8:  "high",
+	9:  "critical",
+	10: "critical",
+	12: "critical",
+	13: "critical",
+	14: "critical",
+	15: "critical",
+}
+
+func convertRule(r WazuhRule) *OutputRule {
+	if r.NoAlert == "1" || r.Level == "0" {
+		return nil
+	}
+
+	level, _ := strconv.Atoi(r.Level)
+	if level < 3 {
+		return nil
+	}
+
+	if r.Match == "" && r.Regex == "" {
+		return nil
+	}
+
+	if r.IfSID != "" && r.Match == "" && r.Regex == "" && r.Frequency == "" {
+		return nil
+	}
+
+	condition := ""
+	val := r.Match
+	if val == "" {
+		val = r.Regex
+	}
+	if val != "" {
+		val = strings.ReplaceAll(val, `\`, `\\`)
+		val = strings.ReplaceAll(val, `"`, `\"`)
+
+		if strings.HasPrefix(val, `^`) {
+			condition = `field:message ~= ` + val
+		} else if r.Match != "" {
+			condition = `field:message ~= (?i)` + regexp.QuoteMeta(r.Match)
+		} else {
+			condition = `field:message ~= ` + val
+		}
+	}
+
+	if r.DecodedAs != "" {
+		condition = "tag:" + r.DecodedAs
+		if val != "" {
+		}
+	}
+
+	windowDur := ""
+	threshold := 0
+	if r.Frequency != "" {
+		threshold, _ = strconv.Atoi(r.Frequency)
+		if threshold < 2 {
+			threshold = 2
+		}
+	}
+	if r.Timeframe != "" {
+		tf := strings.TrimSuffix(r.Timeframe, "s")
+		if secs, err := strconv.Atoi(tf); err == nil {
+			windowDur = fmt.Sprintf("%d * time.Second", secs)
+		} else {
+			windowDur = r.Timeframe + " * time.Second"
+		}
+	}
+	if threshold > 0 && windowDur == "" {
+		windowDur = "3600 * time.Second"
+	}
+
+	mitreIDs := ""
+	if len(r.Mitre.IDs) > 0 {
+		mitreIDs = strings.Join(r.Mitre.IDs, ",")
+	}
+
+	desc := strings.TrimSpace(r.Description)
+	if desc == "" {
+		desc = "Wazuh rule " + r.ID
+	}
+
+	return &OutputRule{
+		RuleID:      "WAZUH_" + r.ID,
+		Description: desc,
+		Severity:    level,
+		MITRE:       mitreIDs,
+		Condition:   condition,
+		WindowDur:   windowDur,
+		Threshold:   threshold,
+	}
+}
+
+func main() {
+	rulesDir := `C:\Users\YMA\AppData\Local\Temp\wazuh-rules\ruleset\rules`
+	outputDir := `D:\Projects_And_Learning\AI\Trace\dev\internal\siem`
+
+	os.MkdirAll(outputDir, 0755)
+
+	type namedRules struct {
+		name  string
+		rules []OutputRule
+	}
+
+	var allRuleSets []namedRules
+	totalConverted := 0
+	totalSkipped := 0
+
+	files, _ := os.ReadDir(rulesDir)
+	for _, f := range files {
+		if filepath.Ext(f.Name()) != ".xml" {
+			continue
+		}
+
+		data, err := os.ReadFile(filepath.Join(rulesDir, f.Name()))
+		if err != nil {
+			continue
+		}
+
+		content := string(data)
+
+		if !strings.Contains(content, "<group ") && !strings.Contains(content, "<rule ") {
+			continue
+		}
+
+		var group WazuhGroup
+		if err := xml.Unmarshal(data, &group); err != nil {
+			var single WazuhRule
+			if err := xml.Unmarshal(data, &single); err != nil {
+				continue
+			}
+			group.Rules = []WazuhRule{single}
+		}
+
+		var converted []OutputRule
+		for _, rule := range group.Rules {
+			out := convertRule(rule)
+			if out != nil {
+				converted = append(converted, *out)
+				totalConverted++
+			} else {
+				totalSkipped++
+			}
+		}
+
+		if len(converted) > 0 {
+			allRuleSets = append(allRuleSets, namedRules{name: f.Name(), rules: converted})
+		}
+	}
+
+	sort.Slice(allRuleSets, func(i, j int) bool {
+		return allRuleSets[i].name < allRuleSets[j].name
+	})
+
+	fmt.Printf("Total Wazuh rules parsed: %d\n", totalConverted+totalSkipped)
+	fmt.Printf("Converted: %d\n", totalConverted)
+	fmt.Printf("Skipped (low/no match/no alert): %d\n", totalSkipped)
+	fmt.Printf("Rule sets: %d\n", len(allRuleSets))
+
+	var goBuf strings.Builder
+	goBuf.WriteString("package siem\n\n")
+	goBuf.WriteString("import \"time\"\n\n")
+	goBuf.WriteString("func loadWazuhRules() []CompiledRule {\n")
+	goBuf.WriteString("\treturn []CompiledRule{\n")
+
+	ruleCount := 0
+	for _, rs := range allRuleSets {
+		for _, r := range rs.rules {
+			ruleCount++
+			goBuf.WriteString(fmt.Sprintf("\t\t{\n"))
+			goBuf.WriteString(fmt.Sprintf("\t\t\tRuleID:      %q,\n", r.RuleID))
+			goBuf.WriteString(fmt.Sprintf("\t\t\tDescription: %q,\n", r.Description))
+			goBuf.WriteString(fmt.Sprintf("\t\t\tSeverity:    %d,\n", r.Severity))
+
+			if r.MITRE != "" {
+				goBuf.WriteString(fmt.Sprintf("\t\t\tMITRE:       %q,\n", r.MITRE))
+			}
+
+			cond := r.Condition
+			cond = strings.ReplaceAll(cond, `\\`, `\`)
+			cond = strings.ReplaceAll(cond, `\"`, `"`)
+			if cond != "" {
+				goBuf.WriteString(fmt.Sprintf("\t\t\tcondition:   %q,\n", cond))
+			}
+
+			if r.Threshold > 0 {
+				goBuf.WriteString(fmt.Sprintf("\t\t\tthreshold:   %d,\n", r.Threshold))
+			}
+			if r.WindowDur != "" {
+				goBuf.WriteString(fmt.Sprintf("\t\t\twindowDur:   %s,\n", r.WindowDur))
+			}
+
+			goBuf.WriteString("\t\t},\n")
+		}
+	}
+
+	goBuf.WriteString("\t}\n")
+	goBuf.WriteString("}\n")
+
+	outPath := filepath.Join(outputDir, "wazuh_rules_gen.go")
+	if err := os.WriteFile(outPath, []byte(goBuf.String()), 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "write output: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("\nGenerated %s with %d rules\n", outPath, ruleCount)
+}
