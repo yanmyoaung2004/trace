@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -21,17 +22,23 @@ type DashboardDataProvider interface {
 
 type DashboardHandler struct {
 	data DashboardDataProvider
+	db   *sql.DB
 }
 
 func NewDashboardHandler(dp DashboardDataProvider) *DashboardHandler {
 	return &DashboardHandler{data: dp}
 }
 
+func (dh *DashboardHandler) WithDB(database *sql.DB) *DashboardHandler {
+	dh.db = database
+	return dh
+}
+
 func (dh *DashboardHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/", dh.index)
 	mux.HandleFunc("/investigations/", dh.detail)
-	mux.HandleFunc("/search", dh.search)
 	mux.HandleFunc("/correlations", dh.correlations)
+	mux.HandleFunc("/cases", dh.cases)
 	mux.HandleFunc("/api/live", dh.liveData)
 }
 
@@ -438,6 +445,58 @@ func (dh *DashboardHandler) correlations(w http.ResponseWriter, r *http.Request)
 	}
 
 	b.WriteString(`</body></html>`)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write([]byte(b.String()))
+}
+
+func (dh *DashboardHandler) cases(w http.ResponseWriter, r *http.Request) {
+	if dh.db == nil {
+		http.Error(w, "cases not available (no database)", http.StatusNotFound)
+		return
+	}
+
+	rows, err := dh.db.Query(`SELECT id, title, description, status, severity, assignee, created_at FROM cases ORDER BY created_at DESC LIMIT 50`)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var b strings.Builder
+	b.WriteString(`<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Cases — Trace Server</title>
+<style>` + pageStyle + `</style></head><body>
+<div class="header"><h1>Security Cases</h1>
+<div class="nav"><a href="/">` + locale.T("dashboard_investigations") + `</a><a href="/correlations">` + locale.T("dashboard_correlations") + `</a><a href="/cases" class="active">Cases</a></div></div>
+
+<table><thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Severity</th><th>Assignee</th><th>Created</th></tr></thead><tbody>`)
+
+	hasRows := false
+	for rows.Next() {
+		hasRows = true
+		var id, title, desc, status, severity, assignee, created string
+		rows.Scan(&id, &title, &desc, &status, &severity, &assignee, &created)
+
+		as := assignee
+		if as == "" { as = "—" }
+
+		idShort := id
+		if len(idShort) > 12 { idShort = idShort[:12] }
+
+		fmt.Fprintf(&b, `<tr><td><a href="/cases/%s">%s</a></td><td>%s</td><td><span class="badge badge-%s">%s</span></td><td><span class="badge badge-%s">%s</span></td><td>%s</td><td style="white-space:nowrap;color:var(--muted)">%s</td></tr>`,
+			html.EscapeString(id), html.EscapeString(idShort),
+			html.EscapeString(title),
+			status, html.EscapeString(status),
+			severity, html.EscapeString(severity),
+			html.EscapeString(as),
+			created[:19])
+	}
+
+	if !hasRows {
+		b.WriteString(`<tr><td colspan="6"><div class="empty-state"><p>No cases yet. Cases are auto-created when SIEM alerts fire with severity ≥ 4.</p></div></td></tr>`)
+	}
+
+	b.WriteString(`</tbody></table></body></html>`)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(b.String()))
 }

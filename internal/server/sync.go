@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -250,6 +251,7 @@ type ServeOptions struct {
 	CertFile   string
 	KeyFile    string
 	LogDir     string
+	DB         *sql.DB
 }
 
 func ServeHTTP(opts ServeOptions, mgr *ServerManager, dashboard DashboardDataProvider) (*http.Server, error) {
@@ -259,6 +261,9 @@ func ServeHTTP(opts ServeOptions, mgr *ServerManager, dashboard DashboardDataPro
 	sync.RegisterRoutes(mux)
 
 	dashboardHandler := NewDashboardHandler(dashboard)
+	if opts.DB != nil {
+		dashboardHandler.WithDB(opts.DB)
+	}
 	dashboardHandler.RegisterRoutes(mux)
 
 	srv := &http.Server{

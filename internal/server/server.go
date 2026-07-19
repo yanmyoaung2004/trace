@@ -39,6 +39,7 @@ func RunServer(cfg *config.Config, database *db.DB, invMgr *investigation.Manage
 		CertFile:   cfg.Server.TLS.CertFile,
 		KeyFile:    cfg.Server.TLS.KeyFile,
 		LogDir:     cfg.LogDir,
+		DB:         database.DB,
 	}, mgr, mgr)
 	if err != nil {
 		return fmt.Errorf("start HTTP server: %w", err)
