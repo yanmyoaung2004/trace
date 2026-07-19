@@ -261,16 +261,16 @@ type Capability struct {
 
 ## Timeline
 
-| Phase                | Duration   | Cumulative  | Delivers                           |
-| -------------------- | ---------- | ----------- | ---------------------------------- |
-| 0 — Scaffold         | 2 days     | 2 days      | Repo, build, CI                    |
-| 1 — Foundation       | 5 days     | 7 days      | Backbone, CLI, agent interface     |
-| 2 — Playbook engine  | 7 days     | 14 days     | DAG runner, playbook library       |
-| 3 — Archive Agent  | 7 days     | 21 days     | MITRE, CVE, intel enrichment       |
-| 4 — Sift Agent  | 7 days     | 28 days     | YARA, PE, VT analysis              |
-| **5 — Dispatch Agent**   | **7 days** | **35 days** | **MVP — end-to-end investigation** |
-| 6 — SIEM engine      | 14 days    | 49 days     | Log ingestion + rules              |
-| 7 — Response actions | 7 days     | 56 days     | SOAR loop closed                   |
-| 8 — Plugins          | 7 days     | 63 days     | Extensibility                      |
-| 9 — Central server   | 14 days    | 77 days     | Team deployment                    |
-| 10 — Polish          | 7 days     | 84 days     | Production readiness               |
+ | Phase                | Duration   | Cumulative  | Delivers                           | Status |
+| -------------------- | ---------- | ----------- | ---------------------------------- | ------ |
+| 0 — Scaffold         | 2 days     | 2 days      | Repo, build, CI                    | ✅ |
+| 1 — Foundation       | 5 days     | 7 days      | Backbone, CLI, agent interface     | ✅ |
+| 2 — Playbook engine  | 7 days     | 14 days     | DAG runner, playbook library       | ✅ |
+| 3 — Archive Agent    | 7 days     | 21 days     | MITRE, CVE, intel enrichment       | ✅ |
+| 4 — Sift Agent       | 7 days     | 28 days     | YARA, PE, VT analysis              | ✅ |
+| **5 — Dispatch Agent** | **7 days** | **35 days** | **MVP — end-to-end investigation** | ✅ |
+| 6 — SIEM engine      | 14 days    | 49 days     | Log ingestion + Wazuh rules        | ✅ |
+| 7 — Response actions | 7 days     | 56 days     | SOAR loop closed                   | ✅ |
+| 8 — Plugins          | 7 days     | 63 days     | Extensibility + gRPC doc           | ✅ |
+| 9 — Central server   | 14 days    | 77 days     | Team deployment, RBAC              | ✅ |
+| 10 — Polish          | 7 days     | 84 days     | v0.1.0 release, i18n, hardening    | ✅ |
