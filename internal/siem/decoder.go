@@ -1,7 +1,9 @@
 package siem
 
 import (
+	"bytes"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -275,6 +277,145 @@ func (d *AutoDecoder) Decode(raw []byte) (*Event, error) {
 		Raw:       string(raw),
 		Fields:    map[string]any{"message": string(raw)},
 	}, nil
+}
+
+type evtxEvent struct {
+	System struct {
+		Provider struct {
+			Name string `xml:"Name,attr"`
+		} `xml:"Provider"`
+		EventID     string `xml:"EventID"`
+		Level       string `xml:"Level"`
+		Task        string `xml:"Task"`
+		TimeCreated struct {
+			SystemTime string `xml:"SystemTime,attr"`
+		} `xml:"TimeCreated"`
+		Execution struct {
+			ProcessID string `xml:"ProcessID,attr"`
+		} `xml:"Execution"`
+		Channel  string `xml:"Channel"`
+		Computer string `xml:"Computer"`
+	} `xml:"System"`
+	EventData struct {
+		Data []struct {
+			Name  string `xml:"Name,attr"`
+			Value string `xml:",chardata"`
+		} `xml:"Data"`
+	} `xml:"EventData"`
+	UserData struct {
+		Data []struct {
+			Name  string `xml:"Name,attr"`
+			Value string `xml:",chardata"`
+		} `xml:"Data"`
+	} `xml:"UserData"`
+}
+
+type EVTXDecoder struct{}
+
+func (d *EVTXDecoder) Name() string { return "evtx" }
+
+func (d *EVTXDecoder) Decode(raw []byte) (*Event, error) {
+	if !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("<Event")) {
+		return nil, fmt.Errorf("not EVTX format")
+	}
+
+	var evt evtxEvent
+	if err := xml.Unmarshal(raw, &evt); err != nil {
+		return nil, fmt.Errorf("evtx parse: %w", err)
+	}
+	if evt.System.EventID == "" {
+		return nil, fmt.Errorf("evtx: no EventID")
+	}
+
+	fields := make(map[string]any)
+	fields["event_id"] = evt.System.EventID
+	fields["provider"] = evt.System.Provider.Name
+	fields["computer"] = evt.System.Computer
+	fields["channel"] = evt.System.Channel
+	fields["level_name"] = evt.System.Level
+	fields["pid"] = evt.System.Execution.ProcessID
+
+	for _, d := range evt.EventData.Data {
+		fields[d.Name] = d.Value
+	}
+	for _, d := range evt.UserData.Data {
+		fields[d.Name] = d.Value
+	}
+
+	sev := 0
+	tags := []string{"windows", evt.System.Channel}
+
+	isSysmon := evt.System.Provider.Name == "Microsoft-Windows-Sysmon"
+	if isSysmon {
+		if m, ok := sysmonEventMap[evt.System.EventID]; ok {
+			tags = append(tags, m.tags...)
+			if m.severity > sev {
+				sev = m.severity
+			}
+		}
+	}
+
+	switch evt.System.EventID {
+	case "4625":
+		tags = append(tags, "auth_failure")
+		if sev < 3 { sev = 3 }
+	case "4624":
+		tags = append(tags, "auth_success")
+	case "4688":
+		tags = append(tags, "process_creation")
+	case "4698":
+		tags = append(tags, "persistence")
+		if sev < 3 { sev = 3 }
+	case "7045":
+		tags = append(tags, "service_install")
+		if sev < 3 { sev = 3 }
+	case "1116", "1117":
+		tags = append(tags, "malware_detection")
+		if sev < 5 { sev = 5 }
+	case "4103", "4104":
+		tags = append(tags, "powershell")
+	case "4657":
+		tags = append(tags, "registry_change")
+	case "4740":
+		tags = append(tags, "account_lockout")
+		if sev < 3 { sev = 3 }
+	}
+
+	ts := time.Now().UTC()
+	if evt.System.TimeCreated.SystemTime != "" {
+		if parsed, err := time.Parse(time.RFC3339Nano, evt.System.TimeCreated.SystemTime); err == nil {
+			ts = parsed
+		}
+	}
+
+	return &Event{
+		Timestamp: ts,
+		Source:    "decoder:evtx",
+		Raw:       string(raw),
+		Fields:    fields,
+		Tags:      tags,
+		Severity:  sev,
+	}, nil
+}
+
+var sysmonEventMap = map[string]struct {
+	tags     []string
+	severity int
+}{
+	"1":  {tags: []string{"process_creation"}, severity: 2},
+	"3":  {tags: []string{"network_connection"}, severity: 2},
+	"7":  {tags: []string{"module_load"}, severity: 2},
+	"8":  {tags: []string{"remote_thread"}, severity: 4},
+	"10": {tags: []string{"process_access"}, severity: 3},
+	"11": {tags: []string{"file_create"}, severity: 2},
+	"12": {tags: []string{"registry_change"}, severity: 3},
+	"13": {tags: []string{"registry_value"}, severity: 3},
+	"15": {tags: []string{"file_stream"}, severity: 2},
+	"17": {tags: []string{"pipe_event"}, severity: 3},
+	"18": {tags: []string{"pipe_connected"}, severity: 3},
+	"19": {tags: []string{"wmi_event"}, severity: 3},
+	"20": {tags: []string{"wmi_consumer"}, severity: 3},
+	"22": {tags: []string{"dns_query"}, severity: 1},
 }
 
 func extractLogonType(msg string) string {
