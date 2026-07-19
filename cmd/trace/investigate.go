@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/yanmyoaung2004/trace/internal/agent"
+	"github.com/yanmyoaung2004/trace/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -19,6 +21,17 @@ Examples:
   trace investigate --playbook hash-lookup --param hash=<sha256>
   trace investigate --playbook file-analysis --param file=/path/to/file.exe`,
 		Args: cobra.ArbitraryArgs,
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) > 0 {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+			playbooks := app.playbooks
+			if playbooks == nil {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+			matches := tui.PlaybookCompletions(toComplete, app)
+			return matches, cobra.ShellCompDirectiveNoFileComp
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			query := argsToQuery(args)
@@ -30,10 +43,35 @@ Examples:
 			}
 
 			if query == "" && playbookName == "" {
-				return fmt.Errorf("provide a query or --playbook flag")
+				if tui.IsInteractive() {
+					p := tui.NewPrompter()
+					q, err := p.Input("What do you want to investigate?", "")
+					if err != nil || q == "" {
+						return err
+					}
+					query = strings.TrimSpace(q)
+
+					playbooks := app.ListPlaybooks()
+					if len(playbooks) > 0 {
+						pbNames := make([]string, len(playbooks))
+						for i, pb := range playbooks {
+							pbNames[i] = pb.Name
+						}
+						selected, err := p.Select("Select a playbook", pbNames)
+						if err != nil {
+							return err
+						}
+						if selected != "" {
+							playbookName = selected
+						}
+					}
+				}
+				if query == "" && playbookName == "" {
+					return fmt.Errorf("provide a query or --playbook flag")
+				}
 			}
 
-			if playbookName == "" {
+			if playbookName == "" && query != "" {
 				intentOutput, err := app.dispatchAgent.Execute(ctx, agent.Input{
 					"action": "classify_intent",
 					"query":  query,

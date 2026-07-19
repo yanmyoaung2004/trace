@@ -19,6 +19,7 @@ import (
 	"github.com/yanmyoaung2004/trace/internal/integration/otx"
 	"github.com/yanmyoaung2004/trace/internal/integration/splunk"
 	"github.com/yanmyoaung2004/trace/internal/investigation"
+	"github.com/yanmyoaung2004/trace/internal/agent"
 	"github.com/yanmyoaung2004/trace/internal/archive"
 	"github.com/yanmyoaung2004/trace/internal/cases"
 	"github.com/yanmyoaung2004/trace/internal/playbook"
@@ -28,6 +29,7 @@ import (
 	"github.com/yanmyoaung2004/trace/internal/response"
 	"github.com/yanmyoaung2004/trace/internal/taskqueue"
 	"github.com/yanmyoaung2004/trace/internal/telemetry"
+	"github.com/yanmyoaung2004/trace/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -46,6 +48,247 @@ type App struct {
 	huntScheduler   *hunt.Scheduler
 	caseManager     *cases.Manager
 	telemetry       *telemetry.Telemetry
+}
+
+func (a *App) ListPlaybooks() []*playbook.Playbook {
+	if a.playbooks == nil {
+		return nil
+	}
+	return a.playbooks.List()
+}
+
+func (a *App) ListCases(status, severity string) ([]tui.Case, error) {
+	cs, err := a.caseManager.List(context.Background(), status, severity)
+	if err != nil {
+		return nil, err
+	}
+	res := make([]tui.Case, len(cs))
+	for i, c := range cs {
+		res[i] = tui.Case{
+			ID:        c.ID,
+			Title:     c.Title,
+			Status:    c.Status,
+			Severity:  c.Severity,
+			Assignee:  c.Assignee,
+			CreatedAt: c.CreatedAt,
+		}
+	}
+	return res, nil
+}
+
+func (a *App) CreateCase(title, desc, severity string) (tui.Case, error) {
+	c, err := a.caseManager.Create(context.Background(), title, desc, severity)
+	if err != nil {
+		return tui.Case{}, err
+	}
+	return tui.Case{
+		ID:        c.ID,
+		Title:     c.Title,
+		Status:    c.Status,
+		Severity:  c.Severity,
+		CreatedAt: c.CreatedAt,
+	}, nil
+}
+
+func (a *App) ViewCase(id string) (*tui.Case, error) {
+	c, err := a.caseManager.Get(context.Background(), id)
+	if err != nil {
+		return nil, err
+	}
+	return &tui.Case{
+		ID:        c.ID,
+		Title:     c.Title,
+		Status:    c.Status,
+		Severity:  c.Severity,
+		Assignee:  c.Assignee,
+		CreatedAt: c.CreatedAt,
+	}, nil
+}
+
+func (a *App) ListHunts(status string) ([]tui.Hunt, error) {
+	hs, err := a.huntManager.List(context.Background(), status)
+	if err != nil {
+		return nil, err
+	}
+	res := make([]tui.Hunt, len(hs))
+	for i, h := range hs {
+		lr, nr := "—", "—"
+		if h.LastRun != nil {
+			lr = *h.LastRun
+		}
+		if h.NextRun != nil {
+			nr = *h.NextRun
+		}
+		res[i] = tui.Hunt{
+			ID:        h.ID,
+			Name:      h.Name,
+			Playbook:  h.Playbook,
+			Schedule:  h.Schedule,
+			Status:    h.Status,
+			LastRun:   lr,
+			NextRun:   nr,
+			CreatedAt: h.CreatedAt,
+		}
+	}
+	return res, nil
+}
+
+func (a *App) CreateHunt(name, desc, schedule, playbookName string) (tui.Hunt, error) {
+	h, err := a.huntManager.Create(context.Background(), name, desc, schedule, playbookName, nil, "self", 0)
+	if err != nil {
+		return tui.Hunt{}, err
+	}
+	lr, nr := "—", "—"
+	if h.LastRun != nil {
+		lr = *h.LastRun
+	}
+	if h.NextRun != nil {
+		nr = *h.NextRun
+	}
+	return tui.Hunt{
+		ID:        h.ID,
+		Name:      h.Name,
+		Playbook:  h.Playbook,
+		Schedule:  h.Schedule,
+		Status:    h.Status,
+		LastRun:   lr,
+		NextRun:   nr,
+		CreatedAt: h.CreatedAt,
+	}, nil
+}
+
+func (a *App) RunHunt(name string) error {
+	h, err := a.huntManager.GetByName(context.Background(), name)
+	if err != nil {
+		return err
+	}
+	a.huntScheduler.ExecuteNow(context.Background(), h)
+	return nil
+}
+
+func (a *App) InvestigateInteractive(query, playbookName string) (tui.InvResult, error) {
+	pb := a.playbooks.Get(playbookName)
+	if pb == nil {
+		return tui.InvResult{}, fmt.Errorf("playbook %q not found", playbookName)
+	}
+
+	inv, err := a.invManager.Create(context.Background(), query, playbookName)
+	if err != nil {
+		return tui.InvResult{}, fmt.Errorf("create investigation: %w", err)
+	}
+
+	params := make(map[string]any)
+	results, err := a.executor.Execute(context.Background(), inv, pb, params)
+	if err != nil {
+		return tui.InvResult{}, fmt.Errorf("execute playbook: %w", err)
+	}
+
+	reportOutput, err := a.dispatchAgent.Execute(context.Background(), agent.Input{
+		"action":           "synthesize_report",
+		"results":          results,
+		"investigation_id": inv.ID,
+		"intent":           query,
+	})
+	if err != nil {
+		return tui.InvResult{}, fmt.Errorf("synthesize report: %w", err)
+	}
+
+	report, _ := reportOutput["report"].(string)
+	return tui.InvResult{ID: inv.ID[:12], Report: report}, nil
+}
+
+func (a *App) TotalInvestigations() int {
+	ctx := context.Background()
+	invs, _ := a.invManager.ListRecent(ctx, 10000)
+	return len(invs)
+}
+
+func (a *App) OpenCases() int {
+	cs, _ := a.caseManager.List(context.Background(), "", "")
+	count := 0
+	for _, c := range cs {
+		if c.Status == "open" || c.Status == "investigating" {
+			count++
+		}
+	}
+	return count
+}
+
+func (a *App) ActiveHunts() int {
+	hs, _ := a.huntManager.List(context.Background(), "")
+	count := 0
+	for _, h := range hs {
+		if h.Status == "active" {
+			count++
+		}
+	}
+	return count
+}
+
+func (a *App) ListRecentInvestigations(limit int) ([]tui.InvBrief, error) {
+	ctx := context.Background()
+	invs, err := a.invManager.ListRecent(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	res := make([]tui.InvBrief, len(invs))
+	for i, inv := range invs {
+		cf := 0.0
+		if inv.Confidence != nil {
+			cf = *inv.Confidence
+		}
+		res[i] = tui.InvBrief{
+			ID:         inv.ID,
+			Status:     inv.Status,
+			Intent:     inv.Intent,
+			Playbook:   inv.Playbook,
+			Confidence: cf,
+			CreatedAt:  inv.CreatedAt,
+			UpdatedAt:  inv.UpdatedAt,
+		}
+	}
+	return res, nil
+}
+
+func (a *App) ListInvestigations(status string) ([]tui.InvBrief, error) {
+	return a.ListRecentInvestigations(1000)
+}
+
+func (a *App) SiemAlerts(count int) ([]string, error) {
+	ctx := context.Background()
+	invs, err := a.invManager.ListRecent(ctx, count)
+	if err != nil {
+		return nil, err
+	}
+	var alerts []string
+	for _, inv := range invs {
+		alerts = append(alerts, fmt.Sprintf("[%s] %s (%s)", inv.Status, inv.Intent, inv.ID[:8]))
+	}
+	return alerts, nil
+}
+
+func (a *App) ConfigValue(key string) string {
+	if a.cfg == nil {
+		return ""
+	}
+	switch key {
+	case "db_path":
+		return a.cfg.DBPath
+	case "data_dir":
+		return a.cfg.DataDir
+	case "log_dir":
+		return a.cfg.LogDir
+	case "llm_provider":
+		return a.cfg.LLMProvider
+	case "llm_model":
+		return a.cfg.LLMModel
+	case "siem_enabled":
+		return fmt.Sprintf("%v", a.cfg.SIEM.Enabled)
+	case "server_addr":
+		return a.cfg.Server.HTTPAddr
+	default:
+		return ""
+	}
 }
 
 func (a *App) initConfig(cfgPath string) error {
@@ -193,14 +436,30 @@ func newRootCmd() *cobra.Command {
 			}
 			return app.initialize(cmd.Flag("config").Value.String())
 		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 && tui.IsInteractive() {
+				return tui.Start(app)
+			}
+			return cmd.Help()
+		},
 	}
+	cmd.CompletionOptions.DisableDefaultCmd = false
 
 	cmd.PersistentFlags().StringP("config", "c", "", "path to config file")
 
+	invCmd := newInvestigateCmd()
+	invCmd.Aliases = []string{"inv"}
+	cmd.AddCommand(invCmd)
+
+	statusCmd := newStatusCmd()
+	statusCmd.Aliases = []string{"st"}
+	cmd.AddCommand(statusCmd)
+
+	historyCmd := newHistoryCmd()
+	historyCmd.Aliases = []string{"hist"}
+	cmd.AddCommand(historyCmd)
+
 	cmd.AddCommand(newServeCmd())
-	cmd.AddCommand(newInvestigateCmd())
-	cmd.AddCommand(newStatusCmd())
-	cmd.AddCommand(newHistoryCmd())
 	cmd.AddCommand(newApprovalCmd())
 	cmd.AddCommand(newReportCmd())
 	cmd.AddCommand(newGenKeyCmd())

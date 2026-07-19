@@ -7,8 +7,26 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/yanmyoaung2004/trace/internal/tui"
 	"github.com/spf13/cobra"
 )
+
+func huntNameCompletionFunc(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	hs, err := app.huntManager.List(context.Background(), "")
+	if err != nil || len(hs) == 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	var matches []string
+	for _, h := range hs {
+		if strings.HasPrefix(h.Name, toComplete) {
+			matches = append(matches, h.Name)
+		}
+	}
+	return matches, cobra.ShellCompDirectiveNoFileComp
+}
 
 func newHuntCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -22,6 +40,13 @@ Examples:
   trace hunt list
   trace hunt run known-malware-scan
   trace hunt pause known-malware-scan`,
+		RunE: func(cmdCobra *cobra.Command, args []string) error {
+			if len(args) == 0 && tui.IsInteractive() {
+				p := tui.NewPrompter()
+				return tui.RunHuntMenu(p, app)
+			}
+			return cmdCobra.Help()
+		},
 	}
 
 	createCmd := &cobra.Command{
@@ -99,6 +124,7 @@ Examples:
 		Use:   "run [name]",
 		Short: "Execute a hunt immediately",
 		Args:  cobra.ExactArgs(1),
+		ValidArgsFunction: huntNameCompletionFunc,
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
 			h, err := app.huntManager.GetByName(context.Background(), args[0])
 			if err != nil {
@@ -115,6 +141,7 @@ Examples:
 		Use:   "pause [name]",
 		Short: "Pause a scheduled hunt",
 		Args:  cobra.ExactArgs(1),
+		ValidArgsFunction: huntNameCompletionFunc,
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
 			h, err := app.huntManager.GetByName(context.Background(), args[0])
 			if err != nil {
@@ -132,6 +159,7 @@ Examples:
 		Use:   "resume [name]",
 		Short: "Resume a paused hunt",
 		Args:  cobra.ExactArgs(1),
+		ValidArgsFunction: huntNameCompletionFunc,
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
 			h, err := app.huntManager.GetByName(context.Background(), args[0])
 			if err != nil {
@@ -149,6 +177,7 @@ Examples:
 		Use:   "delete [name]",
 		Short: "Delete a hunt",
 		Args:  cobra.ExactArgs(1),
+		ValidArgsFunction: huntNameCompletionFunc,
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
 			h, err := app.huntManager.GetByName(context.Background(), args[0])
 			if err != nil {

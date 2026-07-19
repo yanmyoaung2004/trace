@@ -169,16 +169,20 @@ Run `./trace init` for the interactive setup wizard.
 
 ## CLI Commands
 
-| Command                                       | Description                                         |
+| Command / Alias                               | Description                                         |
 | --------------------------------------------- | --------------------------------------------------- |
+| *(none)*                                      | Full-screen terminal UI (TUI) with 5 screens        |
 | `init`                                        | First-run setup wizard                              |
 | `serve`                                       | Start daemon with SIEM, hunts, edge sync            |
 | `server`                                      | Start central server with dashboard + API           |
-| `investigate`                                 | Run an investigation (natural language or playbook) |
-| `status` / `history` / `report`               | View investigations                                 |
-| `case create/list/view/note/ioc/close/export` | Case management                                     |
-| `hunt create/list/run/pause/resume/delete`    | Automated threat hunting                            |
+| `investigate` / `inv`                        | Run an investigation (prompts if no args)           |
+| `status` / `st`                               | View investigation status                           |
+| `history` / `hist`                            | List recent investigations                          |
+| `report`                                      | View investigation report                           |
+| `case`                                        | Case management (prompts if no subcommand)          |
+| `hunt`                                        | Threat hunting (prompts if no subcommand)           |
 | `approval pending/approve/deny`               | Human-in-the-loop                                   |
+| `completion`                                  | Generate shell completion scripts                   |
 | `plugin search/list/install/remove`           | Plugin ecosystem                                    |
 | `update self/intel/playbooks/rollback`        | Self-update                                         |
 | `version`                                     | Print version                                       |

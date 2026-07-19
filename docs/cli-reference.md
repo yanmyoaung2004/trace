@@ -2,6 +2,10 @@
 
 Global flags: `-c, --config string` — path to config file (optional)
 
+Aliases: `trace inv` = investigate, `trace st` = status, `trace hist` = history
+
+Interactive mode: run any of these commands without arguments for an interactive prompt menu.
+
 ---
 
 ## `init`
@@ -64,10 +68,16 @@ Run a security investigation.
 trace investigate [query] [flags]
 ```
 
+With no query and no `--playbook` flag, opens an interactive prompt that asks for a query
+and lets you select a playbook from a list. The selected playbook is used directly (skips
+intent classification).
+
 | Flag             | Description                                           |
 | ---------------- | ----------------------------------------------------- |
 | `-p, --playbook` | Playbook name to run (skips intent classification)    |
 | `--param`        | Parameters for the playbook (`key=value`, repeatable) |
+
+Shell completion: `trace investigate --playbook <TAB>` lists available playbooks.
 
 Examples:
 
@@ -118,6 +128,57 @@ trace report <investigation-id> [flags]
 | Flag           | Description              |
 | -------------- | ------------------------ |
 | `-o, --output` | Save report to file path |
+
+---
+
+## `case`
+
+Manage security cases.
+
+```
+trace case <subcommand>
+```
+
+With no subcommand, opens an interactive menu (List / Create / View).
+
+Subcommands:
+| Command | Description |
+|---|---|
+| `create --title` | Create a new case (requires `--title`, optional `--description`, `--severity`) |
+| `list` | List all cases (filters: `--status`, `--severity`) |
+| `view <id>` | View case details with timeline and IOCs |
+| `note <id> <content>` | Add a note to a case |
+| `ioc <id> --type --value` | Add an IOC to a case |
+| `assign <id> --to` | Assign a case to an analyst |
+| `close <id>` | Close a case |
+| `export <id>` | Export a case as JSON |
+| `export-pdf <id>` | Export a case as PDF |
+
+Shell completion: `trace case view <TAB>` lists case IDs.
+
+---
+
+## `hunt`
+
+Manage automated threat hunts.
+
+```
+trace hunt <subcommand>
+```
+
+With no subcommand, opens an interactive menu (List / Run / Create).
+
+Subcommands:
+| Command | Description |
+|---|---|
+| `create --name --schedule --playbook` | Create a new scheduled hunt |
+| `list` | List all hunts (filter: `--status`) |
+| `run <name>` | Execute a hunt immediately |
+| `pause <name>` | Pause a scheduled hunt |
+| `resume <name>` | Resume a paused hunt |
+| `delete <name>` | Delete a hunt |
+
+Shell completion: `trace hunt run <TAB>` lists hunt names.
 
 ---
 

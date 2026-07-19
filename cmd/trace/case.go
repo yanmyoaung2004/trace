@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 
+	"github.com/yanmyoaung2004/trace/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -24,6 +26,13 @@ Examples:
   trace case ioc <id> --type ip --value 10.0.0.5
   trace case assign <id> --to analyst@example.com
   trace case close <id> --resolution "resolved"`,
+		RunE: func(cmdCobra *cobra.Command, args []string) error {
+			if len(args) == 0 && tui.IsInteractive() {
+				p := tui.NewPrompter()
+				return tui.RunCaseMenu(p, app)
+			}
+			return cmdCobra.Help()
+		},
 	}
 
 	createCmd := &cobra.Command{
@@ -83,6 +92,7 @@ Examples:
 		Use:   "view [id]",
 		Short: "View case details",
 		Args:  cobra.ExactArgs(1),
+		ValidArgsFunction: caseIDCompletionFunc,
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
 			c, err := app.caseManager.Get(context.Background(), args[0])
 			if err != nil {
@@ -132,6 +142,12 @@ Examples:
 		Use:   "note [id] [content]",
 		Short: "Add a note to a case",
 		Args:  cobra.ExactArgs(2),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) == 0 {
+				return caseIDCompletionFunc(cmd, args, toComplete)
+			}
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
 			_, err := app.caseManager.AddEvent(context.Background(), args[0], "note", args[1], "manual")
 			return err
@@ -141,6 +157,8 @@ Examples:
 	iocCmd := &cobra.Command{
 		Use:   "ioc [id]",
 		Short: "Add an IOC to a case",
+		Args:  cobra.ExactArgs(1),
+		ValidArgsFunction: caseIDCompletionFunc,
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
 			iocType, _ := cmdCobra.Flags().GetString("type")
 			value, _ := cmdCobra.Flags().GetString("value")
@@ -159,6 +177,8 @@ Examples:
 	assignCmd := &cobra.Command{
 		Use:   "assign [id]",
 		Short: "Assign a case to an analyst",
+		Args:  cobra.ExactArgs(1),
+		ValidArgsFunction: caseIDCompletionFunc,
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
 			to, _ := cmdCobra.Flags().GetString("to")
 			if to == "" {
@@ -172,6 +192,8 @@ Examples:
 	closeCmd := &cobra.Command{
 		Use:   "close [id]",
 		Short: "Close a case",
+		Args:  cobra.ExactArgs(1),
+		ValidArgsFunction: caseIDCompletionFunc,
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
 			resolution, _ := cmdCobra.Flags().GetString("resolution")
 			return app.caseManager.Resolve(context.Background(), args[0], resolution)
@@ -183,6 +205,7 @@ Examples:
 		Use:   "export [id]",
 		Short: "Export a case as JSON",
 		Args:  cobra.ExactArgs(1),
+		ValidArgsFunction: caseIDCompletionFunc,
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
 			c, err := app.caseManager.Get(context.Background(), args[0])
 			if err != nil {
@@ -206,6 +229,7 @@ Examples:
 		Use:   "export-pdf [id]",
 		Short: "Export a case as PDF",
 		Args:  cobra.ExactArgs(1),
+		ValidArgsFunction: caseIDCompletionFunc,
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
 			output, _ := cmdCobra.Flags().GetString("output")
 			pdfData, err := app.caseManager.ExportPDF(context.Background(), args[0])
@@ -225,6 +249,37 @@ Examples:
 	}
 	exportPdfCmd.Flags().String("output", "o", "output file path")
 
+	createCmd.RegisterFlagCompletionFunc("severity", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"low", "medium", "high", "critical"}, cobra.ShellCompDirectiveNoFileComp
+	})
+	listCmd.RegisterFlagCompletionFunc("status", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"open", "investigating", "resolved", "closed"}, cobra.ShellCompDirectiveNoFileComp
+	})
+	listCmd.RegisterFlagCompletionFunc("severity", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"low", "medium", "high", "critical"}, cobra.ShellCompDirectiveNoFileComp
+	})
+
 	cmd.AddCommand(createCmd, listCmd, viewCmd, noteCmd, iocCmd, assignCmd, closeCmd, exportCmd, exportPdfCmd)
 	return cmd
+}
+
+func caseIDCompletionFunc(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	cs, err := app.caseManager.List(context.Background(), "", "")
+	if err != nil || len(cs) == 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	var matches []string
+	for _, c := range cs {
+		short := c.ID
+		if len(short) > 8 {
+			short = short[:8]
+		}
+		if strings.HasPrefix(short, toComplete) {
+			matches = append(matches, short)
+		}
+	}
+	return matches, cobra.ShellCompDirectiveNoFileComp
 }

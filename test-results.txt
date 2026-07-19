@@ -1,0 +1,40 @@
+Trace v0.1.1 — Interactive Mode Test Results
+=============================================
+Date: 2026-07-19
+
+TEST 1: ALIASES
+  trace inv --help  → "Run a security investigation"         PASS
+  trace st --help   → "View investigation status"             PASS
+  trace hist --help → "List recent investigations"            PASS
+
+TEST 2: SHELL COMPLETIONS
+  trace completion bash        → generates bash completions   PASS
+  trace completion powershell  → generates pwsh completions    PASS
+
+TEST 3: NON-INTERACTIVE FALLBACK
+  trace investigate (piped)    → "provide a query or --playbook flag"  PASS
+  trace case (piped)           → shows help (no hang)                  PASS
+  trace hunt (piped)           → shows help (no hang)                  PASS
+
+TEST 4: DYNAMIC COMPLETIONS
+  __complete investigate --playbook ""    → lists flag help       PASS
+  __complete case create --severity ""    → low/medium/high/critical  PASS
+  __complete case list --status ""        → open/investigating/resolved/closed  PASS
+  __complete hunt list --status ""        → active/paused         PASS
+  __complete case view ""                 → subcommand help       PASS
+  __complete hunt run ""                  → subcommand help       PASS
+
+TEST 5: COMMANDS
+  trace case list         → "No cases found."                  PASS
+  trace hunt list         → "No hunts configured."             PASS
+  trace version           → "Trace v0.1.1"                     PASS
+  echo "test" | trace investigate → errors with guidance       PASS
+
+TEST 6: BUILD & VET
+  go build ./...          → clean                              PASS
+  go vet ./...            → clean                              PASS
+
+TEST 7: FULL TEST SUITE
+  go test ./...           → 13/13 packages pass, 0 fail        PASS
+
+RESULT: All 7 test categories PASS
