@@ -13,6 +13,7 @@ import (
 	"github.com/yanmyoaung2004/trace/internal/sift"
 	"github.com/yanmyoaung2004/trace/internal/hunt"
 	"github.com/yanmyoaung2004/trace/internal/integration/abuseipdb"
+	"github.com/yanmyoaung2004/trace/internal/integration/edr"
 	"github.com/yanmyoaung2004/trace/internal/integration/elastic"
 	"github.com/yanmyoaung2004/trace/internal/integration/notifier"
 	"github.com/yanmyoaung2004/trace/internal/integration/otx"
@@ -83,6 +84,7 @@ func (a *App) initRegistry() error {
 	a.registry.Register(exporter.New(a.sqlDB))
 	a.registry.Register(notifier.New())
 	a.registry.Register(sca.New())
+	a.registry.Register(edr.NewAgentFromConfig(edr.Config{Provider: "crowdstrike"}))
 	a.registry.Register(abuseipdb.NewAgent(a.cfg.AbuseIPDBKey, a.sqlDB))
 	a.registry.Register(otx.NewAgent(a.cfg.OTXAPIKey, a.sqlDB))
 	a.registry.Register(splunk.New())
