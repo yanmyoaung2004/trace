@@ -27,6 +27,7 @@ func (a *Agent) Capabilities() []agent.Capability {
 	return []agent.Capability{
 		{Action: "slack", Inputs: []string{"webhook_url", "message", "title"}, Outputs: []string{"status"}},
 		{Action: "discord", Inputs: []string{"webhook_url", "message", "title"}, Outputs: []string{"status"}},
+		{Action: "telegram", Inputs: []string{"bot_token", "chat_id", "message"}, Outputs: []string{"status"}},
 	}
 }
 
@@ -54,6 +55,8 @@ func (a *Agent) Execute(ctx context.Context, input agent.Input) (agent.Output, e
 		return a.sendSlack(ctx, input)
 	case "discord":
 		return a.sendDiscord(ctx, input)
+	case "telegram":
+		return a.sendTelegram(ctx, input)
 	default:
 		return nil, fmt.Errorf("unknown action: %s", action)
 	}
@@ -139,6 +142,26 @@ func (a *Agent) postWebhook(ctx context.Context, url string, payload any) (agent
 	}
 
 	return agent.Output{"status": "sent", "provider": url, "http_status": resp.StatusCode}, nil
+}
+
+func (a *Agent) sendTelegram(ctx context.Context, input agent.Input) (agent.Output, error) {
+	botToken, _ := input["bot_token"].(string)
+	chatID, _ := input["chat_id"].(string)
+	message, _ := input["message"].(string)
+
+	if botToken == "" || chatID == "" || message == "" {
+		return agent.Output{"status": "error", "error": "bot_token, chat_id, and message are required"}, nil
+	}
+
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
+	payload := map[string]any{
+		"chat_id":    chatID,
+		"text":       message,
+		"parse_mode": "HTML",
+		"disable_web_page_preview": true,
+	}
+
+	return a.postWebhook(ctx, url, payload)
 }
 
 func isHTTPURL(s string) bool {
