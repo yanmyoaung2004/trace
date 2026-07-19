@@ -1,29 +1,17 @@
 <p align="center">
   <img src="docs/assets/logo.png" alt="Trace" width="200">
+  <br><br>
+  <b>Trace — One binary. Full SOC.</b><br><br>
+    <img src="https://img.shields.io/badge/Build-passing-3fb950?style=for-the-badge&logo=go" alt="Build">
+    <img src="https://img.shields.io/badge/Go-1.26-00ADD8?style=for-the-badge&logo=go" alt="Go 1.26">
+    <img src="https://img.shields.io/badge/platform-Windows%20|%20Linux%20|%20macOS-8A2BE2?style=for-the-badge" alt="Platforms">
+    <img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="MIT">
+  <br><br>
+  <b>Trace</b> is an open-source cybersecurity operations platform that fits in one binary.<br>
+  It watches logs, detects threats, enriches indicators, runs investigations, and responds — automatically.<br><br>
+  No Docker required. No Python runtime. No Elasticsearch cluster. No SIEM license fees.<br>
+  Just a single statically-linked Go binary that runs anywhere.
 </p>
-
-# Trace — One binary. Full SOC.
-
-![Version](https://img.shields.io/badge/Version-0.1.1-brightgreen?style=flat-square)
-![Go](https://img.shields.io/badge/Go-1.26-007d9c?style=flat-square)
-![Platform](https://img.shields.io/badge/Platform-Windows%20Linux%20macOS-6f42c1?style=flat-square)
-![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)
-
-**Trace** is an open-source cybersecurity operations platform that fits in one binary.  
-It watches logs, detects threats, enriches indicators, runs investigations, and responds — automatically.
-
-No Docker required. No Python runtime. No Elasticsearch cluster. No SIEM license fees.  
-Just a single statically-linked Go binary that runs anywhere.
-
----
-
-**Trace** is an open-source cybersecurity operations platform that fits in one binary. It watches logs, detects threats, enriches indicators, runs investigations, and responds — automatically.
-
-No Docker required. No Python runtime. No Elasticsearch cluster. No SIEM license fees.
-
-Just a single statically-linked Go binary that runs anywhere.
-
----
 
 ## Why Trace?
 
@@ -69,37 +57,38 @@ That's it. No config files, no API keys, no containers. The built-in IOC databas
 
 ### 🔍 Real-Time SIEM
 
-| Capability | Detail |
-|---|---|
-| Log ingestion | File watcher + syslog (UDP/TCP) |
-| Decoders | 1,567 formats: JSON, Syslog, Apache, Windows EVTX, CSV, K8s audit, Wazuh decoders |
-| Detection rules | 446 Wazuh-derived + 16 built-in — all with MITRE ATT&CK mapping |
-| Correlation | Windowed, threshold-based, suppression |
-| Alerting | Auto-creates investigations and cases for severity ≥ 4 |
+| Capability      | Detail                                                                            |
+| --------------- | --------------------------------------------------------------------------------- |
+| Log ingestion   | File watcher + syslog (UDP/TCP)                                                   |
+| Decoders        | 1,567 formats: JSON, Syslog, Apache, Windows EVTX, CSV, K8s audit, Wazuh decoders |
+| Detection rules | 446 Wazuh-derived + 16 built-in — all with MITRE ATT&CK mapping                   |
+| Correlation     | Windowed, threshold-based, suppression                                            |
+| Alerting        | Auto-creates investigations and cases for severity ≥ 4                            |
 
 ### 🧠 Multi-Agent SOAR
 
-| Agent | What it does |
-|---|---|
+| Agent        | What it does                                                                          |
+| ------------ | ------------------------------------------------------------------------------------- |
 | **Dispatch** | Orchestrates investigations, classifies intents, plans playbooks, synthesizes reports |
-| **Sift** | YARA scanning, PE analysis, hash lookup, VirusTotal, rootkit detection |
-| **Archive** | MITRE ATT&CK (750 techniques), CVE lookup, IOC enrichment, web search |
-| **Response** | Block IP, quarantine files, kill processes, restart services — with rollback |
-| **SCA** | CIS benchmark compliance scanning (64 policies, auto-detect OS) |
+| **Sift**     | YARA scanning, PE analysis, hash lookup, VirusTotal, rootkit detection                |
+| **Archive**  | MITRE ATT&CK (750 techniques), CVE lookup, IOC enrichment, web search                 |
+| **Response** | Block IP, quarantine files, kill processes, restart services — with rollback          |
+| **SCA**      | CIS benchmark compliance scanning (64 policies, auto-detect OS)                       |
 
 ### 🔗 Threat Intelligence
 
-| Source | Cached | Rate-limited |
-|---|---|---|
-| VirusTotal | ✅ 1hr TTL | ✅ 15s interval |
-| AbuseIPDB | ✅ 1hr TTL | ✅ 200ms interval |
-| AlienVault OTX | ✅ 1hr TTL | ✅ 200ms interval |
-| Firecrawl web search | ❌ | N/A |
-| Built-in IOC DB | ✅ 30-day TTL | N/A |
+| Source               | Cached        | Rate-limited      |
+| -------------------- | ------------- | ----------------- |
+| VirusTotal           | ✅ 1hr TTL    | ✅ 15s interval   |
+| AbuseIPDB            | ✅ 1hr TTL    | ✅ 200ms interval |
+| AlienVault OTX       | ✅ 1hr TTL    | ✅ 200ms interval |
+| Firecrawl web search | ❌            | N/A               |
+| Built-in IOC DB      | ✅ 30-day TTL | N/A               |
 
 ### 🎯 Proactive Hunting
 
 Schedule playbooks to run automatically:
+
 ```bash
 trace hunt create --name nightly-scan \
   --playbook rootkit-scan \
@@ -112,13 +101,13 @@ Ships with 3 default hunts: malware scan, compliance audit, rootkit sweep.
 
 ### 🛡️ Response Actions
 
-| Action | Scope | Rollback |
-|---|---|---|
-| Block IP | iptables, netsh, pfctl | ✅ |
-| Quarantine file | OS-level move + chmod | ✅ |
-| Kill process | By PID or name | ❌ (cannot unkill) |
-| Restart service | systemctl, sc, launchctl | ✅ (idempotent) |
-| EDR isolate | CrowdStrike, SentinelOne, Defender | ✅ |
+| Action          | Scope                              | Rollback           |
+| --------------- | ---------------------------------- | ------------------ |
+| Block IP        | iptables, netsh, pfctl             | ✅                 |
+| Quarantine file | OS-level move + chmod              | ✅                 |
+| Kill process    | By PID or name                     | ❌ (cannot unkill) |
+| Restart service | systemctl, sc, launchctl           | ✅ (idempotent)    |
+| EDR isolate     | CrowdStrike, SentinelOne, Defender | ✅                 |
 
 ## Architecture
 
@@ -155,13 +144,13 @@ Ships with 3 default hunts: malware scan, compliance audit, rootkit sweep.
 
 Trace converts Wazuh's detection engine into embedded Go code:
 
-| Component | Source | Count |
-|---|---|---|
-| Detection rules | Wazuh XML → Trace rules | 446 of 3,111 |
-| Log decoders | Wazuh XML → Trace decoders | 1,567 with parent/child chains |
-| CIS policies | Wazuh YAML → SCARunner | 64 policies |
-| Rootkit signatures | Wazuh text → RootkitScanner | 271 files + 76 trojans |
-| MITRE data | Official STIX bundle | 750 techniques, 267 mitigations |
+| Component          | Source                      | Count                           |
+| ------------------ | --------------------------- | ------------------------------- |
+| Detection rules    | Wazuh XML → Trace rules     | 446 of 3,111                    |
+| Log decoders       | Wazuh XML → Trace decoders  | 1,567 with parent/child chains  |
+| CIS policies       | Wazuh YAML → SCARunner      | 64 policies                     |
+| Rootkit signatures | Wazuh text → RootkitScanner | 271 files + 76 trojans          |
+| MITRE data         | Official STIX bundle        | 750 techniques, 267 mitigations |
 
 Re-run `go run ./tools/wazuh-converter/` to refresh from a newer Wazuh release.
 
@@ -180,19 +169,19 @@ Run `./trace init` for the interactive setup wizard.
 
 ## CLI Commands
 
-| Command | Description |
-|---|---|
-| `init` | First-run setup wizard |
-| `serve` | Start daemon with SIEM, hunts, edge sync |
-| `server` | Start central server with dashboard + API |
-| `investigate` | Run an investigation (natural language or playbook) |
-| `status` / `history` / `report` | View investigations |
-| `case create/list/view/note/ioc/close/export` | Case management |
-| `hunt create/list/run/pause/resume/delete` | Automated threat hunting |
-| `approval pending/approve/deny` | Human-in-the-loop |
-| `plugin search/list/install/remove` | Plugin ecosystem |
-| `update self/intel/playbooks/rollback` | Self-update |
-| `version` | Print version |
+| Command                                       | Description                                         |
+| --------------------------------------------- | --------------------------------------------------- |
+| `init`                                        | First-run setup wizard                              |
+| `serve`                                       | Start daemon with SIEM, hunts, edge sync            |
+| `server`                                      | Start central server with dashboard + API           |
+| `investigate`                                 | Run an investigation (natural language or playbook) |
+| `status` / `history` / `report`               | View investigations                                 |
+| `case create/list/view/note/ioc/close/export` | Case management                                     |
+| `hunt create/list/run/pause/resume/delete`    | Automated threat hunting                            |
+| `approval pending/approve/deny`               | Human-in-the-loop                                   |
+| `plugin search/list/install/remove`           | Plugin ecosystem                                    |
+| `update self/intel/playbooks/rollback`        | Self-update                                         |
+| `version`                                     | Print version                                       |
 
 ## Benchmarks
 
@@ -207,14 +196,14 @@ Hash lookup (cached):                  34,000 ops/sec
 
 ## Documentation
 
-| Document | Description |
-|---|---|
-| [User Guide](docs/user-guide.md) | End-to-end walkthrough |
-| [CLI Reference](docs/cli-reference.md) | All commands and flags |
-| [Playbook Authoring](docs/playbook-authoring.md) | YAML playbook format |
-| [Plugin Development](docs/plugin-development.md) | Building plugins |
-| [Build Plan](docs/build-plan.md) | Development roadmap |
-| [v0.2.0 Plan](docs/v0.2.0-plan.md) | Next version roadmap |
+| Document                                         | Description            |
+| ------------------------------------------------ | ---------------------- |
+| [User Guide](docs/user-guide.md)                 | End-to-end walkthrough |
+| [CLI Reference](docs/cli-reference.md)           | All commands and flags |
+| [Playbook Authoring](docs/playbook-authoring.md) | YAML playbook format   |
+| [Plugin Development](docs/plugin-development.md) | Building plugins       |
+| [Build Plan](docs/build-plan.md)                 | Development roadmap    |
+| [v0.2.0 Plan](docs/v0.2.0-plan.md)               | Next version roadmap   |
 
 ## License
 
