@@ -72,12 +72,19 @@ func (m *MitreDB) GetByTactic(tactic string) []*Technique {
 var mitreSeed embed.FS
 
 func LoadMitreSeed() (*MitreDB, error) {
+	db := NewMitreDB()
+
+	if mitreSeedJSON != "" {
+		if err := db.Load([]byte(mitreSeedJSON)); err == nil {
+			return db, nil
+		}
+	}
+
 	data, err := mitreSeed.ReadFile("mitre_data.json")
 	if err != nil {
 		return nil, fmt.Errorf("read mitre seed: %w", err)
 	}
 
-	db := NewMitreDB()
 	if err := db.Load(data); err != nil {
 		return nil, fmt.Errorf("load mitre seed: %w", err)
 	}
