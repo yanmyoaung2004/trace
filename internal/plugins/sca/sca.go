@@ -220,6 +220,7 @@ func (a *Agent) evaluateCheck(ctx context.Context, check SCACheck) (bool, []stri
 }
 
 var allowedCmds = map[string]bool{
+	"echo": true, "printf": true, "true": true, "hostname": true,
 	"modprobe": true, "lsmod": true, "sysctl": true, "stat": true,
 	"grep": true, "find": true, "ls": true, "cat": true, "head": true,
 	"tail": true, "awk": true, "sed": true, "cut": true, "tr": true,

@@ -13,16 +13,20 @@ func TestSCARunnerFileCheck(t *testing.T) {
 		t.Skip("SCA file check requires Unix")
 	}
 
+	tmp := t.TempDir()
+	tmpFile := tmp + "/test.conf"
+	os.WriteFile(tmpFile, []byte("ENABLED=yes\n"), 0644)
+
 	policy := `
 policy:
   id: "test_file"
   name: "File Check"
 checks:
   - id: 200
-    title: "Check /etc/hostname exists"
+    title: "Check file exists"
     condition: all
     rules:
-      - "f:/etc/hostname -> r:."
+      - "f:` + tmpFile + ` -> r:ENABLED"
 `
 	a := New()
 	output, err := a.runPolicy(context.Background(), map[string]any{"policy_data": policy})
@@ -124,16 +128,20 @@ func TestSCARunnerMultipleChecks(t *testing.T) {
 		t.Skip("SCA multi-check requires Unix")
 	}
 
+	tmp := t.TempDir()
+	tmpFile := tmp + "/test.conf"
+	os.WriteFile(tmpFile, []byte("ok=yes\n"), 0644)
+
 	policy := `
 policy:
   id: "test_multi"
   name: "Multiple Checks"
 checks:
   - id: 600
-    title: "hostname exists"
+    title: "config exists"
     condition: all
     rules:
-      - "f:/etc/hostname -> r:."
+      - "f:` + tmpFile + ` -> r:ok"
   - id: 601
     title: "echo works"
     condition: all
