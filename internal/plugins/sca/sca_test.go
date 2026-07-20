@@ -3,8 +3,11 @@ package sca
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -12,13 +15,32 @@ func TestSCARunnerFileCheck(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("SCA file check requires Unix")
 	}
-	a := New()
-	ok, err := a.evaluateRule(context.Background(), "f:/etc/hosts -> r:localhost")
+
+	// Bypass evaluateRule entirely — test raw Go operations
+	data, err := os.ReadFile("/etc/hosts")
+	t.Logf("ReadFile(/etc/hosts): err=%v len=%d", err, len(data))
 	if err != nil {
-		t.Fatalf("evaluateRule: %v", err)
+		t.Skipf("/etc/hosts not readable: %v", err)
+	}
+	matched, _ := regexp.MatchString("localhost", string(data))
+	t.Logf("MatchString localhost in /etc/hosts: %v", matched)
+	if !matched {
+		t.Fatalf("/etc/hosts content does not contain localhost: %q", string(data))
+	}
+
+	// Now test through evaluateRule
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "test.txt")
+	os.WriteFile(path, []byte("hello world\n"), 0644)
+
+	a := New()
+	ok, err := a.evaluateRule(context.Background(), "f:"+path+" -> r:hello")
+	if err != nil {
+		t.Fatalf("evaluateRule error: %v", err)
 	}
 	if !ok {
-		t.Fatal("expected /etc/hosts to match localhost")
+		content, _ := os.ReadFile(path)
+		t.Fatalf("evaluateRule=false — path=%q content=%q", path, string(content))
 	}
 }
 
@@ -40,13 +62,51 @@ func TestSCARunnerCommandCheck(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("SCA command check requires Unix")
 	}
+
+	// Bypass evaluateRule entirely — test raw Go operations
+	echoPath, _ := exec.LookPath("echo")
+	t.Logf("LookPath(echo): path=%q", echoPath)
+
+	out, err := exec.Command("echo", "hello").Output()
+	t.Logf("exec echo hello: out=%q err=%v", string(out), err)
+	if err != nil {
+		t.Skipf("echo not available: %v", err)
+	}
+
+	matched, _ := regexp.MatchString("hello", string(out))
+	t.Logf("MatchString hello in output: %v", matched)
+
+	// Now test evaluateRule with echo
 	a := New()
 	ok, err := a.evaluateRule(context.Background(), "c:echo hello -> r:hello")
 	if err != nil {
-		t.Fatalf("evaluateRule: %v", err)
+		t.Fatalf("evaluateRule error: %v", err)
 	}
 	if !ok {
-		t.Fatal("expected echo hello to match r:hello")
+		t.Fatalf("evaluateRule returned false — echo works, output=%q", string(out))
+	}
+}
+
+func TestSCARunnerCommandCheckBuiltin(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("SCA command check requires Unix")
+	}
+
+	// Use 'true' which always exits 0, plus explicit output check
+	out, err := exec.Command("true").Output()
+	t.Logf("exec true: out=%q err=%v", string(out), err)
+
+	// Test with cat which is in allowedCmds and always available
+	out2, err2 := exec.Command("cat", "/etc/hosts").Output()
+	t.Logf("exec cat /etc/hosts: len=%d err=%v", len(out2), err2)
+
+	a := New()
+	ok, err := a.evaluateRule(context.Background(), "c:cat /etc/hosts -> r:localhost")
+	if err != nil {
+		t.Fatalf("evaluateRule cat: %v", err)
+	}
+	if !ok {
+		t.Fatalf("evaluateRule returned false for cat /etc/hosts")
 	}
 }
 
@@ -76,7 +136,8 @@ func TestSCARunnerDirectoryCheck(t *testing.T) {
 		t.Fatalf("evaluateRule: %v", err)
 	}
 	if !ok {
-		t.Fatal("expected directory check to find ENABLED in .conf file")
+		entries, _ := os.ReadDir(dir)
+		t.Fatalf("directory check failed — dir=%q files=%v", dir, entries)
 	}
 }
 
@@ -119,6 +180,6 @@ checks:
 }
 
 func init() {
-	_ = os.Getenv
+	_ = strings.HasPrefix
 	_ = context.Background
 }
