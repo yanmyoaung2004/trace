@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trace — One binary. Full SOC.</title>
+  <meta name="description" content="Trace is an open-source cybersecurity operations platform that fits in one binary. SIEM, SOAR, compliance, EDR — zero dependencies.">
+  <meta name="theme-color" content="#1a1a2e">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Trace — One binary. Full SOC.">
+  <meta property="og:description" content="Open-source multi-agent cybersecurity platform. SIEM (462 rules), SOAR, TUI, compliance (GDPR/HIPAA/PCI). Single Go binary.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://github.com/yanmyoaung2004/trace">
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Trace — One binary. Full SOC.">
+  <meta name="twitter:description" content="Open-source multi-agent cybersecurity platform. SIEM (462 rules), SOAR, TUI, compliance. Single Go binary.">
+
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+</head>
+<body>
+
+  <!-- ═══ Nav ═══ -->
+  <nav role="navigation" aria-label="Main navigation">
+    <div class="container">
+      <a href="/" class="nav-logo"><span>Trace</span></a>
+      <ul class="nav-links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#demo">Demo</a></li>
+        <li><a href="#download">Download</a></li>
+        <li class="nav-cta-li"><a href="https://github.com/yanmyoaung2004/trace" class="nav-cta" target="_blank" rel="noopener">GitHub</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- ═══ Hero ═══ -->
+  <section class="hero" role="banner">
+    <div class="container">
+      <div>
+        <div class="hero-badge">v0.1.1 — Open Source</div>
+        <h1>One <span>binary</span>.<br>Full <span>SOC</span>.</h1>
+        <p>Trace watches logs, detects threats, enriches indicators, runs investigations, and generates compliance reports — all in a single statically-linked Go binary. No Docker. No Elasticsearch. No SIEM license fees.</p>
+        <div class="hero-buttons">
+          <a href="#download" class="btn btn-primary">Download</a>
+          <a href="#demo" class="btn btn-secondary">See it in action</a>
+        </div>
+      </div>
+
+      <!-- Animated Terminal -->
+      <div class="tty" aria-label="Live terminal demo" role="region">
+        <div class="tty-bar">
+          <span class="tty-dot"></span><span class="tty-dot"></span><span class="tty-dot"></span>
+          <span class="tty-title">trace — interactive</span>
+        </div>
+        <div class="tty-body" id="tty-body">
+          <div class="tty-line"><span class="tty-output">Trace v0.1.1 — initializing...</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Stats ═══ -->
+  <section class="stats" aria-label="Platform statistics">
+    <div class="container">
+      <div class="stats-grid">
+        <div class="stat-card"><div class="num" aria-label="464">464</div><div class="label">Detection Rules</div></div>
+        <div class="stat-card"><div class="num" aria-label="1567">1,567</div><div class="label">Log Decoders</div></div>
+        <div class="stat-card"><div class="num" aria-label="8">8</div><div class="label">Compliance Frameworks</div></div>
+        <div class="stat-card"><div class="num">1</div><div class="label">Binary</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Features ═══ -->
+  <section class="features" id="features" aria-label="Features">
+    <div class="container">
+      <div class="section-header">
+        <h2>Everything a SOC needs. Nothing it doesn't.</h2>
+        <p>From log ingestion to compliance reports, Trace replaces 4+ services with one binary that runs anywhere.</p>
+      </div>
+      <div class="features-grid">
+        <article class="feature-card">
+          <span class="feature-icon">🕵️</span>
+          <h3>SIEM Engine</h3>
+          <p>462 detection rules imported from Wazuh, 1,567 log decoders, syslog + file watcher, windowed correlation, 18 built-in rules. MITRE ATT&CK mapped.</p>
+          <span class="feature-tag">462 rules</span>
+        </article>
+        <article class="feature-card">
+          <span class="feature-icon">⚡</span>
+          <h3>SOAR Pipeline</h3>
+          <p>Alert → auto-investigation → playbook dispatch → response → report. Automatic case creation from high-severity alerts. Investigation-to-case linking.</p>
+          <span class="feature-tag">Automated</span>
+        </article>
+        <article class="feature-card">
+          <span class="feature-icon">⌨️</span>
+          <h3>Interactive TUI</h3>
+          <p>Full-screen terminal UI with 5 screens — Dashboard, Investigations, Cases, SIEM, Config. Tab navigation, arrow keys, live refresh. No server needed.</p>
+          <span class="feature-tag">bubbletea</span>
+        </article>
+        <article class="feature-card">
+          <span class="feature-icon">🔌</span>
+          <h3>EDR Connectors</h3>
+          <p>Remote isolate, scan, kill, and script execution via CrowdStrike, SentinelOne, and Microsoft Defender. Circuit breaker prevents API abuse.</p>
+          <span class="feature-tag">3 providers</span>
+        </article>
+        <article class="feature-card">
+          <span class="feature-icon">📋</span>
+          <h3>Compliance Reports</h3>
+          <p>8 frameworks (GDPR, HIPAA, PCI DSS v3/v4, NIST 800-53, ISO 27001, SOC 2, CIS v8). Manual assessment, evidence collection, HTML/MD/JSON export. 464 rules mapped.</p>
+          <span class="feature-tag">8 frameworks</span>
+        </article>
+        <article class="feature-card">
+          <span class="feature-icon">🔐</span>
+          <h3>Case Management</h3>
+          <p>Full case lifecycle with notes, IOCs, evidence attachments, investigation linking, PDF export. Auto-created from SIEM alerts. RBAC with API keys.</p>
+          <span class="feature-tag">PDF export</span>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Demo ═══ -->
+  <section class="demo" id="demo" aria-label="Live demo">
+    <div class="container">
+      <div>
+        <h2>Start investigating in 10 seconds</h2>
+        <p>No installers. No Docker images. No cloud signup. Download the binary and run your first investigation immediately.</p>
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <div style="display:flex;align-items:center;gap:12px;background:var(--surface);padding:12px 16px;border-radius:8px;border:1px solid var(--border);font-family:var(--font-mono);font-size:.875rem;">
+            <span style="color:var(--success);">$</span>
+            <span style="color:var(--ink);flex:1;">./trace investigate "check hash 275a021b..."</span>
+            <button class="copy-cmd btn btn-secondary" data-cmd="./trace investigate &quot;check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f&quot;" style="padding:6px 12px;font-size:.75rem;">Copy</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;background:var(--surface);padding:12px 16px;border-radius:8px;border:1px solid var(--border);font-family:var(--font-mono);font-size:.875rem;">
+            <span style="color:var(--success);">$</span>
+            <span style="color:var(--ink);flex:1;">trace serve --siem --log-dir /var/log</span>
+            <button class="copy-cmd btn btn-secondary" data-cmd="trace serve --siem --log-dir /var/log" style="padding:6px 12px;font-size:.75rem;">Copy</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;background:var(--surface);padding:12px 16px;border-radius:8px;border:1px solid var(--border);font-family:var(--font-mono);font-size:.875rem;">
+            <span style="color:var(--success);">$</span>
+            <span style="color:var(--ink);flex:1;">trace compliance report --framework gdpr</span>
+            <button class="copy-cmd btn btn-secondary" data-cmd="trace compliance report --framework gdpr" style="padding:6px 12px;font-size:.75rem;">Copy</button>
+          </div>
+        </div>
+      </div>
+      <div class="tty" aria-label="Command examples" role="region">
+        <div class="tty-bar">
+          <span class="tty-dot"></span><span class="tty-dot"></span><span class="tty-dot"></span>
+          <span class="tty-title">trace — commands</span>
+        </div>
+        <div class="tty-body" style="font-size:.8125rem;line-height:1.8;">
+          <div class="tty-line" style="opacity:1;"><span class="tty-prompt">$ </span><span class="tty-cmd">trace compliance report --framework pci_dss_v4.0</span></div>
+          <div class="tty-line" style="opacity:1;"><span class="tty-output">PCI DSS v4.0: 86% (12/14 passed)</span></div>
+          <div class="tty-line" style="opacity:1;margin-top:12px;"><span class="tty-prompt">$ </span><span class="tty-cmd">trace investigate CVE-2021-44228 --playbook cve-lookup</span></div>
+          <div class="tty-line" style="opacity:1;"><span class="tty-output">CVE-2021-44228: Apache Log4j2 RCE — CVSS 10.0 (Critical)</span></div>
+          <div class="tty-line" style="opacity:1;margin-top:12px;"><span class="tty-prompt">$ </span><span class="tty-cmd">trace case list --status open</span></div>
+          <div class="tty-line" style="opacity:1;"><span class="tty-output">3 open cases — 2 from SIEM alerts</span></div>
+          <div class="tty-line" style="opacity:1;margin-top:12px;"><span class="tty-prompt">$ </span><span class="tty-cmd">trace st</span></div>
+          <div class="tty-line" style="opacity:1;"><span class="tty-output">8cfb1e92 &mdash; sshd: authentication failed [completed]</span></div>
+          <div class="tty-line" style="opacity:1;"><span class="tty-cursor"></span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Download ═══ -->
+  <section class="download" id="download" aria-label="Download">
+    <div class="container">
+      <h2>Get Trace</h2>
+      <p>One binary, no dependencies. Download for your platform and start in seconds.</p>
+      <div class="download-grid">
+        <a href="https://github.com/yanmyoaung2004/trace/releases/latest/download/trace-linux-amd64" class="dl-btn" data-os="linux" target="_blank" rel="noopener">
+          <span class="icon">🐧</span>
+          <span>Linux <span class="sub">amd64</span></span>
+        </a>
+        <a href="https://github.com/yanmyoaung2004/trace/releases/latest/download/trace-darwin-amd64" class="dl-btn" data-os="darwin" target="_blank" rel="noopener">
+          <span class="icon">🍎</span>
+          <span>macOS <span class="sub">Intel</span></span>
+        </a>
+        <a href="https://github.com/yanmyoaung2004/trace/releases/latest/download/trace-windows-amd64.exe" class="dl-btn" data-os="windows" target="_blank" rel="noopener">
+          <span class="icon">🪟</span>
+          <span>Windows <span class="sub">amd64</span></span>
+        </a>
+        <a href="https://github.com/yanmyoaung2004/trace" class="dl-btn" target="_blank" rel="noopener">
+          <span class="icon">📦</span>
+          <span>Build from source <span class="sub">go install</span></span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Footer ═══ -->
+  <footer role="contentinfo">
+    <div class="container">
+      <p><a href="https://github.com/yanmyoaung2004/trace">Trace</a> — Open source. MIT License. Built with Go.</p>
+    </div>
+  </footer>
+
+  <script src="js/main.js" defer></script>
+</body>
+</html>
