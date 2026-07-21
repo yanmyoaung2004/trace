@@ -15,9 +15,10 @@
 7. [SIEM Monitoring](#7-siem-monitoring)
 8. [Intel Feeds & Enrichment](#8-intel-feeds--enrichment)
 9. [Response Actions](#9-response-actions)
-10. [Central Server & Team Use](#10-central-server--team-use)
-11. [Troubleshooting](#11-troubleshooting)
-12. [Real-World Scenario Walkthrough](#12-real-world-scenario-walkthrough)
+10. [EDR Remote Actions](#10-edr-remote-actions)
+11. [Central Server & Team Use](#11-central-server--team-use)
+12. [Troubleshooting](#12-troubleshooting)
+13. [Real-World Scenario Walkthrough](#13-real-world-scenario-walkthrough)
 
 ---
 
@@ -455,7 +456,75 @@ trace approval deny <investigation-id>
 
 ---
 
-## 10. Central Server & Team Use
+## 10. EDR Remote Actions
+
+> Requires EDR API credentials configured in `~/.trace/config.json`.
+
+Remotely isolate, scan, or kill processes on endpoints via CrowdStrike, SentinelOne, or Microsoft Defender.
+
+### Isolate a Host
+
+```powershell
+trace investigate --playbook edr-isolate --param hostname=DESKTOP-123
+```
+
+Disconnects the host from the network. Supports:
+- **CrowdStrike**: `contain` action via Falcon API
+- **SentinelOne**: `disconnect` action
+- **MDE**: `isolate` action (Full isolation)
+
+### Release a Host
+
+```powershell
+trace investigate --playbook edr-isolate --param hostname=DESKTOP-123 --param action=release
+```
+
+### Trigger a Scan
+
+```powershell
+trace investigate --playbook edr-scan --param hostname=DESKTOP-123
+```
+
+Initiates a full antivirus scan on the remote endpoint.
+
+### Kill a Process Remotely
+
+```powershell
+trace investigate --playbook edr-kill-process --param hostname=DESKTOP-123 --param pid=4321
+```
+
+### EDR Configuration
+
+```json
+{
+  "edr": {
+    "crowdstrike": {
+      "client_id": "abc123",
+      "client_secret": "xxx",
+      "base_url": "https://api.crowdstrike.com"
+    },
+    "sentinelone": {
+      "api_token": "xxx",
+      "base_url": "https://your-instance.sentinelone.net"
+    },
+    "mde": {
+      "tenant_id": "xxx",
+      "client_id": "xxx",
+      "client_secret": "xxx"
+    }
+  }
+}
+```
+
+### Circuit Breaker
+
+If an EDR provider returns 5 consecutive errors, Trace opens the circuit for 60 seconds.
+No requests are sent during that window — preventing API rate limit abuse and allowing
+the provider to recover.
+
+---
+
+## 11. Central Server & Team Use
 
 ### Start the server
 
@@ -497,7 +566,7 @@ Dashboard → Correlations tab shows all cross-node IOCs.
 
 ---
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
 ### Common issues
 
@@ -531,7 +600,7 @@ Remove-Item -Recurse $env:USERPROFILE\.trace\
 
 ---
 
-## 12. Real-World Scenario Walkthrough
+## 13. Real-World Scenario Walkthrough
 
 ### Scenario: Suspicious email with attachment
 

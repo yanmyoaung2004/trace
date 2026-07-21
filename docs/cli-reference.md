@@ -89,6 +89,14 @@ trace investigate --playbook domain-reputation --param domain=evil.com
 
 Intent classification auto-selects playbook by keyword matching (hash, file, ip, domain, etc.).
 
+v0.2.0 playbooks for remote endpoint actions (requires EDR config):
+
+| Playbook | Description |
+|---|---|
+| `edr-isolate` | Remotely isolate a host from the network (CS/S1/MDE) |
+| `edr-scan` | Trigger a full antivirus scan on a remote endpoint |
+| `edr-kill-process` | Kill a process on a remote endpoint by PID |
+
 ---
 
 ## `status`
@@ -146,12 +154,13 @@ Subcommands:
 |---|---|
 | `create --title` | Create a new case (requires `--title`, optional `--description`, `--severity`) |
 | `list` | List all cases (filters: `--status`, `--severity`) |
-| `view <id>` | View case details with timeline and IOCs |
+| `view <id>` | View case details with timeline, IOCs, and linked investigations |
 | `note <id> <content>` | Add a note to a case |
 | `ioc <id> --type --value` | Add an IOC to a case |
+| `evidence <id> --file` | Attach an evidence file to a case |
 | `assign <id> --to` | Assign a case to an analyst |
 | `close <id>` | Close a case |
-| `export <id>` | Export a case as JSON |
+| `export <id>` | Export a case as JSON with events, IOCs, evidence |
 | `export-pdf <id>` | Export a case as PDF |
 
 Shell completion: `trace case view <TAB>` lists case IDs.

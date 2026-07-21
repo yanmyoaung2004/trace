@@ -179,8 +179,9 @@ Run `./trace init` for the interactive setup wizard.
 | `status` / `st`                               | View investigation status                           |
 | `history` / `hist`                            | List recent investigations                          |
 | `report`                                      | View investigation report                           |
-| `case`                                        | Case management (prompts if no subcommand)          |
+| `case`                                        | Case management with evidence, IOCs, PDF export     |
 | `hunt`                                        | Threat hunting (prompts if no subcommand)           |
+| `edr-isolate` / `edr-scan` / `edr-kill-process` | Remote endpoint actions via EDR                    |
 | `approval pending/approve/deny`               | Human-in-the-loop                                   |
 | `completion`                                  | Generate shell completion scripts                   |
 | `plugin search/list/install/remove`           | Plugin ecosystem                                    |
