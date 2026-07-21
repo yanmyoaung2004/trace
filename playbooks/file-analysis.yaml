@@ -9,11 +9,6 @@ triggers:
   - analyze file
 steps:
   - agent: sift
-    action: hash_lookup
-    params:
-      hash: ${input.hash}
-    optional: true
-  - agent: sift
     action: yara_scan
     params:
       path: ${input.path}
@@ -21,8 +16,13 @@ steps:
     action: pe_analyze
     params:
       path: ${input.path}
+  - agent: sift
+    action: hash_lookup
+    params:
+      hash: ${outputs.sift.pe_analyze.sha256}
+    optional: true
   - agent: archive
     action: ioc_enrich
     params:
-      ioc: ${input.hash}
+      ioc: ${outputs.sift.pe_analyze.sha256}
     optional: true
