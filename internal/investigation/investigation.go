@@ -63,6 +63,17 @@ func (m *Manager) Get(ctx context.Context, id string) (*Investigation, error) {
 	return &inv, nil
 }
 
+func (m *Manager) GetByPrefix(ctx context.Context, prefix string) (*Investigation, error) {
+	var inv Investigation
+	err := m.db.QueryRowContext(ctx,
+		`SELECT id, status, intent, playbook, confidence, created_at, updated_at FROM investigations WHERE id LIKE ? ORDER BY created_at DESC LIMIT 1`, prefix+"%").
+		Scan(&inv.ID, &inv.Status, &inv.Intent, &inv.Playbook, &inv.Confidence, &inv.CreatedAt, &inv.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("get by prefix: %w", err)
+	}
+	return &inv, nil
+}
+
 func (m *Manager) UpdateStatus(ctx context.Context, id, status string) error {
 	_, err := m.db.ExecContext(ctx,
 		`UPDATE investigations SET status = ?, updated_at = datetime('now') WHERE id = ?`, status, id)

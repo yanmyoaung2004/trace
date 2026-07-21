@@ -55,7 +55,10 @@ func newStatusCmd() *cobra.Command {
 
 			inv, err := app.invManager.Get(ctx, id)
 			if err != nil {
-				return fmt.Errorf("get investigation: %w", err)
+				inv, err = app.invManager.GetByPrefix(ctx, id)
+				if err != nil {
+					return fmt.Errorf("investigation not found: %s", id)
+				}
 			}
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)

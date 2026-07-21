@@ -21,7 +21,10 @@ func newReportCmd() *cobra.Command {
 
 			inv, err := app.invManager.Get(ctx, args[0])
 			if err != nil {
-				return fmt.Errorf("get investigation: %w", err)
+				inv, err = app.invManager.GetByPrefix(ctx, args[0])
+				if err != nil {
+					return fmt.Errorf("investigation not found: %s", args[0])
+				}
 			}
 
 			logFile := filepath.Join(app.cfg.LogDir, inv.ID+".jsonl")
