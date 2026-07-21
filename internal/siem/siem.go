@@ -208,6 +208,7 @@ func (e *Engine) checkFile(ctx context.Context, path string) {
 	if !exists {
 		e.filePositions[path] = info.Size()
 		e.posMu.Unlock()
+		e.ingestFile(ctx, path, 0)
 		return
 	}
 	e.posMu.Unlock()
@@ -216,6 +217,10 @@ func (e *Engine) checkFile(ctx context.Context, path string) {
 		return
 	}
 
+	e.ingestFile(ctx, path, lastPos)
+}
+
+func (e *Engine) ingestFile(ctx context.Context, path string, offset int64) {
 	f, err := os.Open(path)
 	if err != nil {
 		log.Printf("siem: open %s: %v", path, err)
@@ -223,7 +228,7 @@ func (e *Engine) checkFile(ctx context.Context, path string) {
 	}
 	defer f.Close()
 
-	if _, err := f.Seek(lastPos, 0); err != nil {
+	if _, err := f.Seek(offset, 0); err != nil {
 		log.Printf("siem: seek %s: %v", path, err)
 		return
 	}
@@ -242,9 +247,12 @@ func (e *Engine) checkFile(ctx context.Context, path string) {
 		e.ingest(lineCopy, "file:"+filepath.Base(path))
 	}
 
-	e.posMu.Lock()
-	e.filePositions[path] = info.Size()
-	e.posMu.Unlock()
+	stat, err := os.Stat(path)
+	if err == nil {
+		e.posMu.Lock()
+		e.filePositions[path] = stat.Size()
+		e.posMu.Unlock()
+	}
 }
 
 func (e *Engine) listenSyslogUDP(ctx context.Context) {
