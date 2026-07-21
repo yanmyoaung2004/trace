@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/yanmyoaung2004/trace/internal/db"
+	"github.com/yanmyoaung2004/trace/internal/investigation"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -155,6 +156,19 @@ func (m *ServerManager) PushInvestigation(ctx context.Context, nodeID, invID, st
 		m.updateCorrelation(ctx, ioc, nodeID)
 	}
 
+	return nil
+}
+
+func (m *ServerManager) SyncLocalInvestigations(ctx context.Context, invMgr *investigation.Manager) error {
+	invs, err := invMgr.ListRecent(ctx, 5000)
+	if err != nil {
+		return fmt.Errorf("list local: %w", err)
+	}
+	for _, inv := range invs {
+		var indicators []string
+		m.PushInvestigation(ctx, "local", inv.ID, inv.Status, inv.Intent, inv.Playbook, "", inv.Confidence, indicators, "")
+	}
+	log.Printf("[server] synced %d local investigations", len(invs))
 	return nil
 }
 

@@ -26,6 +26,10 @@ func RunServer(cfg *config.Config, database *db.DB, invMgr *investigation.Manage
 		fmt.Printf("  Use this key to authenticate: api_key=%s\n", key)
 	}
 
+	if err := mgr.SyncLocalInvestigations(context.Background(), invMgr); err != nil {
+		log.Printf("[server] sync local investigations: %v", err)
+	}
+
 	httpAddr := cfg.Server.HTTPAddr
 	if httpAddr == "" {
 		httpAddr = ":8080"
