@@ -47,6 +47,7 @@ type ReportEngine struct {
 	Assessments []ManualAssessment
 	Evidences   []Evidence
 	DataDir     string
+	scaResults  map[string]map[string]string
 }
 
 func NewReportEngine(scaAgent agent.Agent) *ReportEngine {
@@ -125,10 +126,7 @@ func (e *ReportEngine) GenerateReport(ctx context.Context, opts ReportOptions) (
 
 func (e *ReportEngine) tryAutoScan(ctx context.Context, opts ReportOptions) error {
 	input := agent.Input{
-		"action": "scan_system",
-	}
-	if opts.Force {
-		input["action"] = "list_policies"
+		"action": "scan_system_force",
 	}
 
 	output, err := e.SCAAgent.Execute(ctx, input)
@@ -145,6 +143,8 @@ func (e *ReportEngine) tryAutoScan(ctx context.Context, opts ReportOptions) erro
 
 func (e *ReportEngine) parseSCAResults(output map[string]any) error {
 	resultsRaw, _ := output["results"].([]any)
+	e.scaResults = make(map[string]map[string]string)
+
 	for _, r := range resultsRaw {
 		if m, ok := r.(map[string]any); ok {
 			complianceRaw, _ := m["compliance"].(map[string]any)
@@ -154,13 +154,24 @@ func (e *ReportEngine) parseSCAResults(output map[string]any) error {
 					continue
 				}
 				_ = fwName
-				checkStatus, _ := m["status"].(string)
+				checkPass, _ := m["status"].(string)
 				checkTitle, _ := m["title"].(string)
-				checkID := m["id"]
-				_ = checkID
-				_ = checkTitle
-				_ = checkStatus
-				_ = ids
+				checkID := int(toFloat64(m["id"]))
+
+				if idsList, ok := ids.([]any); ok {
+					for _, idVal := range idsList {
+						if idStr, ok := idVal.(string); ok {
+							key := fw + ":" + idStr
+							if _, exists := e.scaResults[key]; !exists {
+								e.scaResults[key] = map[string]string{
+									"status": checkPass,
+									"title":  checkTitle,
+									"check":  fmt.Sprintf("%d", checkID),
+								}
+							}
+						}
+					}
+				}
 			}
 		}
 	}
@@ -168,6 +179,26 @@ func (e *ReportEngine) parseSCAResults(output map[string]any) error {
 }
 
 func (e *ReportEngine) mergeScanResults(report *Report) {
+	for i, cr := range report.Results {
+		key := report.Framework + ":" + cr.ID
+		if result, ok := e.scaResults[key]; ok {
+			report.Results[i].Details = append(report.Results[i].Details, CheckDetail{
+				Status: result["status"],
+				Title:  result["title"] + " (SCA)",
+			})
+			report.Results[i].Total++
+
+			if result["status"] == "pass" {
+				report.Results[i].Passed++
+				if report.Results[i].Failed == 0 {
+					report.Results[i].Status = "pass"
+				}
+			} else {
+				report.Results[i].Failed++
+				report.Results[i].Status = "fail"
+			}
+		}
+	}
 }
 
 func (e *ReportEngine) getManualAssessment(framework, controlID string) (ManualAssessment, error) {
@@ -427,4 +458,17 @@ func (r *Report) Bytes(format string) []byte {
 
 func init() {
 	_ = bytes.NewBuffer
+}
+
+func toFloat64(v any) float64 {
+	switch val := v.(type) {
+	case float64:
+		return val
+	case int:
+		return float64(val)
+	case json.Number:
+		f, _ := val.Float64()
+		return f
+	}
+	return 0
 }

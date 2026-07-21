@@ -27,6 +27,7 @@ type CompiledRule struct {
 	Description string
 	Severity    int
 	MITRE       string
+	Compliance  map[string][]string
 	Actions     []RuleAction
 
 	condition string
@@ -167,7 +168,166 @@ func (re *RuleEngine) LoadDefault() {
 	re.rules = loadWazuhRules()
 	re.rules = append(re.rules, builtinRules()...)
 
+	for i := range re.rules {
+		re.rules[i].Compliance = mapCompliance(re.rules[i].MITRE, re.rules[i].Severity, re.rules[i].Description)
+	}
+
 	fmt.Printf("[siem] loaded %d external + %d built-in rules\n", len(loadWazuhRules()), len(builtinRules()))
+}
+
+func mapCompliance(mitre string, severity int, description string) map[string][]string {
+	c := make(map[string][]string)
+
+	if mitre == "" && severity == 0 {
+		return c
+	}
+
+	// Map MITRE techniques to compliance frameworks
+	mitreIDs := strings.Split(mitre, ",")
+	for _, m := range mitreIDs {
+		m = strings.TrimSpace(m)
+		switch m {
+		// === Initial Access / Credential Access ===
+		case "T1110", "T1110.001", "T1110.002", "T1110.003", "T1110.004":
+			c["pci_dss_v4.0"] = append(c["pci_dss_v4.0"], "6.2", "8.2.1")
+			c["pci_dss_v3.2.1"] = append(c["pci_dss_v3.2.1"], "6.2", "8.2.1")
+			c["hipaa"] = append(c["hipaa"], "164.312(a)(1)", "164.312(d)")
+			c["gdpr"] = append(c["gdpr"], "Art.32")
+			c["nist_sp_800-53"] = append(c["nist_sp_800-53"], "AC-7", "IA-5")
+			c["iso_27001-2013"] = append(c["iso_27001-2013"], "A.9.2.1", "A.9.4.2")
+			c["soc_2"] = append(c["soc_2"], "CC6.1")
+
+		case "T1190", "T1133":
+			c["pci_dss_v4.0"] = append(c["pci_dss_v4.0"], "1.2.5", "6.2")
+			c["pci_dss_v3.2.1"] = append(c["pci_dss_v3.2.1"], "1.2.1", "6.2")
+			c["hipaa"] = append(c["hipaa"], "164.312(a)(1)", "164.312(e)(1)")
+			c["gdpr"] = append(c["gdpr"], "Art.32")
+			c["nist_sp_800-53"] = append(c["nist_sp_800-53"], "AC-17", "SC-7")
+
+		case "T1566", "T1566.001", "T1566.002", "T1566.003":
+			c["pci_dss_v4.0"] = append(c["pci_dss_v4.0"], "6.2", "8.2.1")
+			c["hipaa"] = append(c["hipaa"], "164.308(a)(1)(i)", "164.308(a)(5)(i)")
+			c["gdpr"] = append(c["gdpr"], "Art.32")
+			c["nist_sp_800-53"] = append(c["nist_sp_800-53"], "AC-3", "SI-2")
+
+		// === Execution ===
+		case "T1059", "T1059.001", "T1059.003", "T1059.005", "T1059.006", "T1059.007":
+			c["pci_dss_v4.0"] = append(c["pci_dss_v4.0"], "6.4.1", "2.2.4")
+			c["hipaa"] = append(c["hipaa"], "164.312(c)(1)", "164.312(a)(2)(iv)")
+			c["gdpr"] = append(c["gdpr"], "Art.32")
+			c["nist_sp_800-53"] = append(c["nist_sp_800-53"], "AU-3", "CM-7(5)")
+			c["iso_27001-2013"] = append(c["iso_27001-2013"], "A.12.5.1", "A.12.14.1")
+
+		case "T1204", "T1204.002":
+			c["pci_dss_v4.0"] = append(c["pci_dss_v4.0"], "5.1", "6.2")
+			c["hipaa"] = append(c["hipaa"], "164.312(c)(1)", "164.310(d)(1)")
+			c["gdpr"] = append(c["gdpr"], "Art.32")
+			c["nist_sp_800-53"] = append(c["nist_sp_800-53"], "SI-16", "CM-7(5)")
+
+		// === Persistence ===
+		case "T1547", "T1547.001":
+			c["pci_dss_v4.0"] = append(c["pci_dss_v4.0"], "5.1", "2.2.4")
+			c["hipaa"] = append(c["hipaa"], "164.312(c)(1)", "164.310(d)(1)")
+			c["gdpr"] = append(c["gdpr"], "Art.32")
+			c["nist_sp_800-53"] = append(c["nist_sp_800-53"], "CM-7(5)", "SI-16")
+
+		case "T1543", "T1543.003":
+			c["pci_dss_v4.0"] = append(c["pci_dss_v4.0"], "5.1", "2.2.4")
+			c["hipaa"] = append(c["hipaa"], "164.312(c)(1)")
+			c["gdpr"] = append(c["gdpr"], "Art.32")
+			c["nist_sp_800-53"] = append(c["nist_sp_800-53"], "CM-7(5)")
+			c["soc_2"] = append(c["soc_2"], "CC6.8")
+
+		case "T1053", "T1053.005":
+			c["pci_dss_v4.0"] = append(c["pci_dss_v4.0"], "6.4.1", "2.2.4")
+			c["hipaa"] = append(c["hipaa"], "164.312(c)(1)")
+			c["nist_sp_800-53"] = append(c["nist_sp_800-53"], "CM-7(5)")
+
+		// === Privilege Escalation / Credential Access ===
+		case "T1003":
+			c["pci_dss_v4.0"] = append(c["pci_dss_v4.0"], "6.2", "8.2.1")
+			c["hipaa"] = append(c["hipaa"], "164.312(a)(1)", "164.312(a)(2)(iv)")
+			c["gdpr"] = append(c["gdpr"], "Art.32")
+			c["nist_sp_800-53"] = append(c["nist_sp_800-53"], "IA-5", "AC-3")
+			c["iso_27001-2013"] = append(c["iso_27001-2013"], "A.9.2.1", "A.9.4.2")
+
+		case "T1078", "T1078.003":
+			c["pci_dss_v4.0"] = append(c["pci_dss_v4.0"], "8.2.1", "8.3.2")
+			c["pci_dss_v3.2.1"] = append(c["pci_dss_v3.2.1"], "8.2.1", "8.3.1")
+			c["hipaa"] = append(c["hipaa"], "164.312(a)(1)", "164.312(d)")
+			c["gdpr"] = append(c["gdpr"], "Art.32")
+			c["nist_sp_800-53"] = append(c["nist_sp_800-53"], "AC-3", "IA-5")
+			c["soc_2"] = append(c["soc_2"], "CC6.3")
+
+		// === Defense Evasion ===
+		case "T1562", "T1562.001":
+			c["pci_dss_v4.0"] = append(c["pci_dss_v4.0"], "5.1", "6.4.1")
+			c["hipaa"] = append(c["hipaa"], "164.312(c)(1)", "164.310(d)(1)")
+			c["gdpr"] = append(c["gdpr"], "Art.32")
+			c["nist_sp_800-53"] = append(c["nist_sp_800-53"], "SI-16", "CM-7(5)")
+			c["soc_2"] = append(c["soc_2"], "CC6.8")
+
+		case "T1070":
+			c["pci_dss_v4.0"] = append(c["pci_dss_v4.0"], "10.2.1", "10.4.1")
+			c["hipaa"] = append(c["hipaa"], "164.312(b)", "164.308(a)(1)(ii)(D)")
+			c["gdpr"] = append(c["gdpr"], "Art.32", "Art.30")
+			c["nist_sp_800-53"] = append(c["nist_sp_800-53"], "AU-3", "AU-12")
+			c["iso_27001-2013"] = append(c["iso_27001-2013"], "A.12.4.1")
+			c["soc_2"] = append(c["soc_2"], "CC7.1")
+
+		// === Discovery / Lateral Movement ===
+		case "T1046":
+			c["pci_dss_v4.0"] = append(c["pci_dss_v4.0"], "1.2.5", "2.2.5")
+			c["hipaa"] = append(c["hipaa"], "164.312(a)(1)", "164.312(e)(1)")
+			c["nist_sp_800-53"] = append(c["nist_sp_800-53"], "SC-7", "AC-3")
+
+		case "T1021", "T1021.001", "T1021.002":
+			c["pci_dss_v4.0"] = append(c["pci_dss_v4.0"], "8.2.1", "1.2.5")
+			c["hipaa"] = append(c["hipaa"], "164.312(e)(1)", "164.312(a)(1)")
+			c["gdpr"] = append(c["gdpr"], "Art.32")
+			c["nist_sp_800-53"] = append(c["nist_sp_800-53"], "AC-17(2)", "SC-8")
+
+		// === Command & Control ===
+		case "T1071", "T1071.001":
+			c["pci_dss_v4.0"] = append(c["pci_dss_v4.0"], "4.1", "4.1.1")
+			c["hipaa"] = append(c["hipaa"], "164.312(e)(1)", "164.312(e)(2)(ii)")
+			c["gdpr"] = append(c["gdpr"], "Art.32")
+			c["nist_sp_800-53"] = append(c["nist_sp_800-53"], "SC-8", "SC-13")
+			c["soc_2"] = append(c["soc_2"], "CC6.6")
+
+		// === Exfiltration / Impact ===
+		case "T1048":
+			c["pci_dss_v4.0"] = append(c["pci_dss_v4.0"], "4.1", "4.2.1")
+			c["hipaa"] = append(c["hipaa"], "164.312(e)(1)", "164.312(e)(2)(ii)")
+			c["gdpr"] = append(c["gdpr"], "Art.32", "Art.33")
+			c["nist_sp_800-53"] = append(c["nist_sp_800-53"], "SC-8", "AU-12")
+
+		case "T1490":
+			c["pci_dss_v4.0"] = append(c["pci_dss_v4.0"], "6.2", "10.4.1")
+			c["hipaa"] = append(c["hipaa"], "164.312(c)(2)", "164.308(a)(7)")
+			c["gdpr"] = append(c["gdpr"], "Art.32", "Art.33")
+			c["nist_sp_800-53"] = append(c["nist_sp_800-53"], "SI-2(2)", "CP-10")
+			c["soc_2"] = append(c["soc_2"], "CC7.1")
+		}
+	}
+
+	// Severity-based fallback for rules without MITRE mapping
+	if len(c) == 0 {
+		switch {
+		case severity >= 10:
+			c["pci_dss_v4.0"] = []string{"6.2"}
+			c["hipaa"] = []string{"164.312(a)(1)"}
+			c["gdpr"] = []string{"Art.32"}
+		case severity >= 7:
+			c["pci_dss_v4.0"] = []string{"6.2"}
+			c["hipaa"] = []string{"164.308(a)(1)(i)"}
+		case severity >= 4:
+			c["pci_dss_v3.2.1"] = []string{"6.2"}
+			c["nist_sp_800-53"] = []string{"AU-12"}
+		}
+	}
+
+	return c
 }
 
 func builtinRules() []CompiledRule {
