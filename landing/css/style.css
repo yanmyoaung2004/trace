@@ -207,3 +207,90 @@ footer a:hover { color: var(--ink); }
   .herob-buttons { flex-direction: column; }
   .btn { width: 100%; justify-content: center; }
 }
+
+/* ── TUI Demo Window ── */
+.tui-demo { padding: 80px 0; border-top: 1px solid var(--border); }
+.tui-window {
+  background: var(--bg); border-radius: 10px; border: 1px solid var(--border);
+  overflow: hidden; box-shadow: 0 20px 60px oklch(0 0 0 / 0.4);
+  max-width: 760px; margin: 0 auto;
+}
+.tui-window-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; background: oklch(0.09 0 0);
+  border-bottom: 1px solid var(--border);
+}
+.tui-title { font-size: .75rem; color: var(--muted); margin-left: 8px; font-family: var(--font-mono); }
+
+.tui-tabs {
+  display: flex; background: oklch(0.085 0 0); border-bottom: 1px solid var(--border);
+  overflow-x: auto; scrollbar-width: none; gap: 0;
+}
+.tui-tab {
+  flex-shrink: 0; padding: 8px 18px; font-size: .75rem; font-weight: 600;
+  color: var(--muted); cursor: pointer; transition: all .2s;
+  border-bottom: 2px solid transparent;
+}
+.tui-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+.tui-content { padding: 16px; min-height: 280px; position: relative; }
+.tui-screen { display: none; }
+.tui-screen.active { display: block; animation: tuiFade .3s ease; }
+@keyframes tuiFade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+.tui-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+.tui-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 14px; text-align: center;
+}
+.tui-stat-num { font-size: 1.5rem; font-weight: 700; color: var(--primary); line-height: 1.2; }
+.tui-stat-label { font-size: .6875rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.tui-bar { height: 3px; border-radius: 2px; background: var(--border); margin-top: 8px; overflow: hidden; }
+.tui-bar-fill { height: 100%; border-radius: 2px; background: var(--accent); transition: width .5s; }
+
+.tui-table { font-family: var(--font-mono); font-size: .75rem; line-height: 1.8; }
+.tui-th { display: grid; grid-template-columns: 90px 1fr 60px 110px; gap: 8px; padding: 6px 8px; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); }
+.tui-tr { display: grid; grid-template-columns: 90px 1fr 60px 110px; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--border); transition: background .15s; }
+.tui-tr:hover { background: var(--surface-hover); }
+.tui-status { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; font-size: .6875rem; padding: 2px 8px; border-radius: 100px; }
+.tui-status::before { content: ''; width: 5px; height: 5px; border-radius: 50%; }
+.tui-status.completed { color: var(--success); background: oklch(0.60 0.15 150 / 0.12); }
+.tui-status.completed::before { background: var(--success); }
+.tui-status.running { color: var(--warning); background: oklch(0.65 0.14 80 / 0.12); }
+.tui-status.running::before { background: var(--warning); }
+.tui-status.failed { color: var(--danger); background: oklch(0.55 0.18 30 / 0.12); }
+.tui-status.failed::before { background: var(--danger); }
+.tui-status.pending { color: var(--muted); background: oklch(0.50 0.02 60 / 0.12); }
+.tui-status.pending::before { background: var(--muted); }
+
+.tui-sev { font-size: .6875rem; padding: 2px 8px; border-radius: 4px; }
+.tui-sev.low { color: var(--success); background: oklch(0.60 0.15 150 / 0.12); }
+.tui-sev.med { color: var(--warning); background: oklch(0.65 0.14 80 / 0.12); }
+.tui-sev.high { color: var(--danger); background: oklch(0.55 0.18 30 / 0.12); }
+.tui-sev.crit { color: #fff; background: var(--danger); }
+
+.tui-help { font-family: var(--font-mono); font-size: .6875rem; color: var(--muted); padding: 10px 8px 0; }
+
+.tui-filters { display: flex; gap: 6px; margin-bottom: 12px; }
+.tui-filter { font-size: .6875rem; padding: 4px 12px; border-radius: 100px; background: var(--surface); color: var(--muted); cursor: pointer; border: 1px solid var(--border); }
+.tui-filter.active { background: oklch(0.55 0.12 220 / 0.1); color: var(--accent); border-color: var(--accent); }
+
+.tui-alert-list { display: flex; flex-direction: column; gap: 6px; }
+.tui-alert { display: grid; grid-template-columns: 60px 1fr 80px; gap: 12px; align-items: center; padding: 8px 10px; background: var(--surface); border-radius: 6px; border: 1px solid var(--border); font-size: .75rem; }
+.tui-alert-sev-5 { color: var(--danger); font-weight: 700; }
+.tui-alert-sev-4 { color: var(--warning); font-weight: 700; }
+.tui-alert-sev-3 { color: var(--muted); font-weight: 600; }
+.tui-alert-time { color: var(--muted); text-align: right; }
+
+.tui-config-list { display: flex; flex-direction: column; gap: 6px; font-family: var(--font-mono); font-size: .8125rem; }
+.tui-config-list > div { display: flex; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.tui-config-key { color: var(--muted); min-width: 160px; }
+.tui-config-val { color: var(--ink); }
+
+@media (max-width: 640px) {
+  .tui-grid-3 { grid-template-columns: 1fr; }
+  .tui-th, .tui-tr { grid-template-columns: 70px 1fr 50px; }
+  .tui-th span:nth-child(4), .tui-tr span:nth-child(4) { display: none; }
+  .tui-tabs { gap: 0; }
+  .tui-tab { padding: 8px 12px; font-size: .6875rem; }
+}

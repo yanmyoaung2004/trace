@@ -130,10 +130,47 @@
     });
   }
 
+  // ── TUI screen cycling ──
+  function runTUI() {
+    const screens = document.querySelectorAll('.tui-screen');
+    const tabs = document.querySelectorAll('.tui-tab');
+    if (!screens.length || !tabs.length) return;
+
+    let current = 0;
+    const INTERVAL = 4000;
+
+    function showScreen(idx) {
+      screens.forEach(s => s.classList.remove('active'));
+      tabs.forEach(t => t.classList.remove('active'));
+      screens[idx].classList.add('active');
+      tabs[idx].classList.add('active');
+    }
+
+    function nextScreen() {
+      current = (current + 1) % screens.length;
+      showScreen(current);
+    }
+
+    // Start cycling after the terminal loads
+    setTimeout(() => {
+      showScreen(0);
+      setInterval(nextScreen, INTERVAL);
+    }, 2000);
+
+    // Click to jump to a specific screen
+    tabs.forEach((tab, i) => {
+      tab.addEventListener('click', function() {
+        current = i;
+        showScreen(i);
+      });
+    });
+  }
+
   // ── Init ──
   document.addEventListener('DOMContentLoaded', function() {
     updateDownloadLinks();
     runTerminal();
+    runTUI();
     observeElements();
     setupCopy();
   });
