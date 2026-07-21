@@ -82,7 +82,7 @@
 
   // ── Scroll-triggered animations ──
   function observeElements() {
-    const els = document.querySelectorAll('.feature-card, .stat-card, .demo .tty');
+    const els = document.querySelectorAll('.feature-card, .stat-card, .demo-section .tty');
     if (!('IntersectionObserver' in window)) {
       els.forEach(el => el.style.opacity = '1');
       return;
@@ -106,7 +106,7 @@
 
   // ── Copy command button ──
   function setupCopy() {
-    document.querySelectorAll('.copy-cmd').forEach(btn => {
+    document.querySelectorAll('.copy-btn').forEach(btn => {
       btn.addEventListener('click', function(e) {
         const cmd = this.dataset.cmd;
         if (!cmd) return;
