@@ -17,8 +17,9 @@
 9. [Response Actions](#9-response-actions)
 10. [EDR Remote Actions](#10-edr-remote-actions)
 11. [Central Server & Team Use](#11-central-server--team-use)
-12. [Troubleshooting](#12-troubleshooting)
-13. [Real-World Scenario Walkthrough](#13-real-world-scenario-walkthrough)
+12. [Compliance Reporting](#12-compliance-reporting)
+13. [Troubleshooting](#13-troubleshooting)
+14. [Real-World Scenario Walkthrough](#14-real-world-scenario-walkthrough)
 
 ---
 
@@ -567,7 +568,76 @@ Dashboard → Correlations tab shows all cross-node IOCs.
 
 ---
 
-## 12. Troubleshooting
+## 12. Compliance Reporting
+
+Trace supports compliance reporting for 8 frameworks: PCI DSS v4.0, HIPAA, GDPR, NIST SP 800-53,
+ISO 27001:2013, SOC 2, CIS Critical Security Controls v8, and PCI DSS v3.2.1.
+
+### List frameworks
+
+```powershell
+trace compliance frameworks
+```
+
+### Generate a compliance report
+
+```powershell
+# Basic report (text output)
+trace compliance report --framework pci_dss_v4.0
+
+# HTML report — open in browser
+trace compliance report --framework hipaa -o hipaa-report.html
+
+# Markdown report — for documentation
+trace compliance report --framework gdpr -o gdpr-report.md
+
+# JSON report — for tooling
+trace compliance report --framework nist_sp_800-53 -o nist-report.json
+```
+
+### Manual assessment
+
+For controls that can't be automatically checked (policies, procedures, training):
+
+```powershell
+# Mark a control as passing
+trace compliance assess --framework hipaa --control 164.312(a)(1) --status pass --notes "Access control policy implemented Jan 2026"
+
+# Mark a control as failing
+trace compliance assess --framework pci_dss_v4.0 --control 6.4.1 --status fail --notes "No formal change management"
+
+# Mark as not-applicable
+trace compliance assess --framework gdpr --control Art.7 --status na --notes "No consent-based processing"
+```
+
+### Evidence collection
+
+Attach files or notes as evidence for compliance controls:
+
+```powershell
+trace compliance evidence --framework hipaa --control 164.312 --description "Access control policy v2.1" --file C:\Policies\access-control.pdf
+trace compliance evidence --framework gdpr --control Art.30 --description "Records of processing activities maintained"
+```
+
+All assessments and evidence are stored in `~/.trace/compliance/` and persist across sessions.
+Reports automatically combine automated SCA scan results with manual assessments and evidence.
+
+### Supported frameworks
+
+| Framework | Description | Controls |
+|-----------|-------------|----------|
+| PCI DSS v4.0 | Payment Card Industry Data Security Standard | 14 |
+| PCI DSS v3.2.1 | PCI DSS v3.2.1 | 9 |
+| HIPAA Security Rule | Health Insurance Portability and Accountability Act | 13 |
+| GDPR | EU General Data Protection Regulation | 13 |
+| NIST SP 800-53 Rev.5 | NIST Security and Privacy Controls | 12 |
+| ISO 27001:2013 | Information Security Management Standard | 9 |
+| SOC 2 | Service Organization Control 2 | 5 |
+| CIS Critical Security Controls v8 | CIS Critical Security Controls | 6 |
+
+---
+
+## 13. Troubleshooting
 
 ### Common issues
 
@@ -601,7 +671,7 @@ Remove-Item -Recurse $env:USERPROFILE\.trace\
 
 ---
 
-## 13. Real-World Scenario Walkthrough
+## 14. Real-World Scenario Walkthrough
 
 ### Scenario: Suspicious email with attachment
 

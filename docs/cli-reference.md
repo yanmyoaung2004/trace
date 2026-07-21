@@ -281,6 +281,36 @@ trace completion powershell | Out-String | Invoke-Expression
 
 ---
 
+## `compliance`
+
+Run compliance scans and generate audit-ready reports (GDPR, HIPAA, PCI DSS, etc.).
+
+```
+trace compliance <subcommand>
+```
+
+Subcommands:
+| Command | Description |
+|---|---|
+| `report --framework` | Generate compliance report for a framework |
+| `assess --framework --control --status` | Manually assess a control (pass/fail/na) |
+| `evidence --framework --control --description` | Attach evidence to a control |
+| `frameworks` | List available compliance frameworks |
+
+Supported frameworks: `pci_dss_v4.0`, `pci_dss_v3.2.1`, `hipaa`, `gdpr`, `nist_sp_800-53`, `iso_27001-2013`, `soc_2`, `cis_csc_v8`
+
+Examples:
+
+```powershell
+trace compliance frameworks
+trace compliance report --framework pci_dss_v4.0
+trace compliance assess --framework hipaa --control 164.312(a)(1) --status pass --notes "Policy enforced"
+trace compliance evidence --framework gdpr --control Art.32 --description "Security measures in place"
+trace compliance report --framework gdpr -o gdpr-report.html
+```
+
+---
+
 ## `version`
 
 Print version information.

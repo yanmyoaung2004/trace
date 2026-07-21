@@ -184,6 +184,7 @@ Run `./trace init` for the interactive setup wizard.
 | `edr-isolate` / `edr-scan` / `edr-kill-process` | Remote endpoint actions via EDR                    |
 | `approval pending/approve/deny`               | Human-in-the-loop                                   |
 | `completion`                                  | Generate shell completion scripts                   |
+| `compliance report/assess/evidence/frameworks` | Compliance reporting (GDPR, HIPAA, PCI, NIST, etc) |
 | `plugin search/list/install/remove`           | Plugin ecosystem                                    |
 | `update self/intel/playbooks/rollback`        | Self-update                                         |
 | `version`                                     | Print version                                       |

@@ -393,8 +393,75 @@ With SIEM watching `D:\Test`: expect K8s alerts within 15s.
 ```powershell
 # Run non-interactively to see prompts:
 echo "" | ./trace init
-# Expected: shows setup prompts
+# Expected: shows setup prompts including Slack/Discord/Telegram notification config
 ```
+
+---
+
+## 20. Compliance Reporting
+
+### 20a. List frameworks
+```powershell
+./trace compliance frameworks
+# Expected: lists all 8 supported compliance frameworks
+```
+
+### 20b. Generate compliance report
+```powershell
+./trace compliance report --framework pci_dss_v4.0
+# Expected: shows PCI DSS controls with pass/fail/not-covered status
+
+# Output to file
+./trace compliance report --framework hipaa -o hipaa-report.html
+./trace compliance report --framework gdpr -o gdpr-report.md
+./trace compliance report --framework nist_sp_800-53 -o nist-report.json
+```
+
+### 20c. Manual assessment
+```powershell
+# Mark a control as pass with justification
+./trace compliance assess --framework hipaa --control 164.312(a)(1) --status pass --notes "Access control policy implemented"
+
+# Mark as fail
+./trace compliance assess --framework pci_dss_v4.0 --control 6.4.1 --status fail --notes "No formal change management process"
+
+# Mark as not-applicable
+./trace compliance assess --framework gdpr --control Art.7 --status na --notes "No consent-based processing"
+```
+
+### 20d. Attach evidence
+```powershell
+./trace compliance evidence --framework hipaa --control 164.312 --description "Access control policy v2.1" --file C:\Policies\access-control.pdf
+./trace compliance evidence --framework gdpr --control Art.30 --description "Records of processing activities"
+```
+
+### 20e. Verify assessment persistence
+```powershell
+./trace compliance report --framework hipaa
+# Expected: assessed controls show ✅/⚠️ instead of ❌
+```
+
+---
+
+## 21. Notifications (Slack / Discord / Telegram)
+
+### 21a. Via CLI params (no config needed)
+```powershell
+./trace investigate --playbook telegram-notify --param bot_token=123456:ABC --param chat_id=-100123 --param message="Test alert"
+./trace investigate --playbook slack-notify --param webhook_url=https://hooks.slack.com/... --param title="Alert" --param message="Test"
+./trace investigate --playbook discord-notify --param webhook_url=https://discord.com/api/webhooks/... --param title="Alert" --param message="Test"
+```
+
+### 21b. Via config (set once, use everywhere)
+```powershell
+./trace init
+# During setup, enter Slack/Discord webhook URLs or Telegram bot token + chat ID
+
+# Then use without re-entering credentials:
+./trace investigate --playbook slack-notify --param title="Alert" --param message="Suspicious activity"
+./trace investigate --playbook telegram-notify --param message="Alert triggered by SIEM"
+```
+Without config or params: expect error "webhook_url is required".
 
 ---
 
@@ -421,3 +488,5 @@ echo "" | ./trace init
 | 17  | HITL Approval            |        |       |
 | 18  | Update & Plugin          |        |       |
 | 19  | Init Wizard              |        |       |
+| 20  | Compliance Reporting     |        | 8 frameworks, manual assessment, evidence |
+| 21  | Notifications            |        | Slack/Discord/Telegram via config |
