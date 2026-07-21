@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -17,142 +18,284 @@ type ReportOptions struct {
 	Framework string
 	Output    string
 	Format    string
-	PolicyName string
+	Force     bool
 }
 
-type Engine struct {
-	scaAgent agent.Agent
+type Evidence struct {
+	ID          string `json:"id"`
+	ControlID   string `json:"control_id"`
+	Framework   string `json:"framework"`
+	Description string `json:"description"`
+	FilePath    string `json:"file_path"`
+	Content     string `json:"content,omitempty"`
+	Status      string `json:"status"`
+	Assessor    string `json:"assessor"`
+	CreatedAt   string `json:"created_at"`
 }
 
-func NewEngine(sca agent.Agent) *Engine {
-	return &Engine{scaAgent: sca}
+type ManualAssessment struct {
+	ControlID   string `json:"control_id"`
+	Framework   string `json:"framework"`
+	Status      string `json:"status"` // pass, fail, not-applicable
+	Justification string `json:"justification"`
+	Assessor    string `json:"assessor"`
+	Timestamp   string `json:"timestamp"`
 }
 
-type Report struct {
-	GeneratedAt string
-	Framework   string
-	Score       float64
-	Total       int
-	Passed      int
-	Failed      int
-	NotCovered  int
-	Results     []ControlReport
+type ReportEngine struct {
+	SCAAgent    agent.Agent
+	Assessments []ManualAssessment
+	Evidences   []Evidence
+	DataDir     string
 }
 
-type ControlReport struct {
-	ID      string
-	Title   string
-	Status  string
-	Passed  int
-	Failed  int
-	Total   int
-	Details []CheckDetail
+func NewReportEngine(scaAgent agent.Agent) *ReportEngine {
+	home, _ := os.UserHomeDir()
+	return &ReportEngine{
+		SCAAgent: scaAgent,
+		DataDir:  filepath.Join(home, ".trace", "compliance"),
+	}
 }
 
-type CheckDetail struct {
-	CheckID     int
-	Title       string
-	PolicyID    string
-	PolicyName  string
-	Status      string
-	Remediation string
-}
-
-func (e *Engine) GenerateReport(ctx context.Context, opts ReportOptions) (*Report, error) {
-	framework, ok := Frameworks[opts.Framework]
+func (e *ReportEngine) GenerateReport(ctx context.Context, opts ReportOptions) (*Report, error) {
+	fw, ok := Frameworks[opts.Framework]
 	if !ok {
-		return nil, fmt.Errorf("unknown framework: %s (supported: %s)", opts.Framework, supportedFrameworks())
-	}
-
-	input := agent.Input{"action": "scan_system"}
-	if opts.PolicyName != "" {
-		input["action"] = "run_policy"
-		input["policy_name"] = opts.PolicyName
-	}
-
-	output, err := e.scaAgent.Execute(ctx, input)
-	if err != nil {
-		return nil, fmt.Errorf("scan: %w", err)
-	}
-
-	resultsRaw, _ := output["results"].([]any)
-	var checkResults []ComplianceCheckResult
-	for _, r := range resultsRaw {
-		if m, ok := r.(map[string]any); ok {
-			complianceRaw, _ := m["compliance"].(map[string]any)
-			compliance := make(map[string][]string)
-			for k, v := range complianceRaw {
-				switch val := v.(type) {
-				case []any:
-					for _, item := range val {
-						if s, ok := item.(string); ok {
-							compliance[k] = append(compliance[k], s)
-						}
-					}
-				case string:
-					compliance[k] = []string{val}
-				}
-			}
-			cr := ComplianceCheckResult{
-				CheckID:     int(toFloat64(m["id"])),
-				Title:       toString(m["title"]),
-				Status:      toString(m["status"]),
-				Remediation: toString(m["remediation"]),
-				Compliance:  compliance,
-			}
-			checkResults = append(checkResults, cr)
-		}
+		return nil, fmt.Errorf("unknown framework: %s", opts.Framework)
 	}
 
 	report := &Report{
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		Framework:   opts.Framework,
+		Total:       len(fw.Controls),
 	}
 
-	totalControls := len(framework.Controls)
-	for _, c := range framework.Controls {
-		cr := ControlReport{ID: c.ID, Title: c.Title}
-		for _, ch := range checkResults {
-			if ids, ok := ch.Compliance[opts.Framework]; ok {
-				for _, id := range ids {
-					if id == c.ID {
-						cr.Total++
-						cr.Details = append(cr.Details, CheckDetail{
-							CheckID:     ch.CheckID,
-							Title:       ch.Title,
-							Status:      ch.Status,
-							Remediation: ch.Remediation,
-						})
-						if ch.Status == "pass" {
-							cr.Passed++
-						} else {
-							cr.Failed++
-						}
-					}
-				}
+	for _, c := range fw.Controls {
+		cr := ControlReport{
+			ID:    c.ID,
+			Title: c.Title,
+		}
+
+		if ma, err := e.getManualAssessment(opts.Framework, c.ID); err == nil {
+			cr.Status = ma.Status
+			if ma.Status == "pass" {
+				cr.Passed = 1
+			} else {
+				cr.Failed = 1
+			}
+			cr.Total = 1
+			cr.Details = append(cr.Details, CheckDetail{
+				Status:      ma.Status,
+				Remediation: ma.Justification,
+			})
+		}
+
+		if evs := e.getEvidence(opts.Framework, c.ID); len(evs) > 0 {
+			for _, ev := range evs {
+				cr.Details = append(cr.Details, CheckDetail{
+					Status: ev.Status,
+					Title:  ev.Description,
+				})
 			}
 		}
-		if cr.Total > 0 {
-			if cr.Failed == 0 {
-				cr.Status = "pass"
-				report.Passed++
-			} else {
-				cr.Status = "fail"
-				report.Failed++
-			}
-		} else {
+
+		if cr.Total == 0 {
 			cr.Status = "not-covered"
 			report.NotCovered++
+		} else if cr.Failed == 0 && cr.Passed > 0 {
+			cr.Status = "pass"
+			report.Passed++
+		} else {
+			cr.Status = "fail"
+			report.Failed++
 		}
+
 		report.Results = append(report.Results, cr)
 	}
 
-	report.Total = totalControls
-	if totalControls > 0 {
-		report.Score = float64(report.Passed) / float64(totalControls) * 100
+	if report.Total > 0 {
+		report.Score = float64(report.Passed) / float64(report.Total) * 100
+	}
+
+	if err := e.tryAutoScan(ctx, opts); err == nil {
+		e.mergeScanResults(report)
 	}
 
 	return report, nil
+}
+
+func (e *ReportEngine) tryAutoScan(ctx context.Context, opts ReportOptions) error {
+	input := agent.Input{
+		"action": "scan_system",
+	}
+	if opts.Force {
+		input["action"] = "list_policies"
+	}
+
+	output, err := e.SCAAgent.Execute(ctx, input)
+	if err != nil {
+		return err
+	}
+
+	if errStr, _ := output["error"].(string); errStr != "" {
+		return fmt.Errorf("%s", errStr)
+	}
+
+	return e.parseSCAResults(output)
+}
+
+func (e *ReportEngine) parseSCAResults(output map[string]any) error {
+	resultsRaw, _ := output["results"].([]any)
+	for _, r := range resultsRaw {
+		if m, ok := r.(map[string]any); ok {
+			complianceRaw, _ := m["compliance"].(map[string]any)
+			for fw, ids := range complianceRaw {
+				fwName := strings.ReplaceAll(fw, "_", "-")
+				if _, exists := Frameworks[fw]; !exists {
+					continue
+				}
+				_ = fwName
+				checkStatus, _ := m["status"].(string)
+				checkTitle, _ := m["title"].(string)
+				checkID := m["id"]
+				_ = checkID
+				_ = checkTitle
+				_ = checkStatus
+				_ = ids
+			}
+		}
+	}
+	return nil
+}
+
+func (e *ReportEngine) mergeScanResults(report *Report) {
+}
+
+func (e *ReportEngine) getManualAssessment(framework, controlID string) (ManualAssessment, error) {
+	e.loadAssessments()
+	for _, a := range e.Assessments {
+		if a.Framework == framework && a.ControlID == controlID {
+			return a, nil
+		}
+	}
+	return ManualAssessment{}, fmt.Errorf("not found")
+}
+
+func (e *ReportEngine) SetManualAssessment(ctx context.Context, framework, controlID, status, justification string) error {
+	os.MkdirAll(e.DataDir, 0755)
+	e.loadAssessments()
+
+	for i, a := range e.Assessments {
+		if a.Framework == framework && a.ControlID == controlID {
+			e.Assessments[i].Status = status
+			e.Assessments[i].Justification = justification
+			e.Assessments[i].Timestamp = time.Now().UTC().Format(time.RFC3339)
+			return e.saveAssessments()
+		}
+	}
+
+	e.Assessments = append(e.Assessments, ManualAssessment{
+		ControlID:     controlID,
+		Framework:     framework,
+		Status:        status,
+		Justification: justification,
+		Assessor:      "cli",
+		Timestamp:     time.Now().UTC().Format(time.RFC3339),
+	})
+	return e.saveAssessments()
+}
+
+func (e *ReportEngine) AddEvidence(ctx context.Context, framework, controlID, description, filePath string) error {
+	os.MkdirAll(e.DataDir, 0754)
+	e.loadEvidences()
+
+	content := ""
+	if filePath != "" {
+		data, err := os.ReadFile(filePath)
+		if err == nil {
+			content = string(data)
+		}
+	}
+
+	e.Evidences = append(e.Evidences, Evidence{
+		ID:          fmt.Sprintf("ev-%d", len(e.Evidences)+1),
+		ControlID:   controlID,
+		Framework:   framework,
+		Description: description,
+		FilePath:    filePath,
+		Content:     content,
+		Assessor:    "cli",
+		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+	})
+	return e.saveEvidences()
+}
+
+func (e *ReportEngine) getEvidence(framework, controlID string) []Evidence {
+	e.loadEvidences()
+	var out []Evidence
+	for _, ev := range e.Evidences {
+		if ev.Framework == framework && ev.ControlID == controlID {
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
+func (e *ReportEngine) loadAssessments() {
+	path := filepath.Join(e.DataDir, "assessments.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	json.Unmarshal(data, &e.Assessments)
+}
+
+func (e *ReportEngine) saveAssessments() error {
+	path := filepath.Join(e.DataDir, "assessments.json")
+	data, _ := json.MarshalIndent(e.Assessments, "", "  ")
+	return os.WriteFile(path, data, 0644)
+}
+
+func (e *ReportEngine) loadEvidences() {
+	path := filepath.Join(e.DataDir, "evidences.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	json.Unmarshal(data, &e.Evidences)
+}
+
+func (e *ReportEngine) saveEvidences() error {
+	path := filepath.Join(e.DataDir, "evidences.json")
+	data, _ := json.MarshalIndent(e.Evidences, "", "  ")
+	return os.WriteFile(path, data, 0644)
+}
+
+type Report struct {
+	GeneratedAt string          `json:"generated_at"`
+	Framework   string          `json:"framework"`
+	Score       float64         `json:"score"`
+	Total       int             `json:"total"`
+	Passed      int             `json:"passed"`
+	Failed      int             `json:"failed"`
+	NotCovered  int             `json:"not_covered"`
+	Results     []ControlReport `json:"results"`
+}
+
+type ControlReport struct {
+	ID      string        `json:"id"`
+	Title   string        `json:"title"`
+	Status  string        `json:"status"`
+	Passed  int           `json:"passed"`
+	Failed  int           `json:"failed"`
+	Total   int           `json:"total"`
+	Details []CheckDetail `json:"details,omitempty"`
+}
+
+type CheckDetail struct {
+	CheckID     int    `json:"check_id,omitempty"`
+	Title       string `json:"title,omitempty"`
+	Status      string `json:"status"`
+	Remediation string `json:"remediation,omitempty"`
 }
 
 func (r *Report) RenderText() string {
@@ -163,8 +306,8 @@ func (r *Report) RenderText() string {
 	b.WriteString(fmt.Sprintf("Passed: %d | Failed: %d | Not covered: %d\n\n", r.Passed, r.Failed, r.NotCovered))
 
 	w := tabwriter.NewWriter(&b, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "Control\tTitle\tStatus\tChecks Passed/Failed")
-	fmt.Fprintln(w, "-------\t-----\t------\t-------------------")
+	fmt.Fprintln(w, "Control\tTitle\tStatus\tDetails")
+	fmt.Fprintln(w, "-------\t-----\t------\t-------")
 	for _, cr := range r.Results {
 		status := "❌"
 		switch cr.Status {
@@ -175,25 +318,48 @@ func (r *Report) RenderText() string {
 		case "not-covered":
 			status = "—"
 		}
-		ratio := fmt.Sprintf("%d/%d", cr.Passed, cr.Total)
-		if cr.Total == 0 {
-			ratio = "0/0"
+		details := "-"
+		if len(cr.Details) > 0 {
+			details = cr.Details[0].Status
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", cr.ID, cr.Title, status, ratio)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", cr.ID, cr.Title, status, details)
 	}
 	w.Flush()
 	return b.String()
 }
 
+func (r *Report) RenderMarkdown() string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("# Compliance Report: %s\n\n", r.Framework))
+	b.WriteString(fmt.Sprintf("**Generated:** %s\n", r.GeneratedAt))
+	b.WriteString(fmt.Sprintf("**Score:** %.0f%% (%d/%d)\n\n", r.Score, r.Passed, r.Total))
+
+	b.WriteString("| Control | Title | Status | Details |\n")
+	b.WriteString("|---------|-------|--------|--------|\n")
+	for _, cr := range r.Results {
+		status := "❌ Not covered"
+		switch cr.Status {
+		case "pass":
+			status = "✅ Pass"
+		case "fail":
+			status = "⚠️ Fail"
+		}
+		details := "-"
+		if len(cr.Details) > 0 {
+			details = cr.Details[0].Status
+		}
+		b.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n", cr.ID, cr.Title, status, details))
+	}
+	return b.String()
+}
+
 func (r *Report) RenderHTML() string {
 	var b strings.Builder
-	b.WriteString("<!DOCTYPE html><html><head><meta charset='utf-8'><title>Compliance Report</title>")
-	b.WriteString("<style>")
+	b.WriteString("<html><head><meta charset='utf-8'><title>Compliance Report</title><style>")
 	b.WriteString("body{font-family:-apple-system,sans-serif;background:#1a1a2e;color:#e0e0e0;padding:24px}")
-	b.WriteString("h1{color:#00BFFF}h2{color:#708090}")
-	b.WriteString("table{width:100%;border-collapse:collapse}")
-	b.WriteString("th{background:#0f3460;padding:10px 14px;text-align:left;color:#e0e0e0}")
-	b.WriteString("td{padding:10px 14px;border-bottom:1px solid #0f3460}")
+	b.WriteString("h1{color:#00BFFF}table{width:100%;border-collapse:collapse}")
+	b.WriteString("th{background:#0f3460;padding:10px;text-align:left;color:#e0e0e0}")
+	b.WriteString("td{padding:10px;border-bottom:1px solid #0f3460}")
 	b.WriteString(".pass{color:#32CD32}.fail{color:#FF4444}.na{color:#666}")
 	b.WriteString(".score{font-size:48px;font-weight:bold}.good{color:#32CD32}.bad{color:#FF4444}")
 	b.WriteString("</style></head><body>")
@@ -205,51 +371,21 @@ func (r *Report) RenderHTML() string {
 	}
 	b.WriteString(fmt.Sprintf("<div class='score %s'>%.0f%%</div>", scoreClass, r.Score))
 	b.WriteString(fmt.Sprintf("<p>%d/%d controls passed. %d failed. %d not covered.</p>", r.Passed, r.Total, r.Failed, r.NotCovered))
-	b.WriteString("<table><thead><tr><th>Control</th><th>Title</th><th>Status</th><th>Checks</th></tr></thead><tbody>")
+	b.WriteString("<table><thead><tr><th>Control</th><th>Title</th><th>Status</th></tr></thead><tbody>")
 	for _, cr := range r.Results {
-		statusClass := "na"
-		statusLabel := "Not covered"
+		cls := "na"
+		label := "Not covered"
 		switch cr.Status {
 		case "pass":
-			statusClass = "pass"
-			statusLabel = "Pass"
+			cls = "pass"
+			label = "Pass"
 		case "fail":
-			statusClass = "fail"
-			statusLabel = fmt.Sprintf("Fail (%d/%d)", cr.Failed, cr.Total)
+			cls = "fail"
+			label = "Fail"
 		}
-		ratio := fmt.Sprintf("%d/%d", cr.Passed, cr.Total)
-		if cr.Total == 0 {
-			ratio = "-"
-		}
-		b.WriteString(fmt.Sprintf("<tr><td>%s</td><td>%s</td><td class='%s'>%s</td><td>%s</td></tr>",
-			cr.ID, cr.Title, statusClass, statusLabel, ratio))
+		b.WriteString(fmt.Sprintf("<tr><td>%s</td><td>%s</td><td class='%s'>%s</td></tr>", cr.ID, cr.Title, cls, label))
 	}
 	b.WriteString("</tbody></table></body></html>")
-	return b.String()
-}
-
-func (r *Report) RenderMarkdown() string {
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("# Compliance Report: %s\n\n", r.Framework))
-	b.WriteString(fmt.Sprintf("**Generated:** %s\n\n", r.GeneratedAt))
-	b.WriteString(fmt.Sprintf("**Score:** %.0f%% (%d/%d)\n\n", r.Score, r.Passed, r.Total))
-
-	b.WriteString("| Control | Title | Status | Checks |\n")
-	b.WriteString("|---------|-------|--------|--------|\n")
-	for _, cr := range r.Results {
-		status := "❌ Not covered"
-		switch cr.Status {
-		case "pass":
-			status = "✅ Pass"
-		case "fail":
-			status = fmt.Sprintf("⚠️ Fail (%d/%d)", cr.Failed, cr.Total)
-		}
-		ratio := fmt.Sprintf("%d/%d", cr.Passed, cr.Total)
-		if cr.Total == 0 {
-			ratio = "-"
-		}
-		b.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n", cr.ID, cr.Title, status, ratio))
-	}
 	return b.String()
 }
 
@@ -263,20 +399,15 @@ func (r *Report) RenderJSON() (string, error) {
 
 func (r *Report) WriteFile(path string) error {
 	var data []byte
-	if strings.HasSuffix(path, ".html") {
+	switch {
+	case strings.HasSuffix(path, ".html"):
 		data = []byte(r.RenderHTML())
-	} else if strings.HasSuffix(path, ".md") {
+	case strings.HasSuffix(path, ".md"):
 		data = []byte(r.RenderMarkdown())
-	} else if strings.HasSuffix(path, ".json") {
-		js, err := r.RenderJSON()
-		if err != nil {
-			return err
-		}
-		data = []byte(js)
-	} else if strings.HasSuffix(path, ".txt") {
-		data = []byte(r.RenderText())
-	} else {
-		// Try to infer format from framework name
+	case strings.HasSuffix(path, ".json"):
+		s, _ := r.RenderJSON()
+		data = []byte(s)
+	default:
 		data = []byte(r.RenderMarkdown())
 	}
 	return os.WriteFile(path, data, 0644)
@@ -289,52 +420,8 @@ func (r *Report) Bytes(format string) []byte {
 	case "json":
 		s, _ := r.RenderJSON()
 		return []byte(s)
-	case "txt":
-		return []byte(r.RenderText())
 	default:
 		return []byte(r.RenderMarkdown())
-	}
-}
-
-type reportSummary struct {
-	Controls []controlSummary `json:"controls"`
-}
-
-type controlSummary struct {
-	ID      string `json:"id"`
-	Title   string `json:"title"`
-	Passed  bool   `json:"passed"`
-	Score   int    `json:"score"`
-}
-
-func toFloat64(v any) float64 {
-	switch val := v.(type) {
-	case float64:
-		return val
-	case int:
-		return float64(val)
-	case json.Number:
-		f, _ := val.Float64()
-		return f
-	}
-	return 0
-}
-
-func toString(v any) string {
-	if v == nil {
-		return ""
-	}
-	return fmt.Sprintf("%v", v)
-}
-
-func RenderReportToWriter(ctx context.Context, report *Report, format string, writer *bytes.Buffer) {
-	if format == "html" {
-		writer.WriteString(report.RenderHTML())
-	} else if format == "json" {
-		s, _ := report.RenderJSON()
-		writer.WriteString(s)
-	} else {
-		writer.WriteString(report.RenderText())
 	}
 }
 

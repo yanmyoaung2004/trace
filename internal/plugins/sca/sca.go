@@ -33,14 +33,24 @@ type SCAPolicy struct {
 }
 
 type SCACheck struct {
-	ID          int               `yaml:"id"`
-	Title       string            `yaml:"title"`
-	Description string            `yaml:"description"`
-	Rationale   string            `yaml:"rationale"`
-	Remediation string            `yaml:"remediation"`
-	Condition   string            `yaml:"condition"`
-	Rules       []string          `yaml:"rules"`
-	Compliance  map[string][]string `yaml:"compliance"`
+	ID          int                    `yaml:"id"`
+	Title       string                 `yaml:"title"`
+	Description string                 `yaml:"description"`
+	Rationale   string                 `yaml:"rationale"`
+	Remediation string                 `yaml:"remediation"`
+	Condition   string                 `yaml:"condition"`
+	Rules       []string               `yaml:"rules"`
+	Compliance  []map[string][]string  `yaml:"compliance,flow"`
+}
+
+func (c *SCACheck) ComplianceMap() map[string][]string {
+	out := make(map[string][]string)
+	for _, m := range c.Compliance {
+		for k, v := range m {
+			out[k] = append(out[k], v...)
+		}
+	}
+	return out
 }
 
 type Agent struct{}
@@ -144,7 +154,7 @@ func (a *Agent) runPolicy(ctx context.Context, input agent.Input) (agent.Output,
 			Title:       check.Title,
 			Rationale:   check.Rationale,
 			Remediation: check.Remediation,
-			Compliance:  check.Compliance,
+			Compliance:  check.ComplianceMap(),
 		}
 		if ok {
 			res.Status = "pass"

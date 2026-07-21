@@ -3,6 +3,7 @@ package sca
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -34,17 +35,80 @@ func GetPolicy(id string) *policyEntry {
 }
 
 func DetectOSPolicy() *policyEntry {
-	osName := runtime.GOOS
-
-	switch osName {
+	switch runtime.GOOS {
 	case "linux":
 		return detectLinuxPolicy()
 	case "windows":
-		return GetPolicy("cis_win")
+		return detectWindowsPolicy()
 	case "darwin":
-		return GetPolicy("cis_apple_macOS")
+		return detectMacPolicy()
 	}
 	return nil
+}
+
+func detectWindowsPolicy() *policyEntry {
+	ver := detectWindowsVersion()
+	candidates := []string{
+		"cis_win" + ver,
+		"cis_win11_enterprise",
+		"cis_win10_enterprise",
+		"cis_win2022",
+		"cis_win2019",
+		"cis_win2016",
+	}
+	for _, c := range candidates {
+		if p := GetPolicy(c); p != nil {
+			return p
+		}
+	}
+	return nil
+}
+
+func detectWindowsVersion() string {
+	// Use PowerShell to detect exact Windows version
+	out, err := exec.Command("powershell", "-Command",
+		"(Get-ItemProperty 'HKLM:SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion').DisplayVersion").Output()
+	if err == nil {
+		v := strings.TrimSpace(string(out))
+		switch {
+		case strings.HasPrefix(v, "24"):
+			return "11_enterprise"
+		case strings.HasPrefix(v, "23"):
+			return "11_enterprise"
+		case strings.HasPrefix(v, "22"):
+			return "11_enterprise"
+		case strings.HasPrefix(v, "21"):
+			return "10_enterprise"
+		case strings.HasPrefix(v, "20"):
+			return "10_enterprise"
+		case strings.HasPrefix(v, "10"):
+			return "10_enterprise"
+		}
+	}
+
+	// Fallback: try to detect via registry
+	data, _ := exec.Command("powershell", "-Command",
+		"(Get-ItemProperty 'HKLM:SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion').ProductName").Output()
+	product := strings.ToLower(string(data))
+	switch {
+	case strings.Contains(product, "11"):
+		return "11_enterprise"
+	case strings.Contains(product, "10"):
+		return "10_enterprise"
+	case strings.Contains(product, "2022"):
+		return "2022"
+	case strings.Contains(product, "2019"):
+		return "2019"
+	case strings.Contains(product, "2016"):
+		return "2016"
+	}
+
+	// Last resort: try server 2022
+	return "2022"
+}
+
+func detectMacPolicy() *policyEntry {
+	return GetPolicy("cis_apple_macOS")
 }
 
 func detectLinuxPolicy() *policyEntry {
