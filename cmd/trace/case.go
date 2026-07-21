@@ -264,7 +264,7 @@ Examples:
 			return nil
 		},
 	}
-	exportPdfCmd.Flags().String("output", "o", "output file path")
+	exportPdfCmd.Flags().StringP("output", "o", "", "output file path")
 
 	createCmd.RegisterFlagCompletionFunc("severity", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"low", "medium", "high", "critical"}, cobra.ShellCompDirectiveNoFileComp
