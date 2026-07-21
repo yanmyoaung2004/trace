@@ -26,6 +26,11 @@ type Config struct {
 	AbuseIPDBKey string `json:"abuseipdb_key"`
 	OTXAPIKey    string `json:"otx_api_key"`
 	WebSearchKey string `json:"web_search_key"`
+
+	SlackWebhookURL  string `json:"slack_webhook_url,omitempty"`
+	DiscordWebhookURL string `json:"discord_webhook_url,omitempty"`
+	TelegramBotToken  string `json:"telegram_bot_token,omitempty"`
+	TelegramChatID    string `json:"telegram_chat_id,omitempty"`
 }
 
 type TelemetryConfig struct {

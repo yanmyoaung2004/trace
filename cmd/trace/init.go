@@ -97,6 +97,20 @@ You can skip any step — the tool works without external API keys.`,
 				cfg["telemetry"] = map[string]any{"enabled": true}
 			}
 
+			fmt.Println("\n-- Notifications (optional) --")
+			if slackURL := prompt(reader, "Slack webhook URL (e.g. https://hooks.slack.com/...): "); slackURL != "" {
+				cfg["slack_webhook_url"] = slackURL
+			}
+			if discordURL := prompt(reader, "Discord webhook URL (e.g. https://discord.com/api/webhooks/...): "); discordURL != "" {
+				cfg["discord_webhook_url"] = discordURL
+			}
+			if tgBot := prompt(reader, "Telegram bot token (from @BotFather): "); tgBot != "" {
+				cfg["telegram_bot_token"] = tgBot
+				if tgChat := prompt(reader, "Telegram chat ID (from @userinfobot): "); tgChat != "" {
+					cfg["telegram_chat_id"] = tgChat
+				}
+			}
+
 			data, _ := json.MarshalIndent(cfg, "", "  ")
 			if err := os.WriteFile(cfgPath, data, 0644); err != nil {
 				return fmt.Errorf("write config: %w", err)

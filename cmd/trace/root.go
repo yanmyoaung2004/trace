@@ -350,7 +350,7 @@ func (a *App) initRegistry() error {
 	a.registry.Register(sift.New(a.sqlDB, a.cfg.VTAPIKey))
 	a.registry.Register(response.New(a.sqlDB))
 	a.registry.Register(exporter.New(a.sqlDB))
-	a.registry.Register(notifier.New())
+	a.registry.Register(notifier.NewWithConfig(a.cfg.SlackWebhookURL, a.cfg.DiscordWebhookURL, a.cfg.TelegramBotToken, a.cfg.TelegramChatID))
 	a.registry.Register(sca.New())
 	a.registry.Register(edr.NewAgentFromConfig(edr.Config{Provider: "crowdstrike"}))
 	a.registry.Register(abuseipdb.NewAgent(a.cfg.AbuseIPDBKey, a.sqlDB))

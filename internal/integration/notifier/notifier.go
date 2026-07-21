@@ -12,12 +12,26 @@ import (
 )
 
 type Agent struct {
-	httpClient *http.Client
+	httpClient       *http.Client
+	SlackWebhookURL  string
+	DiscordWebhookURL string
+	TelegramBotToken  string
+	TelegramChatID    string
 }
 
 func New() *Agent {
 	return &Agent{
 		httpClient: &http.Client{Timeout: 15 * time.Second},
+	}
+}
+
+func NewWithConfig(slackURL, discordURL, tgBot, tgChatID string) *Agent {
+	return &Agent{
+		httpClient:        &http.Client{Timeout: 15 * time.Second},
+		SlackWebhookURL:   slackURL,
+		DiscordWebhookURL: discordURL,
+		TelegramBotToken:  tgBot,
+		TelegramChatID:    tgChatID,
 	}
 }
 
@@ -64,11 +78,14 @@ func (a *Agent) Execute(ctx context.Context, input agent.Input) (agent.Output, e
 
 func (a *Agent) sendSlack(ctx context.Context, input agent.Input) (agent.Output, error) {
 	webhookURL, _ := input["webhook_url"].(string)
+	if webhookURL == "" {
+		webhookURL = a.SlackWebhookURL
+	}
 	message, _ := input["message"].(string)
 	title, _ := input["title"].(string)
 
 	if webhookURL == "" {
-		return agent.Output{"status": "error", "error": "webhook_url is required"}, nil
+		return agent.Output{"status": "error", "error": "webhook_url is required (set via config or --param)"}, nil
 	}
 	if !isHTTPURL(webhookURL) {
 		return agent.Output{"status": "error", "error": "invalid webhook URL"}, nil
@@ -95,11 +112,14 @@ func (a *Agent) sendSlack(ctx context.Context, input agent.Input) (agent.Output,
 
 func (a *Agent) sendDiscord(ctx context.Context, input agent.Input) (agent.Output, error) {
 	webhookURL, _ := input["webhook_url"].(string)
+	if webhookURL == "" {
+		webhookURL = a.DiscordWebhookURL
+	}
 	message, _ := input["message"].(string)
 	title, _ := input["title"].(string)
 
 	if webhookURL == "" {
-		return agent.Output{"status": "error", "error": "webhook_url is required"}, nil
+		return agent.Output{"status": "error", "error": "webhook_url is required (set via config or --param)"}, nil
 	}
 	if !isHTTPURL(webhookURL) {
 		return agent.Output{"status": "error", "error": "invalid webhook URL"}, nil
@@ -146,11 +166,17 @@ func (a *Agent) postWebhook(ctx context.Context, url string, payload any) (agent
 
 func (a *Agent) sendTelegram(ctx context.Context, input agent.Input) (agent.Output, error) {
 	botToken, _ := input["bot_token"].(string)
+	if botToken == "" {
+		botToken = a.TelegramBotToken
+	}
 	chatID, _ := input["chat_id"].(string)
+	if chatID == "" {
+		chatID = a.TelegramChatID
+	}
 	message, _ := input["message"].(string)
 
 	if botToken == "" || chatID == "" || message == "" {
-		return agent.Output{"status": "error", "error": "bot_token, chat_id, and message are required"}, nil
+		return agent.Output{"status": "error", "error": "bot_token, chat_id, and message are required (set via config or --param)"}, nil
 	}
 
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
