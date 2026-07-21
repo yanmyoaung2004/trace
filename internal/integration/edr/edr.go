@@ -39,15 +39,38 @@ type ProcessInfo struct {
 	MemoryMB int    `json:"memory_mb,omitempty"`
 }
 
+type EDRProvider interface {
+	Name() string
+	GetAgentInfo(ctx context.Context, hostname string) (*AgentInfo, error)
+	IsolateHost(ctx context.Context, agentID string) (string, error)
+	ReleaseHost(ctx context.Context, agentID string) (string, error)
+	KillProcess(ctx context.Context, agentID string, pid int) error
+	ScanHost(ctx context.Context, agentID string) (string, error)
+	RunScript(ctx context.Context, agentID string, script string) (string, error)
+}
+
+type circuitState int
+
+const (
+	circuitClosed circuitState = iota
+	circuitOpen
+	circuitHalfOpen
+)
+
 type EDRClient struct {
-	config     Config
-	client     *http.Client
-	token      string
-	tokenExp   time.Time
-	mu         sync.Mutex
-	rateLimit  *sync.Mutex
-	lastCall   time.Time
+	config      Config
+	client      *http.Client
+	token       string
+	tokenExp    time.Time
+	mu          sync.Mutex
+	rateLimit   *sync.Mutex
+	lastCall    time.Time
 	minInterval time.Duration
+
+	cbState     circuitState
+	cbFailCount int
+	cbLastFail  time.Time
+	cbMu        sync.Mutex
 }
 
 func New(config Config) *EDRClient {
@@ -60,6 +83,36 @@ func New(config Config) *EDRClient {
 }
 
 func (e *EDRClient) Name() string { return "edr_" + e.config.Provider }
+
+func (e *EDRClient) circuitCheck() error {
+	e.cbMu.Lock()
+	defer e.cbMu.Unlock()
+
+	if e.cbState == circuitOpen {
+		if time.Since(e.cbLastFail) < 60*time.Second {
+			return fmt.Errorf("circuit breaker open for %s (since %v)", e.config.Provider, e.cbLastFail)
+		}
+		e.cbState = circuitHalfOpen
+	}
+	return nil
+}
+
+func (e *EDRClient) circuitSuccess() {
+	e.cbMu.Lock()
+	defer e.cbMu.Unlock()
+	e.cbState = circuitClosed
+	e.cbFailCount = 0
+}
+
+func (e *EDRClient) circuitFailure() {
+	e.cbMu.Lock()
+	defer e.cbMu.Unlock()
+	e.cbFailCount++
+	e.cbLastFail = time.Now()
+	if e.cbFailCount >= 5 {
+		e.cbState = circuitOpen
+	}
+}
 
 func (e *EDRClient) authenticate(ctx context.Context) error {
 	e.mu.Lock()
@@ -401,4 +454,138 @@ func (e *EDRClient) ReleaseHost(ctx context.Context, agentID string) (string, er
 		return resp.ID, nil
 	}
 	return "", fmt.Errorf("unsupported provider")
+}
+
+func (e *EDRClient) KillProcess(ctx context.Context, agentID string, pid int) error {
+	switch e.config.Provider {
+	case "crowdstrike":
+		_, err := e.doRequest(ctx, "POST", "/sensors/entities/devices-actions/v1?action_name=kill", map[string]any{
+			"ids": []string{agentID},
+			"pid": pid,
+		})
+		return err
+	case "sentinelone":
+		_, err := e.doRequest(ctx, "POST", "/web/api/v2.1/remote-commands/kill-process", map[string]any{
+			"filter": map[string]any{"ids": []string{agentID}},
+			"data":   map[string]any{"pid": pid},
+		})
+		return err
+	case "mde":
+		_, err := e.doRequest(ctx, "POST", fmt.Sprintf("/api/machines/%s/stopProcess", agentID), map[string]any{
+			"comment": "Killed by Trace",
+			"pid":     pid,
+		})
+		return err
+	}
+	return fmt.Errorf("unsupported provider")
+}
+
+func (e *EDRClient) ScanHost(ctx context.Context, agentID string) (string, error) {
+	switch e.config.Provider {
+	case "crowdstrike":
+		data, err := e.doRequest(ctx, "POST", "/sensors/entities/devices-actions/v1?action_name=scan", map[string]any{
+			"ids": []string{agentID},
+		})
+		if err != nil {
+			return "", err
+		}
+		var resp struct {
+			Resources []struct {
+				ID string `json:"id"`
+			} `json:"resources"`
+		}
+		json.Unmarshal(data, &resp)
+		if len(resp.Resources) > 0 {
+			return resp.Resources[0].ID, nil
+		}
+		return "scan_submitted", nil
+	case "sentinelone":
+		data, err := e.doRequest(ctx, "POST", "/web/api/v2.1/remote-commands/initiate-scan", map[string]any{
+			"filter": map[string]any{"ids": []string{agentID}},
+		})
+		if err != nil {
+			return "", err
+		}
+		var resp struct {
+			Data struct {
+				Affected int `json:"affected"`
+			} `json:"data"`
+		}
+		json.Unmarshal(data, &resp)
+		return fmt.Sprintf("scan_submitted (affected: %d)", resp.Data.Affected), nil
+	case "mde":
+		data, err := e.doRequest(ctx, "POST", fmt.Sprintf("/api/machines/%s/runAntiVirusScan", agentID), map[string]any{
+			"comment": "Scan triggered by Trace",
+		})
+		if err != nil {
+			return "", err
+		}
+		var resp struct {
+			ID string `json:"id"`
+		}
+		json.Unmarshal(data, &resp)
+		return resp.ID, nil
+	}
+	return "", fmt.Errorf("unsupported provider")
+}
+
+func (e *EDRClient) RunScript(ctx context.Context, agentID, script string) (string, error) {
+	switch e.config.Provider {
+	case "crowdstrike":
+		data, err := e.doRequest(ctx, "POST", "/sensors/entities/devices-actions/v1?action_name=runscript", map[string]any{
+			"ids":     []string{agentID},
+			"content": script,
+		})
+		if err != nil {
+			return "", err
+		}
+		var resp struct {
+			Resources []struct {
+				ID string `json:"id"`
+			} `json:"resources"`
+		}
+		json.Unmarshal(data, &resp)
+		if len(resp.Resources) > 0 {
+			return resp.Resources[0].ID, nil
+		}
+		return "script_submitted", nil
+	case "sentinelone":
+		data, err := e.doRequest(ctx, "POST", "/web/api/v2.1/remote-commands/run-script", map[string]any{
+			"filter": map[string]any{"ids": []string{agentID}},
+			"data":   map[string]any{"script": script},
+		})
+		if err != nil {
+			return "", err
+		}
+		var resp struct {
+			Data struct {
+				Affected int `json:"affected"`
+			} `json:"data"`
+		}
+		json.Unmarshal(data, &resp)
+		return fmt.Sprintf("script_submitted (affected: %d)", resp.Data.Affected), nil
+	case "mde":
+		_, err := e.doRequest(ctx, "POST", fmt.Sprintf("/api/machines/%s/runScript", agentID), map[string]any{
+			"script":  script,
+			"comment": "Script run by Trace",
+		})
+		if err != nil {
+			return "", err
+		}
+		return "script_submitted", nil
+	}
+	return "", fmt.Errorf("unsupported provider")
+}
+
+func (e *EDRClient) doRequestWithCircuit(ctx context.Context, method, path string, body any) ([]byte, error) {
+	if err := e.circuitCheck(); err != nil {
+		return nil, err
+	}
+	data, err := e.doRequest(ctx, method, path, body)
+	if err != nil {
+		e.circuitFailure()
+		return nil, err
+	}
+	e.circuitSuccess()
+	return data, nil
 }

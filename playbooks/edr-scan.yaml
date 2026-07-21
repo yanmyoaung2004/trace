@@ -1,0 +1,22 @@
+name: edr-scan
+description: Trigger a full antivirus scan on a remote endpoint via EDR
+triggers:
+  - scan
+  - edr-scan
+  - antivirus scan
+  - endpoint scan
+steps:
+  - agent: edr
+    action: scan_host
+    params:
+      hostname: ${input.hostname}
+    timeout: 60s
+  - agent: edr
+    action: get_agent_info
+    params:
+      hostname: ${input.hostname}
+    timeout: 10s
+  - agent: dispatch
+    action: synthesize_report
+    params:
+      investigation_id: ${investigation.id}

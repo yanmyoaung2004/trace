@@ -1,0 +1,22 @@
+name: edr-isolate
+description: Remotely isolate a host from the network via EDR
+triggers:
+  - isolate
+  - edr-isolate
+  - quarantine host
+  - disconnect
+steps:
+  - agent: edr
+    action: isolate_host
+    params:
+      hostname: ${input.hostname}
+    timeout: 30s
+  - agent: edr
+    action: get_agent_info
+    params:
+      hostname: ${input.hostname}
+    timeout: 10s
+  - agent: dispatch
+    action: synthesize_report
+    params:
+      investigation_id: ${investigation.id}
