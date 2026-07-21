@@ -478,7 +478,7 @@ func newRootCmd() *cobra.Command {
 		Short: "Trace — Multi-agent cybersecurity investigation platform",
 		Long:  `Trace orchestrates security agents to investigate threats, enrich IOCs, analyze files, and automate response actions.`,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			if cmd.Name() == "help" || cmd.Name() == "completion" {
+			if cmd.Name() == "help" || cmd.Name() == "completion" || cmd.Name() == "compliance" {
 				return nil
 			}
 			return app.initialize(cmd.Flag("config").Value.String())
@@ -515,6 +515,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newServerCmd())
 	cmd.AddCommand(newHuntCmd())
 	cmd.AddCommand(newCaseCmd())
+	cmd.AddCommand(newComplianceCmd())
 	cmd.AddCommand(newUpdateCmd())
 	cmd.AddCommand(newVersionCmd())
 
