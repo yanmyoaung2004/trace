@@ -74,11 +74,65 @@ func (a *Agent) Execute(ctx context.Context, input agent.Input) (agent.Output, e
 		return a.runPolicy(ctx, input)
 	case "scan_system":
 		return a.scanSystem(ctx)
+	case "scan_system_force":
+		return a.scanSystemForce(ctx)
 	case "list_policies":
 		return a.listPolicies()
 	default:
 		return nil, fmt.Errorf("unknown action: %s", action)
 	}
+}
+
+func (a *Agent) scanSystemForce(ctx context.Context) (agent.Output, error) {
+	policy := DetectOSPolicy()
+	if policy == nil {
+		return agent.Output{"error": "no matching policy for this OS"}, nil
+	}
+	return a.runPolicyDirect(ctx, policy.Data, policy.ID)
+}
+
+func (a *Agent) runPolicyDirect(ctx context.Context, policyData, policyName string) (agent.Output, error) {
+	var policy SCAPolicy
+	if err := yaml.Unmarshal([]byte(policyData), &policy); err != nil {
+		return agent.Output{"error": fmt.Sprintf("parse policy: %v", err)}, nil
+	}
+
+	var results []checkResult
+	passCount, failCount := 0, 0
+
+	for _, check := range policy.Checks {
+		ok, errs := a.evaluateCheck(ctx, check)
+		res := checkResult{
+			ID:          check.ID,
+			Title:       check.Title,
+			Rationale:   check.Rationale,
+			Remediation: check.Remediation,
+			Compliance:  check.ComplianceMap(),
+		}
+		if ok {
+			res.Status = "pass"
+			passCount++
+		} else {
+			res.Status = "fail"
+			res.Errors = errs
+			failCount++
+		}
+		results = append(results, res)
+	}
+
+	policyID := policy.Policy.ID
+	if policyID == "" {
+		policyID = policyName
+	}
+
+	return agent.Output{
+		"policy":   policyID,
+		"results":  results,
+		"pass":     passCount,
+		"fail":     failCount,
+		"total":    len(policy.Checks),
+		"score":    fmt.Sprintf("%.1f%%", float64(passCount)/float64(len(policy.Checks))*100),
+	}, nil
 }
 
 func (a *Agent) listPolicies() (agent.Output, error) {
