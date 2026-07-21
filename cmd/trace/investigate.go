@@ -105,6 +105,7 @@ Examples:
 					params[k] = v
 				}
 			}
+			params = normalizeParams(params)
 
 			pb := app.playbooks.Get(playbookName)
 			if pb == nil {

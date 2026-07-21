@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/yanmyoaung2004/trace/internal/config"
 	"github.com/yanmyoaung2004/trace/internal/db"
@@ -179,6 +180,7 @@ func (a *App) InvestigateInteractive(query, playbookName string) (tui.InvResult,
 	}
 
 	params := extractParamsFromQuery(query)
+	params = normalizeParams(params)
 	results, err := a.executor.Execute(context.Background(), inv, pb, params)
 	if err != nil {
 		return tui.InvResult{}, fmt.Errorf("execute playbook: %w", err)
@@ -198,9 +200,10 @@ func (a *App) InvestigateInteractive(query, playbookName string) (tui.InvResult,
 	return tui.InvResult{ID: inv.ID[:12], Report: report}, nil
 }
 
-var ipRegex    = regexp.MustCompile(`\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b`)
+var ipRegex     = regexp.MustCompile(`\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b`)
 var domainRegex = regexp.MustCompile(`\b([a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}\b`)
-var hashRegex  = regexp.MustCompile(`\b([a-fA-F0-9]{32}|[a-fA-F0-9]{40}|[a-fA-F0-9]{64})\b`)
+var hashRegex   = regexp.MustCompile(`\b([a-fA-F0-9]{32}|[a-fA-F0-9]{40}|[a-fA-F0-9]{64})\b`)
+var cveRegex    = regexp.MustCompile(`(?i)\b(CVE-\d{4}-\d{4,7})\b`)
 
 func extractParamsFromQuery(query string) map[string]any {
 	params := make(map[string]any)
@@ -216,7 +219,28 @@ func extractParamsFromQuery(query string) map[string]any {
 		params["domain"] = m
 		params["indicator"] = m
 	}
+	if m := cveRegex.FindString(query); m != "" {
+		m = strings.ToUpper(m)
+		params["cve_id"] = m
+	}
 	params["query"] = query
+	return params
+}
+
+func normalizeParams(params map[string]any) map[string]any {
+	for k, v := range params {
+		switch k {
+		case "cve":
+			if _, set := params["cve_id"]; !set {
+				params["cve_id"] = v
+			}
+			delete(params, "cve")
+		case "indicator":
+			if _, set := params["indicator"]; !set {
+				params["indicator"] = v
+			}
+		}
+	}
 	return params
 }
 
