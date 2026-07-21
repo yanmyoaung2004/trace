@@ -162,7 +162,99 @@ Expected: new alert within 5-10s.
 
 ---
 
-## 10. Case Management
+## 10. SOAR Pipeline (SIEM → Investigation → Playbook → Case)
+
+The SOAR pipeline: **SIEM Alert → Auto-Investigation → Playbook → Auto-Case → Investigation Linked → Report**
+
+### 10a. Full SOAR chain (SIEM triggered)
+
+```powershell
+# 1. Ensure SIEM is running with: ./trace serve --siem --log-dir "D:\Test"
+# 2. Trigger an alert that auto-creates an investigation
+Add-Content -Path D:\Test\auth.log -Value "<34>Jul 21 18:05:00 myserver sshd[1234]: Failed password for root from 10.0.0.5 port 22 ssh2"
+
+# 3. Wait for SIEM poll + playbook execution
+Start-Sleep 12
+
+# 4. Verify investigation was auto-created
+./trace hist -n 5
+# Expected: new investigation "sshd: authentication failed." → playbook "ip-reputation"
+
+# 5. Verify investigation completed
+./trace st <investigation-id>
+# Expected: Status: completed
+
+# 6. Verify report has agent results (AbuseIPDB, VT, etc.)
+./trace report <investigation-id>
+# Expected: Agent Results section present
+
+# 7. Verify case auto-created from alert (severity >= 4)
+./trace case list --status open
+# Expected: case titled "SIEM: sshd: authentication failed."
+
+# 8. Verify investigation linked to case
+./trace case export <case-id>
+# Expected: events show investigation linking, IOCs extracted
+```
+
+### 10b. Multi-event correlation SOAR
+
+```powershell
+# Trigger MULTIPLE_FAILED_LOGINS (threshold: 5 events in 60s)
+1..5 | ForEach-Object {
+  Add-Content -Path D:\Test\auth.log -Value "<34>Jul 21 18:06:0$_ myserver sshd[1234]: Failed password for root from 10.0.0.5 port 22 ssh2"
+  Start-Sleep 1
+}
+Start-Sleep 15
+
+./trace hist -n 5
+# Expected: MULTIPLE_FAILED_LOGINS investigation with ip-reputation playbook
+```
+
+### 10c. Manual SOAR (CLI flow)
+
+```powershell
+# Step 1: Investigate
+./trace investigate --playbook ip-reputation --param ip=10.0.0.5
+# Expected: investigation completes with report
+
+# Step 2: Create case from findings
+./trace case create --title "Investigation: IP 10.0.0.5" --severity high
+# Expected: case created
+
+# Step 3: Add IOC to case
+./trace case ioc <case-id> --type ip --value 10.0.0.5
+
+# Step 4: Attach evidence
+./trace case evidence <case-id> --file C:\Windows\System32\notepad.exe
+
+# Step 5: Close case
+./trace case close <case-id> --resolution "contained"
+# Expected: status → resolved, resolution saved
+```
+
+### 10d. SOAR report verification
+
+```powershell
+./trace report <investigation-id>
+# Expected structure:
+#   Findings - detection results from agents
+#   Indicators - extracted IOCs (IPs, hashes, domains)
+#   Agent Results - each step in the playbook chain
+#   Summary - confidence score and verdict
+```
+
+### 10e. SOAR in TUI
+
+```powershell
+./trace
+# Tab to Investigations → Enter on auto-created inv → see details
+# Tab to Cases → Enter on auto-created case → see timeline + IOCs
+```
+
+---
+
+## 11. Case Management
 
 ```powershell
 # Create a case
@@ -199,12 +291,12 @@ Expected: new alert within 5-10s.
 
 # Verify
 ./trace case list --status resolved
-# Expected: case shows as closed
+# Expected: case shows as resolved
 ```
 
 ---
 
-## 11. Evidence Attachments
+## 12. Evidence Attachments
 
 ```powershell
 ./trace case evidence <case-id> --file C:\Windows\System32\notepad.exe --name notepad-sample.exe
@@ -213,7 +305,7 @@ Expected: new alert within 5-10s.
 
 ---
 
-## 12. Automated Threat Hunting
+## 13. Automated Threat Hunting
 
 ```powershell
 # List default hunts
@@ -238,7 +330,7 @@ Expected: new alert within 5-10s.
 
 ---
 
-## 13. EDR Remote Actions
+## 14. EDR Remote Actions
 
 ```powershell
 # These require EDR credentials in config. Test with --help only:
@@ -251,7 +343,7 @@ Without EDR keys: expect error about missing config. With keys: expect API call 
 
 ---
 
-## 14. Kubernetes Security
+## 15. Kubernetes Security
 
 ```powershell
 # Ingest sample K8s audit log
@@ -262,7 +354,7 @@ With SIEM watching `D:\Test`: expect K8s alerts within 15s.
 
 ---
 
-## 15. Central Server Mode
+## 16. Central Server Mode
 
 ```powershell
 # Terminal 1: Start server
@@ -278,7 +370,7 @@ With SIEM watching `D:\Test`: expect K8s alerts within 15s.
 
 ---
 
-## 16. Approval (HITL)
+## 17. Approval (HITL)
 
 ```powershell
 ./trace approval pending     # expect: empty or pending list
@@ -287,7 +379,7 @@ With SIEM watching `D:\Test`: expect K8s alerts within 15s.
 
 ---
 
-## 17. Update & Plugin
+## 18. Update & Plugin
 
 ```powershell
 ./trace update --help
@@ -296,7 +388,7 @@ With SIEM watching `D:\Test`: expect K8s alerts within 15s.
 
 ---
 
-## 18. Init Wizard
+## 19. Init Wizard
 
 ```powershell
 # Run non-interactively to see prompts:
@@ -308,23 +400,24 @@ echo "" | ./trace init
 
 ## Summary Table
 
-| #   | Feature               | Status | Notes |
-| --- | --------------------- | ------ | ----- |
-| 1   | Version & Help        |        |       |
-| 2   | Interactive TUI       |        |       |
-| 3   | Interactive Prompts   |        |       |
-| 4   | Manual Investigations |        |       |
-| 5   | Prefix ID Lookup      |        |       |
-| 6   | History & Status      |        |       |
-| 7   | Shell Completions     |        |       |
-| 8   | Aliases               |        |       |
-| 9   | SIEM Engine           |        |       |
-| 10  | Case Management       |        |       |
-| 11  | Evidence Attachments  |        |       |
-| 12  | Threat Hunting        |        |       |
-| 13  | EDR Remote Actions    |        |       |
-| 14  | Kubernetes Security   |        |       |
-| 15  | Central Server        |        |       |
-| 16  | HITL Approval         |        |       |
-| 17  | Update & Plugin       |        |       |
-| 18  | Init Wizard           |        |       |
+| #   | Feature                  | Status | Notes |
+| --- | ------------------------ | ------ | ----- |
+| 1   | Version & Help           |        |       |
+| 2   | Interactive TUI          |        |       |
+| 3   | Interactive Prompts      |        |       |
+| 4   | Manual Investigations    |        |       |
+| 5   | Prefix ID Lookup         |        |       |
+| 6   | History & Status         |        |       |
+| 7   | Shell Completions        |        |       |
+| 8   | Aliases                  |        |       |
+| 9   | SIEM Engine              |        |       |
+| 10  | SOAR Pipeline            |        |       |
+| 11  | Case Management          |        |       |
+| 12  | Evidence Attachments     |        |       |
+| 13  | Threat Hunting           |        |       |
+| 14  | EDR Remote Actions       |        |       |
+| 15  | Kubernetes Security      |        |       |
+| 16  | Central Server           |        |       |
+| 17  | HITL Approval            |        |       |
+| 18  | Update & Plugin          |        |       |
+| 19  | Init Wizard              |        |       |
