@@ -139,6 +139,14 @@ Examples:
 					fmt.Println()
 				}
 			}
+
+			evidences, _ := app.caseManager.ListEvidence(context.Background(), c.ID)
+			if len(evidences) > 0 {
+				fmt.Println("\nEvidence:")
+				for _, e := range evidences {
+					fmt.Printf("  %s (%s, %d bytes)\n", e.FileName, e.MimeType, e.FileSize)
+				}
+			}
 			return nil
 		},
 	}
@@ -223,11 +231,13 @@ Examples:
 			}
 			events, _ := app.caseManager.GetEvents(context.Background(), c.ID)
 			iocs, _ := app.caseManager.GetIOCs(context.Background(), c.ID)
+			evidence, _ := app.caseManager.ListEvidence(context.Background(), c.ID)
 
 			output := map[string]any{
-				"case":   c,
-				"events": events,
-				"iocs":   iocs,
+				"case":     c,
+				"events":   events,
+				"iocs":     iocs,
+				"evidence": evidence,
 			}
 			data, _ := json.MarshalIndent(output, "", "  ")
 			fmt.Println(string(data))
