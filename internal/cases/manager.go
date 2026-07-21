@@ -81,12 +81,15 @@ func (m *Manager) Create(ctx context.Context, title, description, severity strin
 
 func (m *Manager) Get(ctx context.Context, id string) (*Case, error) {
 	c := &Case{}
-	var tagsJSON, closed sql.NullString
+	var tagsJSON, closed, assignee sql.NullString
 	err := m.db.QueryRowContext(ctx,
 		`SELECT id, title, description, status, severity, assignee, tags, resolution, created_at, updated_at, closed_at FROM cases WHERE id = ?`, id).
-		Scan(&c.ID, &c.Title, &c.Description, &c.Status, &c.Severity, &c.Assignee, &tagsJSON, &c.Resolution, &c.CreatedAt, &c.UpdatedAt, &closed)
+		Scan(&c.ID, &c.Title, &c.Description, &c.Status, &c.Severity, &assignee, &tagsJSON, &c.Resolution, &c.CreatedAt, &c.UpdatedAt, &closed)
 	if err != nil {
 		return nil, fmt.Errorf("get case: %w", err)
+	}
+	if assignee.Valid {
+		c.Assignee = assignee.String
 	}
 	if tagsJSON.Valid {
 		json.Unmarshal([]byte(tagsJSON.String), &c.Tags)
