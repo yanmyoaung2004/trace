@@ -155,6 +155,22 @@ func (d *DB) migrate() error {
 			source TEXT NOT NULL DEFAULT 'manual',
 			created_at TEXT NOT NULL DEFAULT (datetime('now'))
 		)`,
+		`CREATE TABLE IF NOT EXISTS case_evidence (
+			id TEXT PRIMARY KEY,
+			case_id TEXT REFERENCES cases(id),
+			file_name TEXT NOT NULL,
+			file_path TEXT NOT NULL,
+			mime_type TEXT,
+			file_size INTEGER DEFAULT 0,
+			source TEXT NOT NULL DEFAULT 'manual',
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		)`,
+		`CREATE TABLE IF NOT EXISTS case_investigations (
+			case_id TEXT REFERENCES cases(id),
+			investigation_id TEXT NOT NULL,
+			linked_at TEXT NOT NULL DEFAULT (datetime('now')),
+			PRIMARY KEY (case_id, investigation_id)
+		)`,
 		`CREATE INDEX IF NOT EXISTS idx_cases_status ON cases(status)`,
 		`CREATE INDEX IF NOT EXISTS idx_cases_severity ON cases(severity)`,
 		`CREATE INDEX IF NOT EXISTS idx_cache_ttl ON cache(ttl)`,

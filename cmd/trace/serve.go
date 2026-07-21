@@ -55,19 +55,21 @@ Examples:
 				engine.OnAlert(func(alert *siem.Alert) {
 					log.Printf("[ALERT] %s (severity: %d, rule: %s)", alert.Title, alert.Severity, alert.RuleID)
 
+					var alertCaseID string
 					if alert.Severity >= 4 {
 						caseTitle := fmt.Sprintf("SIEM: %s", alert.Title)
 						sev := "medium"
 						if alert.Severity >= 7 { sev = "high" }
 						if alert.Severity >= 10 { sev = "critical" }
 						if c, err := app.caseManager.Create(context.Background(), caseTitle, alert.RuleID, sev); err == nil {
+							alertCaseID = c.ID
 							app.caseManager.AddEvent(context.Background(), c.ID, "alert", fmt.Sprintf("SIEM alert: %s (severity: %d)", alert.Title, alert.Severity), "siem")
 							app.caseManager.AddIOC(context.Background(), c.ID, "ip", fmt.Sprintf("%v", alert.Event.Fields["client_ip"]), "")
 						}
 					}
 
 					for _, action := range alert.Actions {
-						go func(a siem.RuleAction) {
+						go func(a siem.RuleAction, caseID string) {
 							defer func() {
 								if r := recover(); r != nil {
 									log.Printf("[ALERT] panic executing playbook %s: %v", a.Playbook, r)
@@ -111,7 +113,17 @@ Examples:
 							if report, ok := reportOutput["report"].(string); ok && report != "" {
 								log.Printf("[ALERT] investigation %s completed — playbook: %s", inv.ID[:8], a.Playbook)
 							}
-						}(action)
+
+							if caseID != "" {
+								cf := 0.0
+								if inv.Confidence != nil {
+									cf = *inv.Confidence
+								}
+								app.caseManager.AddEvent(context.Background(), caseID, "investigation",
+									fmt.Sprintf("Investigation %s completed via playbook %s (confidence: %.0f%%)", inv.ID[:8], a.Playbook, cf*100), "siem")
+								app.caseManager.LinkInvestigation(context.Background(), caseID, inv.ID)
+							}
+						}(action, alertCaseID)
 					}
 				})
 

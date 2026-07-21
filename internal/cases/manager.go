@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"os"
 	"strings"
 	"time"
 
@@ -387,6 +388,79 @@ func (m *Manager) ExportPDF(ctx context.Context, id string) ([]byte, error) {
 		return nil, fmt.Errorf("pdf output: %w", err)
 	}
 	return []byte(buf.String()), nil
+}
+
+func (m *Manager) AddEvidence(ctx context.Context, caseID, fileName, filePath, mimeType, source string) error {
+	stat, err := os.Stat(filePath)
+	if err != nil {
+		return fmt.Errorf("evidence file: %w", err)
+	}
+	id := uuid.New().String()
+	_, err = m.db.ExecContext(ctx,
+		`INSERT INTO case_evidence (id, case_id, file_name, file_path, mime_type, file_size, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, caseID, fileName, filePath, mimeType, stat.Size(), source, time.Now().UTC().Format(time.RFC3339))
+	return err
+}
+
+func (m *Manager) ListEvidence(ctx context.Context, caseID string) ([]Evidence, error) {
+	rows, err := m.db.QueryContext(ctx,
+		`SELECT id, file_name, file_path, mime_type, file_size, source, created_at FROM case_evidence WHERE case_id = ? ORDER BY created_at DESC`, caseID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var evs []Evidence
+	for rows.Next() {
+		var e Evidence
+		if err := rows.Scan(&e.ID, &e.FileName, &e.FilePath, &e.MimeType, &e.FileSize, &e.Source, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		evs = append(evs, e)
+	}
+	return evs, rows.Err()
+}
+
+func (m *Manager) LinkInvestigation(ctx context.Context, caseID, investigationID string) error {
+	_, err := m.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO case_investigations (case_id, investigation_id, linked_at) VALUES (?, ?, ?)`,
+		caseID, investigationID, time.Now().UTC().Format(time.RFC3339))
+	if err != nil {
+		return fmt.Errorf("link investigation: %w", err)
+	}
+	_, err = m.db.ExecContext(ctx,
+		`UPDATE cases SET updated_at = ? WHERE id = ?`,
+		time.Now().UTC().Format(time.RFC3339), caseID)
+	return err
+}
+
+func (m *Manager) ListLinkedInvestigations(ctx context.Context, caseID string) ([]string, error) {
+	rows, err := m.db.QueryContext(ctx,
+		`SELECT investigation_id FROM case_investigations WHERE case_id = ? ORDER BY linked_at DESC`, caseID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+type Evidence struct {
+	ID        string `json:"id"`
+	FileName  string `json:"file_name"`
+	FilePath  string `json:"file_path"`
+	MimeType  string `json:"mime_type"`
+	FileSize  int64  `json:"file_size"`
+	Source    string `json:"source"`
+	CreatedAt string `json:"created_at"`
 }
 
 func init() {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
@@ -259,7 +260,34 @@ Examples:
 		return []string{"low", "medium", "high", "critical"}, cobra.ShellCompDirectiveNoFileComp
 	})
 
-	cmd.AddCommand(createCmd, listCmd, viewCmd, noteCmd, iocCmd, assignCmd, closeCmd, exportCmd, exportPdfCmd)
+	evidenceCmd := &cobra.Command{
+		Use:   "evidence [id]",
+		Short: "Attach evidence to a case",
+		Args:  cobra.ExactArgs(1),
+		ValidArgsFunction: caseIDCompletionFunc,
+		RunE: func(cmdCobra *cobra.Command, args []string) error {
+			file, _ := cmdCobra.Flags().GetString("file")
+			name, _ := cmdCobra.Flags().GetString("name")
+			mime, _ := cmdCobra.Flags().GetString("mime")
+			if file == "" {
+				return fmt.Errorf("--file is required")
+			}
+			if name == "" {
+				name = filepath.Base(file)
+			}
+			err := app.caseManager.AddEvidence(context.Background(), args[0], name, file, mime, "cli")
+			if err != nil {
+				return fmt.Errorf("add evidence: %w", err)
+			}
+			fmt.Printf("Evidence attached: %s\n", name)
+			return nil
+		},
+	}
+	evidenceCmd.Flags().String("file", "", "Path to evidence file")
+	evidenceCmd.Flags().String("name", "", "Display name (defaults to filename)")
+	evidenceCmd.Flags().String("mime", "application/octet-stream", "MIME type")
+
+	cmd.AddCommand(createCmd, listCmd, viewCmd, noteCmd, iocCmd, assignCmd, closeCmd, exportCmd, exportPdfCmd, evidenceCmd)
 	return cmd
 }
 
