@@ -283,7 +283,9 @@ trace completion powershell | Out-String | Invoke-Expression
 
 ## `compliance`
 
-Run compliance scans and generate audit-ready reports (GDPR, HIPAA, PCI DSS, etc.).
+Run compliance scans and generate audit-ready reports (GDPR, HIPAA, PCI DSS, NIST, etc.).
+All 464 detection rules are mapped to compliance frameworks via MITRE ATT&CK — SIEM alerts
+automatically contribute to compliance scores.
 
 ```
 trace compliance <subcommand>
@@ -292,21 +294,28 @@ trace compliance <subcommand>
 Subcommands:
 | Command | Description |
 |---|---|
-| `report --framework` | Generate compliance report for a framework |
-| `assess --framework --control --status` | Manually assess a control (pass/fail/na) |
-| `evidence --framework --control --description` | Attach evidence to a control |
-| `frameworks` | List available compliance frameworks |
+| `report --framework` | Generate compliance report (text/HTML/MD/JSON) |
+| `assess --framework --control --status` | Manually assess a control (pass/fail/na) with justification |
+| `evidence --framework --control --description` | Attach evidence file or description to a control |
+| `frameworks` | List all 8 supported frameworks |
 
-Supported frameworks: `pci_dss_v4.0`, `pci_dss_v3.2.1`, `hipaa`, `gdpr`, `nist_sp_800-53`, `iso_27001-2013`, `soc_2`, `cis_csc_v8`
+Supported frameworks:
+`pci_dss_v4.0`, `pci_dss_v3.2.1`, `hipaa`, `gdpr`, `nist_sp_800-53`, `iso_27001-2013`, `soc_2`, `cis_csc_v8`
+
+Compliance data sources:
+- **SCA scans** — CIS benchmark checks mapped to frameworks
+- **Detection rules** — 464 rules mapped via MITRE ATT&CK to PCI DSS/HIPAA/GDPR/NIST/ISO 27001/SOC 2
+- **Manual assessments** — `assess` command for non-automated controls
 
 Examples:
 
 ```powershell
 trace compliance frameworks
 trace compliance report --framework pci_dss_v4.0
-trace compliance assess --framework hipaa --control 164.312(a)(1) --status pass --notes "Policy enforced"
-trace compliance evidence --framework gdpr --control Art.32 --description "Security measures in place"
-trace compliance report --framework gdpr -o gdpr-report.html
+trace compliance report --framework hipaa -o hipaa-report.html
+trace compliance assess --framework gdpr --control Art.32 --status pass --notes "AES-256 encryption in use"
+trace compliance evidence --framework nist_sp_800-53 --control AC-17 --description "VPN config" --file vpn-policy.pdf
+trace compliance report --framework gdpr -o gdpr-report.md
 ```
 
 ---

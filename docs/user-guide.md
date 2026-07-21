@@ -573,6 +573,14 @@ Dashboard → Correlations tab shows all cross-node IOCs.
 Trace supports compliance reporting for 8 frameworks: PCI DSS v4.0, HIPAA, GDPR, NIST SP 800-53,
 ISO 27001:2013, SOC 2, CIS Critical Security Controls v8, and PCI DSS v3.2.1.
 
+### How it works
+
+Trace's compliance aggregates from three sources:
+
+1. **Detection rules** — All 464 SIEM rules map to frameworks via MITRE ATT&CK. SSH brute force (T1110) automatically links to PCI DSS req 6.2, HIPAA 164.312(a)(1), GDPR Art.32. No manual mapping needed.
+2. **SCA scans** — CIS benchmarks run against your system. Each check maps to `pci_dss_v4.0`, `hipaa`, `gdpr`, etc. The `--force` flag bypasses strict requirements.
+3. **Manual assessments** — Use `trace compliance assess` for controls that can't be automated (policies, procedures).
+
 ### List frameworks
 
 ```powershell
