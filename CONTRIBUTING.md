@@ -5,7 +5,7 @@ Thanks for your interest in contributing to Trace.
 ## Getting Started
 
 1. Fork the repository
-2. Clone your fork: `git clone https://github.com/<your-username>/trace.git`
+2. Clone your fork: `git clone https://github.com/yanmyoaung2004/trace.git`
 3. Create a branch: `git checkout -b feature/your-feature`
 4. Make changes
 5. Run tests: `go test ./... -short -count=1`

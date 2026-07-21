@@ -117,35 +117,35 @@ Run `trace` with no arguments to launch the full-screen terminal UI:
 └─ Tab: next screen  ↑↓: Navigate  Enter: Select  q: Quit ──────────────┘
 ```
 
-| Key | Action |
-|-----|--------|
-| `Tab` / `Shift+Tab` | Switch between 5 screens |
-| `↑` `↓` / `j` `k` | Navigate lists |
-| `Enter` | View details / drill in |
-| `Esc` | Go back |
-| `1`-`5` | Filter investigations by status |
-| `r` | Refresh data |
-| `q` | Quit |
+| Key                 | Action                          |
+| ------------------- | ------------------------------- |
+| `Tab` / `Shift+Tab` | Switch between 5 screens        |
+| `↑` `↓` / `j` `k`   | Navigate lists                  |
+| `Enter`             | View details / drill in         |
+| `Esc`               | Go back                         |
+| `1`-`5`             | Filter investigations by status |
+| `r`                 | Refresh data                    |
+| `q`                 | Quit                            |
 
 Five screens:
 
-| Screen | Shows |
-|--------|-------|
-| **Dashboard** | Stats cards (total investigations, open cases, active hunts) + recent investigation feed |
-| **Investigations** | Filterable table (by status), navigate with arrows, Enter for full detail view |
-| **Cases** | Case list with status/severity, drill into case details |
-| **SIEM** | Recent SIEM alert feed |
-| **Config** | Read-only configuration viewer |
+| Screen             | Shows                                                                                    |
+| ------------------ | ---------------------------------------------------------------------------------------- |
+| **Dashboard**      | Stats cards (total investigations, open cases, active hunts) + recent investigation feed |
+| **Investigations** | Filterable table (by status), navigate with arrows, Enter for full detail view           |
+| **Cases**          | Case list with status/severity, drill into case details                                  |
+| **SIEM**           | Recent SIEM alert feed                                                                   |
+| **Config**         | Read-only configuration viewer                                                           |
 
 ### Interactive Prompts
 
 These commands show interactive menus when run without arguments:
 
-| Command | Menu Options |
-|---------|-------------|
-| `trace investigate` | Prompts for query + playbook selection, then runs the investigation |
-| `trace case` | List / Create / View. Create walks through title, description, severity |
-| `trace hunt` | List / Run / Create. Create walks through name, schedule, playbook |
+| Command             | Menu Options                                                            |
+| ------------------- | ----------------------------------------------------------------------- |
+| `trace investigate` | Prompts for query + playbook selection, then runs the investigation     |
+| `trace case`        | List / Create / View. Create walks through title, description, severity |
+| `trace hunt`        | List / Run / Create. Create walks through name, schedule, playbook      |
 
 Non-TTY input (piped commands, scripts) automatically falls back to standard CLI behavior.
 
@@ -166,26 +166,26 @@ trace completion zsh | source
 
 After setup, `Tab` completes:
 
-| Command | Completes |
-|---------|-----------|
-| `trace investigate --playbook <TAB>` | Available playbook names |
-| `trace case view <TAB>` | Case IDs |
-| `trace case note <TAB>` | Case IDs |
-| `trace case create --severity <TAB>` | low / medium / high / critical |
-| `trace case list --status <TAB>` | open / investigating / resolved / closed |
-| `trace hunt run <TAB>` | Hunt names |
-| `trace hunt pause <TAB>` | Hunt names |
-| `trace hunt list --status <TAB>` | active / paused |
+| Command                              | Completes                                |
+| ------------------------------------ | ---------------------------------------- |
+| `trace investigate --playbook <TAB>` | Available playbook names                 |
+| `trace case view <TAB>`              | Case IDs                                 |
+| `trace case note <TAB>`              | Case IDs                                 |
+| `trace case create --severity <TAB>` | low / medium / high / critical           |
+| `trace case list --status <TAB>`     | open / investigating / resolved / closed |
+| `trace hunt run <TAB>`               | Hunt names                               |
+| `trace hunt pause <TAB>`             | Hunt names                               |
+| `trace hunt list --status <TAB>`     | active / paused                          |
 
 ### Aliases
 
 Short aliases for common commands:
 
-| Alias | Command |
-|-------|---------|
-| `trace inv` | `trace investigate` |
-| `trace st` | `trace status` |
-| `trace hist` | `trace history` |
+| Alias        | Command             |
+| ------------ | ------------------- |
+| `trace inv`  | `trace investigate` |
+| `trace st`   | `trace status`      |
+| `trace hist` | `trace history`     |
 
 ---
 
@@ -334,7 +334,7 @@ Key features:
 
 ```powershell
 # Watch directories + listen on syslog
-trace serve --siem --log-dir C:\Logs --syslog-addr :514
+trace serve --siem --log-dir C:/Logs --syslog-addr :514
 ```
 
 ### Built-in detection rules (16 total)
@@ -387,8 +387,8 @@ The platform ships with known malware hashes and indicators:
 
 ### External feeds
 
-| Feed           | Free tier | API key              | Command                |
-| -------------- | --------- | -------------------- | ---------------------- |
+| Feed           | Free tier | API key               | Command                |
+| -------------- | --------- | --------------------- | ---------------------- |
 | VirusTotal     | 500/day   | `TRACE_VT_API_KEY`    | Auto-used in playbooks |
 | AbuseIPDB      | 1000/day  | `TRACE_ABUSEIPDB_KEY` | `ip-enrich` playbook   |
 | AlienVault OTX | Unlimited | `TRACE_OTX_API_KEY`   | `ip-enrich` playbook   |
@@ -469,6 +469,7 @@ trace investigate --playbook edr-isolate --param hostname=DESKTOP-123
 ```
 
 Disconnects the host from the network. Supports:
+
 - **CrowdStrike**: `contain` action via Falcon API
 - **SentinelOne**: `disconnect` action
 - **MDE**: `isolate` action (Full isolation)
@@ -572,7 +573,7 @@ Dashboard → Correlations tab shows all cross-node IOCs.
 
 | Symptom                                      | Likely cause               | Fix                                                |
 | -------------------------------------------- | -------------------------- | -------------------------------------------------- |
-| `VT API key not configured`                  | No VirusTotal key          | Set `$env:TRACE_VT_API_KEY`                         |
+| `VT API key not configured`                  | No VirusTotal key          | Set `$env:TRACE_VT_API_KEY`                        |
 | `path is required`                           | Missing parameter          | Use `--param path=...`                             |
 | `playbook not found`                         | Typo in name               | Run .trace plugin list` to see available playbooks |
 | `connection refused` on server sync          | Server not running         | Start .trace server` first                         |
