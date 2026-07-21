@@ -100,6 +100,12 @@ Examples:
 				}
 			}
 
+			for k, v := range extractParamsFromQuery(query) {
+				if _, set := params[k]; !set {
+					params[k] = v
+				}
+			}
+
 			pb := app.playbooks.Get(playbookName)
 			if pb == nil {
 				return fmt.Errorf("playbook %q not found", playbookName)
