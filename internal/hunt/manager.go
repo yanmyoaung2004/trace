@@ -267,6 +267,15 @@ func BuildDefaultHunts() []struct {
 			Scope:          "self",
 			NotifySeverity: 5,
 		},
+		{
+			Name:           "k8s-audit",
+			Description:    "Hourly K8s RBAC audit — detect privileged pods, secret access, clusterrole changes",
+			Schedule:       "1h",
+			Playbook:       "log-analysis",
+			Params:         nil,
+			Scope:          "self",
+			NotifySeverity: 4,
+		},
 	}
 }
 

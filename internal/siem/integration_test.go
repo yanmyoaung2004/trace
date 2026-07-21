@@ -226,6 +226,73 @@ func TestDecoderParsing(t *testing.T) {
 	}
 }
 
+func TestK8sPrivilegedPodRule(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	data, err := os.ReadFile("testdata/k8s-privileged-pod.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	e := siem.New(siem.SIEMConfig{})
+	alertCh := make(chan *siem.Alert, 10)
+	e.OnAlert(func(a *siem.Alert) { alertCh <- a })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Start(ctx)
+	time.Sleep(100 * time.Millisecond)
+
+	e.Ingest(data, "k8s-audit")
+
+	select {
+	case alert := <-alertCh:
+		t.Logf("K8s alert: %s (sev:%d, rule:%s, title:%s)", alert.RuleID, alert.Severity, alert.RuleID, alert.Title)
+		if alert.Severity < 4 {
+			t.Fatalf("expected severity >= 4 for privileged pod, got %d", alert.Severity)
+		}
+		if alert.MITRE == "" {
+			t.Log("K8s rule has no MITRE mapping")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("expected alert from K8s privileged pod, got none")
+	}
+}
+
+func TestK8sSecretAccessRule(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	data, err := os.ReadFile("testdata/k8s-secret-access.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	e := siem.New(siem.SIEMConfig{})
+	alertCh := make(chan *siem.Alert, 10)
+	e.OnAlert(func(a *siem.Alert) { alertCh <- a })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Start(ctx)
+	time.Sleep(100 * time.Millisecond)
+
+	e.Ingest(data, "k8s-audit")
+
+	select {
+	case alert := <-alertCh:
+		t.Logf("K8s alert: %s (sev:%d, rule:%s, title:%s)", alert.RuleID, alert.Severity, alert.RuleID, alert.Title)
+		if alert.Severity < 3 {
+			t.Fatalf("expected severity >= 3 for secret access, got %d", alert.Severity)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("expected alert from K8s secret access, got none")
+	}
+}
+
 func init() {
 	_ = os.Getenv
 	_ = context.TODO
