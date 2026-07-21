@@ -6,6 +6,7 @@ import (
 	"os"
 	"text/tabwriter"
 
+	"github.com/yanmyoaung2004/trace/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -13,10 +14,46 @@ func newStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status [investigation-id]",
 		Short: "View investigation status",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
-			inv, err := app.invManager.Get(ctx, args[0])
+			id := ""
+			if len(args) == 1 {
+				id = args[0]
+			} else if tui.IsInteractive() {
+				invs, err := app.ListRecentInvestigations(20)
+				if err != nil {
+					return fmt.Errorf("list investigations: %w", err)
+				}
+				if len(invs) == 0 {
+					return fmt.Errorf("no investigations found")
+				}
+				opts := make([]string, len(invs))
+				for i, inv := range invs {
+				cf := ""
+				if inv.Confidence > 0 {
+					cf = fmt.Sprintf(" (%.0f%%)", inv.Confidence*100)
+				}
+				label := fmt.Sprintf("%s — %s [%s]%s", inv.ID[:8], inv.Intent, inv.Status, cf)
+					opts[i] = label
+				}
+				p := tui.NewPrompter()
+				selected, err := p.Select("Select an investigation", opts)
+				if err != nil {
+					return err
+				}
+				for i, opt := range opts {
+					if opt == selected {
+						id = invs[i].ID
+						break
+					}
+				}
+			}
+			if id == "" {
+				return fmt.Errorf("investigation ID is required")
+			}
+
+			inv, err := app.invManager.Get(ctx, id)
 			if err != nil {
 				return fmt.Errorf("get investigation: %w", err)
 			}
