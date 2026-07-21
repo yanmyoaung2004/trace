@@ -81,18 +81,51 @@ func (m *Manager) Create(ctx context.Context, title, description, severity strin
 
 func (m *Manager) Get(ctx context.Context, id string) (*Case, error) {
 	c := &Case{}
-	var tagsJSON, closed, assignee sql.NullString
+	var tagsJSON, closed, assignee, resolution, description sql.NullString
 	err := m.db.QueryRowContext(ctx,
 		`SELECT id, title, description, status, severity, assignee, tags, resolution, created_at, updated_at, closed_at FROM cases WHERE id = ?`, id).
-		Scan(&c.ID, &c.Title, &c.Description, &c.Status, &c.Severity, &assignee, &tagsJSON, &c.Resolution, &c.CreatedAt, &c.UpdatedAt, &closed)
+		Scan(&c.ID, &c.Title, &description, &c.Status, &c.Severity, &assignee, &tagsJSON, &resolution, &c.CreatedAt, &c.UpdatedAt, &closed)
 	if err != nil {
 		return nil, fmt.Errorf("get case: %w", err)
 	}
 	if assignee.Valid {
 		c.Assignee = assignee.String
 	}
+	if description.Valid {
+		c.Description = description.String
+	}
 	if tagsJSON.Valid {
 		json.Unmarshal([]byte(tagsJSON.String), &c.Tags)
+	}
+	if resolution.Valid {
+		c.Resolution = resolution.String
+	}
+	if closed.Valid {
+		c.ClosedAt = &closed.String
+	}
+	return c, nil
+}
+
+func (m *Manager) GetByPrefix(ctx context.Context, prefix string) (*Case, error) {
+	c := &Case{}
+	var tagsJSON, closed, assignee, resolution, description sql.NullString
+	err := m.db.QueryRowContext(ctx,
+		`SELECT id, title, description, status, severity, assignee, tags, resolution, created_at, updated_at, closed_at FROM cases WHERE id LIKE ? ORDER BY created_at DESC LIMIT 1`, prefix+"%").
+		Scan(&c.ID, &c.Title, &description, &c.Status, &c.Severity, &assignee, &tagsJSON, &resolution, &c.CreatedAt, &c.UpdatedAt, &closed)
+	if err != nil {
+		return nil, fmt.Errorf("get by prefix: %w", err)
+	}
+	if assignee.Valid {
+		c.Assignee = assignee.String
+	}
+	if description.Valid {
+		c.Description = description.String
+	}
+	if tagsJSON.Valid {
+		json.Unmarshal([]byte(tagsJSON.String), &c.Tags)
+	}
+	if resolution.Valid {
+		c.Resolution = resolution.String
 	}
 	if closed.Valid {
 		c.ClosedAt = &closed.String

@@ -95,22 +95,26 @@ Examples:
 		Args:  cobra.ExactArgs(1),
 		ValidArgsFunction: caseIDCompletionFunc,
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
-			c, err := app.caseManager.Get(context.Background(), args[0])
+			ctx := context.Background()
+			c, err := app.caseManager.Get(ctx, args[0])
 			if err != nil {
-				return err
+				c, err = app.caseManager.GetByPrefix(ctx, args[0])
+				if err != nil {
+					return fmt.Errorf("case not found: %s", args[0])
+				}
 			}
 			fmt.Printf("Case: %s\n", c.ID)
 			fmt.Printf("Title:      %s\n", c.Title)
 			fmt.Printf("Status:     %s\n", c.Status)
 			fmt.Printf("Severity:   %s\n", c.Severity)
 			fmt.Printf("Assignee:   %s\n", c.Assignee)
-			fmt.Printf("Created:    %s\n", c.CreatedAt[:19])
-			fmt.Printf("Updated:    %s\n", c.UpdatedAt[:19])
+			fmt.Printf("Created:    %s\n", c.CreatedAt)
+			fmt.Printf("Updated:    %s\n", c.UpdatedAt)
 			if c.Description != "" {
 				fmt.Printf("Description: %s\n", c.Description)
 			}
 			if c.ClosedAt != nil {
-				fmt.Printf("Closed:     %s\n", (*c.ClosedAt)[:19])
+				fmt.Printf("Closed:     %s\n", *c.ClosedAt)
 			}
 			if c.Resolution != "" {
 				fmt.Printf("Resolution: %s\n", c.Resolution)
@@ -210,7 +214,10 @@ Examples:
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
 			c, err := app.caseManager.Get(context.Background(), args[0])
 			if err != nil {
-				return err
+				c, err = app.caseManager.GetByPrefix(context.Background(), args[0])
+				if err != nil {
+					return fmt.Errorf("case not found: %s", args[0])
+				}
 			}
 			events, _ := app.caseManager.GetEvents(context.Background(), c.ID)
 			iocs, _ := app.caseManager.GetIOCs(context.Background(), c.ID)
@@ -235,7 +242,14 @@ Examples:
 			output, _ := cmdCobra.Flags().GetString("output")
 			pdfData, err := app.caseManager.ExportPDF(context.Background(), args[0])
 			if err != nil {
-				return err
+				c, cerr := app.caseManager.GetByPrefix(context.Background(), args[0])
+				if cerr != nil {
+					return err
+				}
+				pdfData, err = app.caseManager.ExportPDF(context.Background(), c.ID)
+				if err != nil {
+					return err
+				}
 			}
 			if output != "" {
 				if err := os.WriteFile(output, pdfData, 0644); err != nil {
