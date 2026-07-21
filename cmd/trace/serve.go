@@ -61,7 +61,10 @@ Examples:
 						sev := "medium"
 						if alert.Severity >= 7 { sev = "high" }
 						if alert.Severity >= 10 { sev = "critical" }
-						if c, err := app.caseManager.Create(context.Background(), caseTitle, alert.RuleID, sev); err == nil {
+						c, err := app.caseManager.Create(context.Background(), caseTitle, alert.RuleID, sev)
+						if err != nil {
+							log.Printf("[ALERT] create case: %v", err)
+						} else {
 							alertCaseID = c.ID
 							app.caseManager.AddEvent(context.Background(), c.ID, "alert", fmt.Sprintf("SIEM alert: %s (severity: %d)", alert.Title, alert.Severity), "siem")
 							app.caseManager.AddIOC(context.Background(), c.ID, "ip", fmt.Sprintf("%v", alert.Event.Fields["client_ip"]), "")

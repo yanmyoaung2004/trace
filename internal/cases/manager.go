@@ -72,7 +72,10 @@ func (m *Manager) Create(ctx context.Context, title, description, severity strin
 		return nil, fmt.Errorf("create case: %w", err)
 	}
 
-	c, _ := m.Get(ctx, id)
+	c, err := m.Get(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("get created case: %w", err)
+	}
 	return c, nil
 }
 
