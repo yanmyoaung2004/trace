@@ -88,12 +88,13 @@ func (a *Agent) scanSystem(ctx context.Context) (agent.Output, error) {
 }
 
 type checkResult struct {
-	ID          int               `json:"id"`
-	Title       string            `json:"title"`
-	Status      string            `json:"status"`
-	Rationale   string            `json:"rationale,omitempty"`
-	Remediation string            `json:"remediation,omitempty"`
-	Errors      []string          `json:"errors,omitempty"`
+	ID          int                 `json:"id"`
+	Title       string              `json:"title"`
+	Status      string              `json:"status"`
+	Rationale   string              `json:"rationale,omitempty"`
+	Remediation string              `json:"remediation,omitempty"`
+	Errors      []string            `json:"errors,omitempty"`
+	Compliance  map[string][]string `json:"compliance,omitempty"`
 }
 
 func (a *Agent) runPolicy(ctx context.Context, input agent.Input) (agent.Output, error) {
@@ -143,6 +144,7 @@ func (a *Agent) runPolicy(ctx context.Context, input agent.Input) (agent.Output,
 			Title:       check.Title,
 			Rationale:   check.Rationale,
 			Remediation: check.Remediation,
+			Compliance:  check.Compliance,
 		}
 		if ok {
 			res.Status = "pass"
