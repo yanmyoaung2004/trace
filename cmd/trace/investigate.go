@@ -144,6 +144,9 @@ Examples:
 
 	cmd.Flags().StringP("playbook", "p", "", "playbook name to run")
 	cmd.Flags().StringToString("param", nil, "parameters for the playbook (key=value)")
+	cmd.RegisterFlagCompletionFunc("playbook", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return tui.PlaybookCompletions(toComplete, app), cobra.ShellCompDirectiveNoFileComp
+	})
 	return cmd
 }
 
