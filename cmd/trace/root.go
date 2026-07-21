@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 
 	"github.com/yanmyoaung2004/trace/internal/config"
 	"github.com/yanmyoaung2004/trace/internal/db"
@@ -177,7 +178,7 @@ func (a *App) InvestigateInteractive(query, playbookName string) (tui.InvResult,
 		return tui.InvResult{}, fmt.Errorf("create investigation: %w", err)
 	}
 
-	params := make(map[string]any)
+	params := extractParamsFromQuery(query)
 	results, err := a.executor.Execute(context.Background(), inv, pb, params)
 	if err != nil {
 		return tui.InvResult{}, fmt.Errorf("execute playbook: %w", err)
@@ -195,6 +196,28 @@ func (a *App) InvestigateInteractive(query, playbookName string) (tui.InvResult,
 
 	report, _ := reportOutput["report"].(string)
 	return tui.InvResult{ID: inv.ID[:12], Report: report}, nil
+}
+
+var ipRegex    = regexp.MustCompile(`\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b`)
+var domainRegex = regexp.MustCompile(`\b([a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}\b`)
+var hashRegex  = regexp.MustCompile(`\b([a-fA-F0-9]{32}|[a-fA-F0-9]{40}|[a-fA-F0-9]{64})\b`)
+
+func extractParamsFromQuery(query string) map[string]any {
+	params := make(map[string]any)
+	if m := ipRegex.FindString(query); m != "" {
+		params["ip"] = m
+		params["indicator"] = m
+	}
+	if m := hashRegex.FindString(query); m != "" {
+		params["hash"] = m
+		params["indicator"] = m
+	}
+	if m := domainRegex.FindString(query); m != "" {
+		params["domain"] = m
+		params["indicator"] = m
+	}
+	params["query"] = query
+	return params
 }
 
 func (a *App) TotalInvestigations() int {
