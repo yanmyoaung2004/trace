@@ -154,7 +154,8 @@ Examples:
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
-			_, err := app.caseManager.AddEvent(context.Background(), args[0], "note", args[1], "manual")
+			id := resolveCaseID(args[0])
+			_, err := app.caseManager.AddEvent(context.Background(), id, "note", args[1], "manual")
 			return err
 		},
 	}
@@ -171,7 +172,8 @@ Examples:
 			if iocType == "" || value == "" {
 				return fmt.Errorf("type and value are required")
 			}
-			_, err := app.caseManager.AddIOC(context.Background(), args[0], iocType, value, desc)
+			id := resolveCaseID(args[0])
+			_, err := app.caseManager.AddIOC(context.Background(), id, iocType, value, desc)
 			return err
 		},
 	}
@@ -189,7 +191,7 @@ Examples:
 			if to == "" {
 				return fmt.Errorf("--to is required")
 			}
-			return app.caseManager.Assign(context.Background(), args[0], to)
+			return app.caseManager.Assign(context.Background(), resolveCaseID(args[0]), to)
 		},
 	}
 	assignCmd.Flags().String("to", "", "Assignee email or name")
@@ -201,7 +203,7 @@ Examples:
 		ValidArgsFunction: caseIDCompletionFunc,
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
 			resolution, _ := cmdCobra.Flags().GetString("resolution")
-			return app.caseManager.Resolve(context.Background(), args[0], resolution)
+			return app.caseManager.Resolve(context.Background(), resolveCaseID(args[0]), resolution)
 		},
 	}
 	closeCmd.Flags().String("resolution", "", "Resolution notes")
@@ -289,7 +291,7 @@ Examples:
 			if name == "" {
 				name = filepath.Base(file)
 			}
-			err := app.caseManager.AddEvidence(context.Background(), args[0], name, file, mime, "cli")
+			err := app.caseManager.AddEvidence(context.Background(), resolveCaseID(args[0]), name, file, mime, "cli")
 			if err != nil {
 				return fmt.Errorf("add evidence: %w", err)
 			}
@@ -324,4 +326,12 @@ func caseIDCompletionFunc(cmd *cobra.Command, args []string, toComplete string) 
 		}
 	}
 	return matches, cobra.ShellCompDirectiveNoFileComp
+}
+
+func resolveCaseID(prefix string) string {
+	c, err := app.caseManager.GetByPrefix(context.Background(), prefix)
+	if err != nil {
+		return prefix
+	}
+	return c.ID
 }
