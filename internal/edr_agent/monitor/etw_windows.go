@@ -37,6 +37,8 @@ const (
 	procTraceModeEventRecord = 0x01000000
 	procTraceModeRealTime    = 0x00000100
 	eventIDCreate        = 1
+	eventIDProcessEnd    = 2
+	eventIDImageLoad     = 3
 	maxETWEventsPerSec   = 1000
 )
 
@@ -244,22 +246,38 @@ func etwEventCallbackBridge(recordPtr uintptr) uintptr {
 	}
 
 	rec := (*etwRecord)(unsafe.Pointer(recordPtr))
-	if rec.Header.Id != eventIDCreate || rec.UserData == 0 {
+	if rec.UserData == 0 {
 		return 0
 	}
 
+	switch rec.Header.Id {
+	case eventIDCreate:
+		handleETWProcessCreate(rec)
+	case eventIDProcessEnd:
+		handleETWProcessEnd(rec)
+	case eventIDImageLoad:
+		handleETWImageLoad(rec)
+	}
+	return 0
+}
+
+func handleETWProcessCreate(rec *etwRecord) {
 	userLen := uint32(rec.UserDataLength)
 	if userLen < 24 {
-		return 0
+		return
 	}
 
 	pid := *(*uint32)(unsafe.Pointer(rec.UserData))
 	ppid := *(*uint32)(unsafe.Pointer(rec.UserData + 4))
 	if pid == 0 || pid == 4 {
-		return 0
+		return
 	}
 
 	name := readUTF16(rec.UserData+16, minU32(userLen-16, 520))
+	if name == "" {
+		name = "unknown"
+	}
+
 	cmdline := ""
 	if userLen > 16+520 {
 		cmdline = readUTF16(rec.UserData+16+520, minU32(userLen-16-520, 2048))
@@ -279,13 +297,92 @@ func etwEventCallbackBridge(recordPtr uintptr) uintptr {
 		Process: &ProcessInfo{PID: int(pid), PPID: int(ppid), Name: name, CmdLine: cmdline},
 		Annotations: map[string]string{"source": "etw"},
 	}
+	sendETWEvent(evt)
+}
 
+func handleETWProcessEnd(rec *etwRecord) {
+	userLen := uint32(rec.UserDataLength)
+	if userLen < 8 {
+		return
+	}
+
+	pid := *(*uint32)(unsafe.Pointer(rec.UserData))
+	if pid == 0 || pid == 4 {
+		return
+	}
+
+	exitCode := int32(0)
+	if userLen >= 12 {
+		exitCode = *(*int32)(unsafe.Pointer(rec.UserData + 8))
+	}
+
+	evt := &Event{
+		ID: uuid.New().String(), Timestamp: time.Now(),
+		Type: EventProcessTerminate,
+		Severity: SeverityInfo,
+		Process: &ProcessInfo{
+			PID: int(pid),
+		},
+		Annotations: map[string]string{
+			"source":    "etw",
+			"exit_code": fmt.Sprintf("%d", exitCode),
+		},
+	}
+	sendETWEvent(evt)
+}
+
+func handleETWImageLoad(rec *etwRecord) {
+	userLen := uint32(rec.UserDataLength)
+	if userLen < 8 {
+		return
+	}
+
+	pid := *(*uint32)(unsafe.Pointer(rec.UserData))
+	imageBase := uintptr(0)
+	if userLen >= 16 {
+		imageBase = uintptr(*(*uint64)(unsafe.Pointer(rec.UserData + 8)))
+	}
+
+	imageName := ""
+	if userLen > 24 {
+		imageName = readUTF16(rec.UserData+24, userLen-24)
+	}
+
+	sev := SeverityInfo
+	if imageName != "" {
+		lower := imageName
+		if len(lower) > 64 {
+			lower = lower[:64]
+		}
+		for _, s := range suspiciousProcesses {
+			if len(lower) >= len(s) && containsFold(lower, s) {
+				sev = SeverityWarning
+				break
+			}
+		}
+	}
+
+	evt := &Event{
+		ID: uuid.New().String(), Timestamp: time.Now(),
+		Type: EventNetListen,
+		Severity: sev,
+		Process: &ProcessInfo{PID: int(pid)},
+		File:    &FileInfo{Path: imageName},
+		Annotations: map[string]string{
+			"source":     "etw",
+			"event":      "image_load",
+			"image_base": fmt.Sprintf("0x%x", imageBase),
+		},
+	}
+	sendETWEvent(evt)
+}
+
+func sendETWEvent(evt *Event) {
 	select {
 	case globalETWEventCh <- evt:
 	default:
 		atomic.AddInt64(&globalETWDropped, 1)
 	}
-	return 0
 }
 
 var globalETWEventRateLimit = time.NewTicker(time.Second / maxETWEventsPerSec).C
