@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trace — Documentation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: oklch(0.045 0.008 260);
+      --surface: oklch(0.08 0.015 260);
+      --surface-hover: oklch(0.12 0.018 260);
+      --border: oklch(0.15 0.02 260);
+      --ink: oklch(0.93 0.01 260);
+      --muted: oklch(0.48 0.025 260);
+      --primary: oklch(0.60 0.22 230);
+      --primary-dim: oklch(0.50 0.18 230);
+      --accent: oklch(0.65 0.18 200);
+      --success: oklch(0.60 0.18 150);
+      --warning: oklch(0.65 0.16 80);
+      --danger: oklch(0.55 0.24 25);
+      --radius-sm: 6px;
+      --radius: 10px;
+      --font-sans: 'Sora', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: oklch(0.20 0.02 260); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: oklch(0.30 0.03 260); }
+    ::-webkit-scrollbar-corner { background: transparent; }
+    * { scrollbar-width: thin; scrollbar-color: oklch(0.20 0.02 260) transparent; }
+    html { scroll-behavior: smooth; scroll-padding-top: 80px; }
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { color: var(--primary); }
+    ::selection { background: oklch(0.60 0.22 230 / 0.3); }
+    code { font-family: var(--font-mono); font-size: .8125rem; }
+    pre {
+      font-family: var(--font-mono); font-size: .8125rem; line-height: 1.7;
+      background: #070712; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      padding: 16px; overflow-x: auto; margin: 16px 0;
+    }
+    pre code { font-size: inherit; }
+    table {
+      width: 100%; border-collapse: collapse; margin: 16px 0; font-size: .875rem;
+    }
+    th, td {
+      padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border);
+    }
+    th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+    td { color: var(--ink); }
+    tr:hover td { background: var(--surface-hover); }
+
+    /* Nav */
+    .top-nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100; height: 64px;
+      background: oklch(0.045 0.008 260 / 0.92); backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center;
+    }
+    .top-nav .inner {
+      max-width: 1400px; margin: 0 auto; padding: 0 24px;
+      display: flex; justify-content: space-between; align-items: center; width: 100%;
+    }
+    .top-nav .logo { font-weight: 800; font-size: 1.1rem; color: var(--ink); display: flex; align-items: center; gap: 10px; }
+    .top-nav .logo img { width: 24px; height: 24px; border-radius: 4px; }
+    .top-nav .back-link { font-size: .8rem; color: var(--muted); }
+
+    /* Layout */
+    .layout { display: flex; max-width: 1400px; margin: 64px auto 0; min-height: calc(100vh - 64px); }
+    .sidebar {
+      width: 260px; flex-shrink: 0; position: sticky; top: 80px; align-self: flex-start;
+      padding: 32px 16px 32px 24px; overflow-y: auto; max-height: calc(100vh - 80px);
+    }
+    .sidebar h3 { font-size: .7rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 8px; margin-top: 20px; }
+    .sidebar h3:first-child { margin-top: 0; }
+    .sidebar a {
+      display: block; font-size: .8125rem; color: rgba(255,255,255,0.45); padding: 4px 0 4px 12px;
+      border-left: 1px solid transparent; transition: all .2s; margin: 2px 0;
+    }
+    .sidebar a:hover { color: var(--ink); border-color: var(--muted); }
+    .sidebar a.active { color: var(--accent); border-color: var(--accent); }
+
+    .main { flex: 1; min-width: 0; padding: 48px 48px 80px 48px; max-width: 880px; }
+
+    /* Typography */
+    .main h1 { font-size: 2.5rem; font-weight: 800; letter-spacing: -.03em; margin-bottom: 24px; }
+    .main h2 {
+      font-size: 1.5rem; font-weight: 700; letter-spacing: -.02em; margin: 48px 0 16px;
+      padding-bottom: 8px; border-bottom: 1px solid var(--border);
+    }
+    .main h3 { font-size: 1.125rem; font-weight: 600; margin: 32px 0 12px; }
+    .main h4 { font-size: 1rem; font-weight: 600; margin: 24px 0 8px; color: var(--muted); }
+    .main p { font-size: .9375rem; color: rgba(255,255,255,0.7); margin-bottom: 16px; line-height: 1.75; }
+    .main ul, .main ol { font-size: .9375rem; color: rgba(255,255,255,0.7); margin: 12px 0 16px 24px; line-height: 1.75; }
+    .main li { margin-bottom: 4px; }
+    .main strong { color: var(--ink); font-weight: 600; }
+    .main .badge {
+      display: inline-block; font-size: .6875rem; font-weight: 700; padding: 2px 10px; border-radius: 100px;
+      background: oklch(0.60 0.22 230 / 0.1); color: var(--primary); margin-left: 8px;
+    }
+    .main .tag {
+      display: inline-block; font-size: .65rem; font-weight: 600; padding: 2px 8px; border-radius: 4px;
+      margin: 0 4px 4px 0;
+    }
+    .tag-blue { background: oklch(0.60 0.22 230 / 0.12); color: var(--primary); }
+    .tag-green { background: oklch(0.60 0.18 150 / 0.12); color: var(--success); }
+    .tag-red { background: oklch(0.55 0.24 25 / 0.12); color: var(--danger); }
+    .tag-yellow { background: oklch(0.65 0.16 80 / 0.12); color: var(--warning); }
+    .tag-purple { background: oklch(0.55 0.20 290 / 0.12); color: oklch(0.65 0.20 290); }
+
+    .main .callout {
+      padding: 16px 20px; border-radius: var(--radius-sm); margin: 20px 0;
+      border-left: 3px solid;
+    }
+    .callout-info { background: oklch(0.60 0.22 230 / 0.06); border-color: var(--primary); }
+    .callout-warn { background: oklch(0.65 0.16 80 / 0.06); border-color: var(--warning); }
+    .callout-tip { background: oklch(0.60 0.18 150 / 0.06); border-color: var(--success); }
+    .callout p { margin-bottom: 0; font-size: .875rem; }
+
+    .main .param-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2px; background: var(--border); border-radius: var(--radius-sm); overflow: hidden; margin: 16px 0; }
+    .param-item { background: var(--surface); padding: 12px 16px; }
+    .param-item .key { font-family: var(--font-mono); font-size: .8125rem; color: var(--accent); font-weight: 600; }
+    .param-item .desc { font-size: .8rem; color: var(--muted); margin-top: 4px; }
+    .param-item .default { font-size: .75rem; color: rgba(255,255,255,0.25); margin-top: 2px; font-family: var(--font-mono); }
+
+    .main .cmd-table td:first-child { font-family: var(--font-mono); font-size: .8125rem; white-space: nowrap; }
+    .main .cmd-table td:nth-child(2) { font-size: .8rem; }
+    .main .cmd-table td:nth-child(3) { font-family: var(--font-mono); font-size: .75rem; color: var(--muted); white-space: nowrap; }
+
+    .toc-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 24px; margin: 32px 0;
+    }
+    .toc-card h3 { margin-top: 0; }
+    .toc-card ol { margin: 8px 0 0 20px; }
+    .toc-card li { margin-bottom: 4px; }
+    .toc-card a { font-size: .9rem; }
+
+    @media (max-width: 900px) {
+      .sidebar { display: none; }
+      .main { padding: 24px 20px; max-width: 100%; }
+      .main h1 { font-size: 1.75rem; }
+      .param-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Top Nav -->
+<nav class="top-nav">
+  <div class="inner">
+    <a href="/" class="logo"><img src="../assets/logo.png" alt="">Trace</a>
+    <span style="font-size:.75rem;color:var(--muted);font-weight:600;letter-spacing:.06em;text-transform:uppercase;">Documentation v0.1.1</span>
+    <a href="../index.html" class="back-link">&larr; Back to site</a>
+  </div>
+</nav>
+
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <h3>Getting Started</h3>
+    <a href="#overview">Overview</a>
+    <a href="#quickstart">Quick Start</a>
+    <a href="#configuration">Configuration</a>
+
+    <h3>Architecture</h3>
+    <a href="#architecture">System Architecture</a>
+    <a href="#agents">Agent System</a>
+    <a href="#deployment">Deployment Models</a>
+    <a href="#database">Database</a>
+
+    <h3>Platform</h3>
+    <a href="#cli">CLI Reference</a>
+    <a href="#siem">SIEM Engine</a>
+    <a href="#soar">SOAR Pipeline</a>
+    <a href="#playbooks">Playbooks</a>
+    <a href="#compliance">Compliance</a>
+    <a href="#casemanagement">Case Management</a>
+    <a href="#hunting">Threat Hunting</a>
+
+    <h3>Integrations</h3>
+    <a href="#edr">EDR Connectors</a>
+    <a href="#threatintel">Threat Intelligence</a>
+    <a href="#notifications">Notifications</a>
+    <a href="#logging">Log & SIEM Integrations</a>
+
+    <h3>Reference</h3>
+    <a href="#tui">Terminal UI</a>
+    <a href="#server">Server & API</a>
+    <a href="#plugins">Plugin System</a>
+    <a href="#internationalization">Internationalization</a>
+    <a href="#cli-full">Full Command Reference</a>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main">
+
+    <h1>Trace Documentation</h1>
+    <p>Multi-agent cybersecurity operations platform. SIEM, SOAR, compliance, EDR, case management, and threat hunting — in a single statically-linked Go binary. Zero dependencies.</p>
+
+    <div class="toc-card">
+      <h3>Table of Contents</h3>
+      <ol>
+        <li><a href="#overview">Overview</a></li>
+        <li><a href="#quickstart">Quick Start</a></li>
+        <li><a href="#configuration">Configuration</a></li>
+        <li><a href="#architecture">System Architecture</a></li>
+        <li><a href="#agents">Agent System</a></li>
+        <li><a href="#deployment">Deployment Models</a></li>
+        <li><a href="#cli">CLI Reference</a></li>
+        <li><a href="#siem">SIEM Engine</a></li>
+        <li><a href="#soar">SOAR Pipeline</a></li>
+        <li><a href="#playbooks">Playbooks</a></li>
+        <li><a href="#compliance">Compliance</a></li>
+        <li><a href="#casemanagement">Case Management</a></li>
+        <li><a href="#hunting">Threat Hunting</a></li>
+        <li><a href="#edr">EDR Connectors</a></li>
+        <li><a href="#threatintel">Threat Intelligence</a></li>
+        <li><a href="#notifications">Notifications</a></li>
+        <li><a href="#tui">Terminal UI</a></li>
+        <li><a href="#server">Server &amp; API</a></li>
+        <li><a href="#plugins">Plugin System</a></li>
+        <li><a href="#internationalization">Internationalization</a></li>
+      </ol>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2 id="overview">1. Overview</h2>
+    <p>Trace is an open-source cybersecurity operations platform designed for security analysts, SOC teams, and DevSecOps engineers. It replaces 4+ traditional security tools — SIEM, SOAR, compliance scanner, and EDR console — with a single Go binary that runs on any OS without Docker, Elasticsearch, or any external service.</p>
+
+    <h3>Core Capabilities</h3>
+    <table>
+      <tr><th>Capability</th><th>Description</th><th>Metrics</th></tr>
+      <tr><td><strong>SIEM Engine</strong></td><td>Real-time log monitoring with 462 detection rules, 1,567 decoders, windowed correlation, and MITRE ATT&CK mapping</td><td>462 rules, 1567 decoders</td></tr>
+      <tr><td><strong>SOAR Pipeline</strong></td><td>Alert-to-investigation-to-response automation with playbook-driven workflows and HITL approvals</td><td>27 playbooks</td></tr>
+      <tr><td><strong>Compliance</strong></td><td>Automated security configuration assessment against 8 major frameworks with evidence collection and PDF reports</td><td>8 frameworks</td></tr>
+      <tr><td><strong>EDR</strong></td><td>Remote endpoint isolation, scan, kill, and script execution across CrowdStrike, SentinelOne, and MDE</td><td>3 providers</td></tr>
+      <tr><td><strong>Threat Intelligence</strong></td><td>Multi-source enrichment via VirusTotal, AbuseIPDB, AlienVault OTX, and web search</td><td>4 providers</td></tr>
+      <tr><td><strong>Case Management</strong></td><td>Full case lifecycle with timeline, IOCs, evidence attachments, investigation linking, and PDF export</td><td>Auto-creation from alerts</td></tr>
+      <tr><td><strong>Threat Hunting</strong></td><td>Scheduled automated hunts with configurable playbooks and severity thresholds</td><td>4 default hunts</td></tr>
+      <tr><td><strong>Agent Architecture</strong></td><td>7 specialized agents (Dispatch, Sift, Archive, Response, SCA, Notifier, EDR) collaborating via SQLite-backed task queue</td><td>14 agent capabilities</td></tr>
+    </table>
+
+    <h3>Key Design Principles</h3>
+    <ul>
+      <li><strong>Single binary, zero dependencies.</strong> Download and run. No Docker, no Python, no Elasticsearch, no external databases. The binary embeds SQLite, YARA rules, MITRE data, and Wazuh decoders.</li>
+      <li><strong>Offline-first.</strong> Local analysis, cache, and playbooks work without internet. External enrichment (VT, intel) is asynchronous and non-blocking.</li>
+      <li><strong>Playbook-driven orchestration.</strong> Investigations follow YAML playbooks. LLM planning is a fallback for unrecognized intents.</li>
+      <li><strong>SQLite as everything.</strong> Task queue, result store, cache, configuration, threat intel — all in one WAL-mode SQLite database.</li>
+      <li><strong>Edge-to-server sync.</strong> Deploy agents at network edges; results sync to a central dashboard with cross-node IOC correlation.</li>
+    </ul>
+
+    <!-- ============================================================ -->
+    <h2 id="quickstart">2. Quick Start</h2>
+
+    <h3>Installation</h3>
+    <p>Download the binary for your platform from the <a href="https://github.com/yanmyoaung2004/trace/releases">GitHub releases page</a>, or build from source:</p>
+    <pre><code>git clone https://github.com/yanmyoaung2004/trace.git
+cd trace/dev
+go build -o trace ./cmd/trace</code></pre>
+
+    <h4>System Requirements</h4>
+    <table>
+      <tr><th>Platform</th><th>Architecture</th><th>Min RAM</th><th>Disk</th></tr>
+      <tr><td>Linux</td><td>amd64, arm64</td><td>128 MB</td><td>100 MB</td></tr>
+      <tr><td>macOS</td><td>amd64, arm64</td><td>128 MB</td><td>100 MB</td></tr>
+      <tr><td>Windows</td><td>amd64</td><td>256 MB</td><td>100 MB</td></tr>
+    </table>
+
+    <h3>First Run</h3>
+    <pre><code># Verify installation
+trace version
+
+# Run your first investigation immediately
+trace investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"</code></pre>
+
+    <h3>Interactive Setup Wizard</h3>
+    <pre><code>trace init</code></pre>
+    <p>The wizard prompts for API keys and configuration options. All prompts are skippable — without API keys, local analysis still works.</p>
+    <table>
+      <tr><th>Prompt</th><th>Purpose</th><th>Free Tier</th></tr>
+      <tr><td>VirusTotal API key</td><td>Hash/URL/IP lookups</td><td>500/day</td></tr>
+      <tr><td>LLM provider</td><td>Intent classification (OpenAI, Anthropic, Ollama)</td><td>—</td></tr>
+      <tr><td>AbuseIPDB key</td><td>IP reputation</td><td>1000/day</td></tr>
+      <tr><td>AlienVault OTX key</td><td>Threat intel pulses</td><td>Unlimited</td></tr>
+      <tr><td>SIEM monitoring</td><td>Enable log watching</td><td>—</td></tr>
+      <tr><td>Notifications</td><td>Slack, Discord, Telegram webhooks</td><td>—</td></tr>
+      <tr><td>Telemetry</td><td>Anonymous usage stats (off by default)</td><td>—</td></tr>
+    </table>
+
+    <h3>Shell Completions</h3>
+    <pre><code># PowerShell
+trace completion powershell | Out-String | Invoke-Expression
+
+# Bash
+source &lt;(trace completion bash)
+
+# Zsh
+trace completion zsh | source</code></pre>
+
+    <!-- ============================================================ -->
+    <h2 id="configuration">3. Configuration</h2>
+    <p>Trace stores configuration in <code>~/.trace/config.json</code> (JSON format). Configuration is read once at startup. The <code>init</code> wizard generates this file interactively.</p>
+
+    <h3>Configuration Fields</h3>
+    <table>
+      <tr><th>Field</th><th>Type</th><th>Default</th><th>Env Override</th></tr>
+      <tr><td><code>db_path</code></td><td>string</td><td><code>~/.trace/trace.db</code></td><td><code>TRACE_DB_PATH</code></td></tr>
+      <tr><td><code>data_dir</code></td><td>string</td><td><code>~/.trace/data</code></td><td>—</td></tr>
+      <tr><td><code>log_dir</code></td><td>string</td><td><code>~/.trace/logs</code></td><td>—</td></tr>
+      <tr><td><code>playbook_dir</code></td><td>string</td><td><code>~/.trace/playbooks</code></td><td>—</td></tr>
+      <tr><td><code>intel_dir</code></td><td>string</td><td><code>~/.trace/intel</code></td><td>—</td></tr>
+      <tr><td><code>llm_provider</code></td><td>string</td><td><code>"openai"</code></td><td>—</td></tr>
+      <tr><td><code>llm_url</code></td><td>string</td><td><code>""</code></td><td><code>TRACE_LLM_URL</code></td></tr>
+      <tr><td><code>llm_api_key</code></td><td>string</td><td><code>""</code></td><td><code>TRACE_LLM_API_KEY</code></td></tr>
+      <tr><td><code>vt_api_key</code></td><td>string</td><td><code>""</code></td><td><code>TRACE_VT_API_KEY</code></td></tr>
+      <tr><td><code>abuseipdb_key</code></td><td>string</td><td><code>""</code></td><td><code>TRACE_ABUSEIPDB_KEY</code></td></tr>
+      <tr><td><code>otx_api_key</code></td><td>string</td><td><code>""</code></td><td><code>TRACE_OTX_API_KEY</code></td></tr>
+      <tr><td><code>slack_webhook_url</code></td><td>string</td><td><code>""</code></td><td>—</td></tr>
+      <tr><td><code>discord_webhook_url</code></td><td>string</td><td><code>""</code></td><td>—</td></tr>
+      <tr><td><code>telegram_bot_token</code></td><td>string</td><td><code>""</code></td><td>—</td></tr>
+      <tr><td><code>telegram_chat_id</code></td><td>string</td><td><code>""</code></td><td>—</td></tr>
+    </table>
+
+    <h3>SIEM Configuration</h3>
+    <pre><code>{
+  "siem": {
+    "enabled": true,
+    "log_dir": "/var/log",
+    "syslog_addr": ":514"
+  }
+}</code></pre>
+
+    <h3>Server Configuration</h3>
+    <pre><code>{
+  "server": {
+    "enabled": true,
+    "http_addr": ":8080",
+    "grpc_addr": ":9090",
+    "tls": {
+      "enabled": false,
+      "cert_file": "/path/to/cert.pem",
+      "key_file": "/path/to/key.pem"
+    }
+  }
+}</code></pre>
+
+    <!-- ============================================================ -->
+    <h2 id="architecture">4. System Architecture</h2>
+    <p>Trace operates as a multi-agent system where specialized agents collaborate to process security investigations. The platform follows a pipeline architecture: intent in, report out.</p>
+
+    <h3>High-Level Data Flow</h3>
+    <pre><code>Log Sources ──&gt; SIEM Engine ──&gt; Dispatch Agent ──┬──&gt; Archive Agent
+                                                 ├──&gt; Sift Agent
+                                                 ├──&gt; Response Agent
+                                                 └──&gt; Notifier</code></pre>
+
+    <p>The <strong>Dispatch Agent</strong> is the central orchestrator. It receives intents (from CLI, SIEM alerts, or scheduled hunts), classifies them, selects or plans a playbook, dispatches tasks to specialist agents, collects results, and synthesizes a final report.</p>
+
+    <h3>Agent Communication</h3>
+    <p>Agents communicate through a SQLite-backed task queue. The Dispatch Agent writes tasks to a <code>tasks</code> table. Specialist agents poll for pending tasks, execute, and write results. All agent outputs are persisted and available for audit, replay, and report generation.</p>
+
+    <h3>File-Based Artifact Exchange</h3>
+    <p>For large artifacts (malware samples, PCAPs, disk images), agents exchange references to shared files rather than embedding payloads in JSON:</p>
+    <pre><code>/data/shared/&lt;investigation_id&gt;/
+  sift/
+    hash_lookup_result.json
+    yara_result.json
+    vt_result.json
+  archive/
+    mitre_mapping.json
+    cve_details.json
+  response/
+    block_result.json</code></pre>
+
+    <h3>Investigation Lifecycle</h3>
+    <ol>
+      <li><strong>Intent Received</strong> — via CLI, SIEM alert, scheduled hunt, or API</li>
+      <li><strong>Intent Classification</strong> — keyword/regex matching or LLM fallback</li>
+      <li><strong>Playbook Selection</strong> — best-match playbook loaded from built-in or external library</li>
+      <li><strong>Task Dispatching</strong> — steps dispatched to specialist agents asynchronously</li>
+      <li><strong>Result Collection</strong> — agents write results back; pipeline merges partial results</li>
+      <li><strong>Report Synthesis</strong> — Dispatch Agent generates structured report with confidence score</li>
+      <li><strong>Case Linking</strong> — high-severity results auto-create or link to existing cases</li>
+      <li><strong>Notification</strong> — configured channels receive summary</li>
+    </ol>
+
+    <h3>Deployment Architecture</h3>
+    <pre><code>┌─────────────────────────────────────────────┐
+│           Edge Node (single binary)          │
+│                                               │
+│  ┌──────────┐  ┌──────────┐  ┌────────────┐  │
+│  │  Sift    │  │ Archive  │  │  Response  │  │
+│  │  Agent   │  │  Agent   │  │   Agent    │  │
+│  ├──────────┤  ├──────────┤  ├────────────┤  │
+│  │ YARA     │  │ MITRE DB │  │ Firewall   │  │
+│  │ PE scan  │  │ CVE cache│  │ Process    │  │
+│  │ VT client│  │ Intel    │  │ Service    │  │
+│  └──────────┘  └──────────┘  └────────────┘  │
+│         │           │               │         │
+│         └───────────┴───────────────┘         │
+│                         │                     │
+│                    ┌────┴────┐                │
+│                    │ SQLite  │                │
+│                    │ (WAL)   │                │
+│                    ├─────────┤                │
+│                    │ tasks   │                │
+│                    │ results │                │
+│                    │ config  │                │
+│                    │ cache   │                │
+│                    │ intel   │                │
+│                    └─────────┘                │
+│                                               │
+│  ┌──────────────┐  ┌──────────────────────┐   │
+│  │ File Watcher │  │ Investigation Log    │   │
+│  │ (local logs) │  │ (JSONL / replay)     │   │
+│  └──────────────┘  └──────────────────────┘   │
+└─────────────────────────────────────────────┘</code></pre>
+
+    <!-- ============================================================ -->
+    <h2 id="agents">5. Agent System</h2>
+    <p>Trace includes 7 built-in agents, each implementing a standard interface with <code>Name()</code>, <code>Capabilities()</code>, and <code>Execute()</code> methods.</p>
+
+    <h3>Dispatch Agent</h3>
+    <p><span class="tag tag-yellow">Orchestrator</span> The central planner and orchestrator.</p>
+    <ul>
+      <li><strong>Intent classification</strong> — keyword/regex matching against structured data; LLM fallback for natural language queries</li>
+      <li><strong>Playbook selection</strong> — matches intent to best-fit playbook from built-in or external library</li>
+      <li><strong>LLM planner</strong> — supports OpenAI, Anthropic, and Ollama for dynamic plan generation</li>
+      <li><strong>Report synthesis</strong> — aggregates all agent results into a structured report with confidence scoring</li>
+    </ul>
+
+    <h3>Sift Agent</h3>
+    <p><span class="tag tag-green">Malware Analysis</span> File and binary analysis engine.</p>
+    <ul>
+      <li><strong>YARA scanning</strong> — 15 built-in rules covering EICAR, PowerShell abuse, packed binaries, process injection, keyloggers, etc.</li>
+      <li><strong>PE analysis</strong> — extracts hashes (MD5/SHA1/SHA256), compile timestamp, entry point, section entropy, imports, and suspicious indicators</li>
+      <li><strong>Hash lookup</strong> — built-in cache of 9 known malware families (Mimikatz, CobaltStrike, Emotet, Ryuk, PlugX, AgentTesla, WannaCry, etc.)</li>
+      <li><strong>Rootkit detection</strong> — 200+ file pattern signatures across 60+ known rootkit families, 45+ trojan binary signatures, 10+ OS behavior checks</li>
+      <li><strong>VirusTotal lookup</strong> — hash, URL, and IP lookups with rate limiting</li>
+    </ul>
+
+    <h3>Archive Agent</h3>
+    <p><span class="tag tag-purple">Threat Intel</span> Threat intelligence and knowledge base.</p>
+    <ul>
+      <li><strong>MITRE ATT&CK</strong> — 81 techniques with descriptions, tactics, platforms, mitigations, and detection guidance</li>
+      <li><strong>CVE lookup</strong> — NVD API v2.0 integration with 24-hour SQLite cache; returns CVSS score, severity, vector, affected CPEs</li>
+      <li><strong>Malware lookup</strong> — 23 built-in IOC entries across hashes, IPs, and domains</li>
+      <li><strong>Web search</strong> — Firecrawl API for open-source intelligence gathering</li>
+    </ul>
+
+    <h3>Response Agent</h3>
+    <p><span class="tag tag-red">Response</span> Host-level response actions.</p>
+    <table>
+      <tr><th>Action</th><th>Windows</th><th>Linux</th><th>macOS</th></tr>
+      <tr><td><code>block_ip</code></td><td><code>netsh advfirewall</code></td><td><code>iptables</code></td><td><code>pfctl</code></td></tr>
+      <tr><td><code>quarantine_file</code></td><td><code>move</code></td><td><code>mv</code></td><td><code>mv</code></td></tr>
+      <tr><td><code>kill_process</code></td><td><code>taskkill</code></td><td><code>kill</code></td><td><code>kill</code></td></tr>
+      <tr><td><code>restart_service</code></td><td><code>sc</code></td><td><code>systemctl</code></td><td><code>launchctl</code></td></tr>
+    </table>
+    <p>Every response action generates an audit record with rollback command and status.</p>
+
+    <h3>SCA Agent</h3>
+    <p><span class="tag tag-blue">Compliance</span> Security configuration assessment. Runs CIS benchmark policies across Windows, Linux, and macOS. Supports force-scan mode that bypasses requirements for direct policy execution.</p>
+
+    <h3>Notifier Agent</h3>
+    <p><span class="tag tag-yellow">Notifications</span> Sends alerts and investigation summaries to Slack, Discord, and Telegram via webhooks.</p>
+
+    <h3>EDR Agent</h3>
+    <p><span class="tag tag-red">Endpoint</span> Remote endpoint management via CrowdStrike, SentinelOne, and Microsoft Defender for Endpoint. See <a href="#edr">EDR Connectors</a> section.</p>
+
+    <!-- ============================================================ -->
+    <h2 id="deployment">6. Deployment Models</h2>
+
+    <h3>Standalone (Single Node)</h3>
+    <p>Default mode. Run <code>trace</code> or <code>trace serve</code> on a single machine. All agents, database, and SIEM engine run in one process. Ideal for individual analysts, small SOCs, or air-gapped environments.</p>
+
+    <h3>Central Server + Edge Nodes</h3>
+    <p>Deploy edge nodes at remote sites (branch offices, OT networks, cloud VPCs). Each edge runs the full binary with local SQLite. Edges sync investigations to a central server every 30 seconds.</p>
+    <pre><code># Central server (on-prem or cloud)
+trace server --http-addr :8080
+
+# Edge node (remote site)
+trace serve --server-addr http://central:8080 --siem --log-dir /var/log</code></pre>
+    <p>The central dashboard provides cross-node IOC correlation with confidence scoring:</p>
+    <table>
+      <tr><th>Nodes with Same IOC</th><th>Confidence</th></tr>
+      <tr><td>1 node</td><td>0.5 (possible)</td></tr>
+      <tr><td>2 nodes</td><td>0.75 (likely)</td></tr>
+      <tr><td>3+ nodes</td><td>0.9 (confirmed campaign)</td></tr>
+    </table>
+
+    <!-- ============================================================ -->
+    <h2 id="database">7. Database</h2>
+    <p>Trace uses SQLite in WAL (Write-Ahead Logging) mode as its single database engine. The database is created automatically at <code>~/.trace/trace.db</code> on first run.</p>
+
+    <h3>Tables</h3>
+    <table>
+      <tr><th>Table</th><th>Purpose</th><th>Key Columns</th></tr>
+      <tr><td><code>investigations</code></td><td>Investigation records</td><td>id, status, intent, playbook, confidence</td></tr>
+      <tr><td><code>tasks</code></td><td>Async task queue</td><td>id, investigation_id, agent, action, status</td></tr>
+      <tr><td><code>results</code></td><td>Task results</td><td>id, task_id, agent, output (JSON)</td></tr>
+      <tr><td><code>cache</code></td><td>KV TTL cache</td><td>key, value, ttl</td></tr>
+      <tr><td><code>alerts</code></td><td>Security alerts</td><td>id, title, severity, mitre mapping</td></tr>
+      <tr><td><code>cases</code></td><td>Security cases</td><td>id, title, status, severity, assignee</td></tr>
+      <tr><td><code>case_events</code></td><td>Case timeline</td><td>id, case_id, event_type, content</td></tr>
+      <tr><td><code>case_iocs</code></td><td>Case IOCs</td><td>id, case_id, ioc_type, value</td></tr>
+      <tr><td><code>case_evidence</code></td><td>Case evidence files</td><td>id, case_id, file_name, mime_type</td></tr>
+      <tr><td><code>hunts</code></td><td>Scheduled hunts</td><td>id, name, schedule, playbook, status</td></tr>
+      <tr><td><code>response_actions</code></td><td>Response action audit</td><td>id, investigation_id, action, target, status</td></tr>
+    </table>
+
+    <!-- ============================================================ -->
+    <h2 id="cli">8. CLI Reference</h2>
+    <p>Trace provides 18 commands with shell completion and interactive prompt fallback. Commands run without arguments open interactive menus.</p>
+
+    <h3>Aliases</h3>
+    <table>
+      <tr><th>Alias</th><th>Command</th></tr>
+      <tr><td><code>trace inv</code></td><td><code>trace investigate</code></td></tr>
+      <tr><td><code>trace st</code></td><td><code>trace status</code></td></tr>
+      <tr><td><code>trace hist</code></td><td><code>trace history</code></td></tr>
+    </table>
+
+    <h3>Global Flags</h3>
+    <table>
+      <tr><th>Flag</th><th>Description</th></tr>
+      <tr><td><code>-c, --config</code></td><td>Path to config file (optional, defaults to <code>~/.trace/config.json</code>)</td></tr>
+    </table>
+
+    <h3>Command Summary</h3>
+    <table class="cmd-table">
+      <tr><th>Command</th><th>Description</th><th>Alias</th></tr>
+      <tr><td><code>init</code></td><td>First-run setup wizard</td><td>—</td></tr>
+      <tr><td><code>investigate</code></td><td>Run a security investigation</td><td><code>inv</code></td></tr>
+      <tr><td><code>serve</code></td><td>Start daemon mode (SIEM, scheduler, task worker)</td><td>—</td></tr>
+      <tr><td><code>server</code></td><td>Central server mode with web dashboard</td><td>—</td></tr>
+      <tr><td><code>status</code></td><td>View investigation status</td><td><code>st</code></td></tr>
+      <tr><td><code>history</code></td><td>List recent investigations</td><td><code>hist</code></td></tr>
+      <tr><td><code>report</code></td><td>Generate/view investigation report</td><td>—</td></tr>
+      <tr><td><code>case</code></td><td>Manage security cases (10 subcommands)</td><td>—</td></tr>
+      <tr><td><code>hunt</code></td><td>Manage threat hunts (6 subcommands)</td><td>—</td></tr>
+      <tr><td><code>compliance</code></td><td>Compliance scanning (4 subcommands)</td><td>—</td></tr>
+      <tr><td><code>approval</code></td><td>HITL approval management</td><td>—</td></tr>
+      <tr><td><code>plugin</code></td><td>Plugin management (4 subcommands)</td><td>—</td></tr>
+      <tr><td><code>genkey</code></td><td>Generate self-signed TLS cert</td><td>—</td></tr>
+      <tr><td><code>update</code></td><td>Update binary, intel, or playbooks</td><td>—</td></tr>
+      <tr><td><code>version</code></td><td>Print version</td><td>—</td></tr>
+    </table>
+
+    <h3>investigate</h3>
+    <pre><code>trace investigate [query] [flags]</code></pre>
+    <table>
+      <tr><th>Flag</th><th>Description</th></tr>
+      <tr><td><code>-p, --playbook</code></td><td>Playbook name to run (skips intent classification)</td></tr>
+      <tr><td><code>--param</code></td><td>Parameters for the playbook (key=value, repeatable)</td></tr>
+    </table>
+    <p>Shell completion: <code>--playbook &lt;TAB&gt;</code> lists all available playbooks.</p>
+
+    <h3>serve</h3>
+    <pre><code>trace serve [flags]</code></pre>
+    <table>
+      <tr><th>Flag</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>--siem</code></td><td><code>false</code></td><td>Enable SIEM log monitoring</td></tr>
+      <tr><td><code>--syslog-addr</code></td><td><code>:514</code></td><td>Syslog listener address</td></tr>
+      <tr><td><code>--log-dir</code></td><td></td><td>Directories to watch for log files</td></tr>
+      <tr><td><code>--export</code></td><td></td><td>Start HTML report server (e.g. <code>:8081</code>)</td></tr>
+      <tr><td><code>--server-addr</code></td><td></td><td>Central server address for edge sync</td></tr>
+    </table>
+
+    <h3>case</h3>
+    <pre><code>trace case &lt;subcommand&gt; [args] [flags]</code></pre>
+    <table>
+      <tr><th>Subcommand</th><th>Description</th><th>Key Flags</th></tr>
+      <tr><td><code>create</code></td><td>Create a new case</td><td><code>--title</code>, <code>--description</code>, <code>--severity</code></td></tr>
+      <tr><td><code>list</code></td><td>List all cases</td><td><code>--status</code>, <code>--severity</code></td></tr>
+      <tr><td><code>view</code></td><td>View case details</td><td>(positional ID)</td></tr>
+      <tr><td><code>note</code></td><td>Add a note</td><td>(ID + content)</td></tr>
+      <tr><td><code>ioc</code></td><td>Add an IOC</td><td><code>--type</code>, <code>--value</code></td></tr>
+      <tr><td><code>evidence</code></td><td>Attach evidence file</td><td><code>--file</code>, <code>--name</code>, <code>--mime</code></td></tr>
+      <tr><td><code>assign</code></td><td>Assign to analyst</td><td><code>--to</code></td></tr>
+      <tr><td><code>close</code></td><td>Close a case</td><td><code>--resolution</code></td></tr>
+      <tr><td><code>export</code></td><td>Export as JSON</td><td>(positional ID)</td></tr>
+      <tr><td><code>export-pdf</code></td><td>Export as PDF</td><td><code>-o, --output</code></td></tr>
+    </table>
+
+    <!-- ============================================================ -->
+    <h2 id="siem">9. SIEM Engine</h2>
+    <p>The SIEM engine ingests logs from multiple sources, decodes them, matches against rules, generates alerts, and optionally triggers investigations. It runs within the main binary — no separate Elasticsearch or Logstash required.</p>
+
+    <h3>Log Ingestion</h3>
+    <table>
+      <tr><th>Source</th><th>Method</th><th>Protocol</th></tr>
+      <tr><td>Local files</td><td>File watcher (polling)</td><td>Plain text, JSON</td></tr>
+      <tr><td>Syslog</td><td>UDP/TCP listener on <code>:514</code></td><td>RFC 3164, RFC 5424</td></tr>
+      <tr><td>Windows EVTX</td><td>XML parsing</td><td>Windows Event Log XML</td></tr>
+      <tr><td>K8s audit logs</td><td>File watcher</td><td>JSON</td></tr>
+      <tr><td>Wazuh agents</td><td>Syslog</td><td>Wazuh JSON format</td></tr>
+    </table>
+
+    <h3>Decoders</h3>
+    <p>8 built-in decoders with auto-detection and fallback chain:</p>
+    <table>
+      <tr><th>Decoder</th><th>Input Formats</th></tr>
+      <tr><td><code>AutoDecoder</code></td><td>Tries all decoders in sequence; returns first match</td></tr>
+      <tr><td><code>JSONDecoder</code></td><td>NDJSON, JSON object per line</td></tr>
+      <tr><td><code>ApacheDecoder</code></td><td>Apache combined log, error log</td></tr>
+      <tr><td><code>SyslogDecoder</code></td><td>RFC 3164 syslog format</td></tr>
+      <tr><td><code>EVTXDecoder</code></td><td>Windows EVTX XML (Event 4625, 4688, 4104, 4698, 7045, 1116, 4740, etc.)</td></tr>
+      <tr><td><code>K8sAuditDecoder</code></td><td>Kubernetes audit event JSON</td></tr>
+      <tr><td><code>WindowsEventDecoder</code></td><td>Custom Windows event text format</td></tr>
+      <tr><td><code>WazuhDecoder</code></td><td>Wazuh agent JSON format</td></tr>
+    </table>
+
+    <h3>Detection Rules</h3>
+    <p>Total: <strong>462 rules</strong> (446 Wazuh-derived + 16 built-in)</p>
+
+    <h4>Built-in Rules (16)</h4>
+    <table>
+      <tr><th>Rule ID</th><th>Description</th><th>Severity</th><th>MITRE</th></tr>
+      <tr><td><code>MULTIPLE_FAILED_LOGINS</code></td><td>Multiple failed login attempts in time window</td><td>High</td><td>T1110</td></tr>
+      <tr><td><code>FAILED_LOGIN_BRUTE</code></td><td>Brute-force pattern detection</td><td>Critical</td><td>T1110</td></tr>
+      <tr><td><code>HTTP_5XX_ERROR</code></td><td>HTTP 5xx server error burst</td><td>Medium</td><td>T1498</td></tr>
+      <tr><td><code>HTTP_4XX_BURST</code></td><td>HTTP 4xx client error burst</td><td>Medium</td><td>T1595</td></tr>
+      <tr><td><code>SUSPICIOUS_PROCESS</code></td><td>Known suspicious process execution</td><td>High</td><td>T1059</td></tr>
+      <tr><td><code>WINDOWS_EVENT_4625_BURST</code></td><td>Windows failed login event burst</td><td>High</td><td>T1110</td></tr>
+      <tr><td><code>BRUTE_FORCE_FALLBACK</code></td><td>Generic brute-force detection</td><td>High</td><td>T1110</td></tr>
+      <tr><td><code>WIN_POWERSHELL_4104</code></td><td>PowerShell script block logging</td><td>High</td><td>T1059.001</td></tr>
+      <tr><td><code>WIN_SCHEDULED_TASK_4698</code></td><td>Scheduled task creation</td><td>Medium</td><td>T1053.005</td></tr>
+      <tr><td><code>WIN_SERVICE_INSTALL_7045</code></td><td>Service installation</td><td>Medium</td><td>T1543.003</td></tr>
+      <tr><td><code>WIN_DEFENDER_1116</code></td><td>Windows Defender detection</td><td>Critical</td><td>T1204</td></tr>
+      <tr><td><code>WIN_PROCESS_4688_CREATION</code></td><td>Process creation audit</td><td>Medium</td><td>T1059</td></tr>
+      <tr><td><code>WIN_REGISTRY_PERSISTENCE</code></td><td>Registry persistence mechanism</td><td>High</td><td>T1547.001</td></tr>
+      <tr><td><code>WIN_RDP_LOGIN_4625</code></td><td>RDP failed login</td><td>High</td><td>T1078</td></tr>
+      <tr><td><code>WIN_ACCOUNT_LOCKOUT_4740</code></td><td>Account lockout</td><td>Medium</td><td>T1110</td></tr>
+    </table>
+
+    <h4>Kubernetes Rules (36)</h4>
+    <p>Covering 10 MITRE ATT&CK categories:</p>
+    <table>
+      <tr><th>Category</th><th>Example Rules</th></tr>
+      <tr><td>Execution</td><td><code>K8S_EXEC_INTO_POD</code>, <code>K8S_EXEC_BURST</code>, <code>K8S_CRONJOB_CREATE</code></td></tr>
+      <tr><td>Credential Access</td><td><code>K8S_SECRET_ACCESS</code>, <code>K8S_SECRET_ACCESS_BURST</code>, <code>K8S_SECRET_CREATE</code></td></tr>
+      <tr><td>Persistence</td><td><code>K8S_DAEMONSET_CREATE</code>, <code>K8S_DEPLOYMENT_ANOMALY</code></td></tr>
+      <tr><td>Privilege Escalation</td><td><code>K8S_RBAC_ESCALATION</code>, <code>K8S_CLUSTER_ADMIN_BINDING</code>, <code>K8S_IMPERSONATION</code></td></tr>
+      <tr><td>Defense Evasion</td><td><code>K8S_MUTATING_WEBHOOK</code>, <code>K8S_NETWORK_POLICY_DELETE</code></td></tr>
+      <tr><td>Discovery</td><td><code>K8S_UNAUTHORIZED_ACCESS</code>, <code>K8S_API_SCAN</code>, <code>K8S_POD_LIST</code></td></tr>
+      <tr><td>Lateral Movement</td><td><code>K8S_POD_CREATE_ANOMALY</code>, <code>K8S_SERVICE_CREATE</code>, <code>K8S_INGRESS_CREATE</code></td></tr>
+      <tr><td>Impact</td><td><code>K8S_DELETE_EVENT</code>, <code>K8S_MASS_DELETION</code>, <code>K8S_PVC_DELETE</code></td></tr>
+    </table>
+
+    <h3>Correlation</h3>
+    <ul>
+      <li><strong>Time-windowed event correlation</strong> — configurable thresholds per rule</li>
+      <li><strong>Suppression</strong> — per-rule duration to prevent alert storms</li>
+      <li><strong>Auto-playbook triggering</strong> — rules can trigger investigations directly</li>
+      <li><strong>Field operators</strong> — <code>==</code>, <code>!=</code>, <code>~=</code> (regex), <code>&gt;</code>, <code>&lt;</code>, <code>in</code> (CIDR)</li>
+    </ul>
+
+    <h3>Sysmon Event Mapping</h3>
+    <table>
+      <tr><th>Event ID</th><th>Description</th></tr>
+      <tr><td>1</td><td>Process creation</td></tr>
+      <tr><td>3</td><td>Network connection</td></tr>
+      <tr><td>7</td><td>Module load</td></tr>
+      <tr><td>8</td><td>Remote thread creation</td></tr>
+      <tr><td>10</td><td>Process access</td></tr>
+      <tr><td>11</td><td>File creation</td></tr>
+      <tr><td>12/13/14</td><td>Registry events</td></tr>
+      <tr><td>15</td><td>File stream creation</td></tr>
+      <tr><td>17/18</td><td>Pipe events</td></tr>
+      <tr><td>19/20</td><td>WMI events</td></tr>
+      <tr><td>22</td><td>DNS query</td></tr>
+    </table>
+
+    <!-- ============================================================ -->
+    <h2 id="soar">10. SOAR Pipeline</h2>
+    <p>The SOAR (Security Orchestration, Automation, and Response) pipeline connects SIEM alerts to automated investigations, playbook execution, response actions, case creation, and notifications — all within the same binary.</p>
+
+    <h3>Pipeline Flow</h3>
+    <pre><code>SIEM Alert ──&gt; Auto-Investigation ──&gt; Playbook ──&gt; Report ──&gt; Auto-Case ──&gt; Notification</code></pre>
+
+    <ol>
+      <li><strong>Alert triggers investigation.</strong> When a SIEM rule fires with severity >= 4, Trace automatically creates an investigation</li>
+      <li><strong>Playbook dispatches.</strong> The Dispatch Agent selects the appropriate playbook based on rule mapping</li>
+      <li><strong>Agents execute.</strong> Tasks are dispatched to Sift, Archive, Response, or EDR agents asynchronously</li>
+      <li><strong>Report generated.</strong> Results are synthesized into a structured report with confidence score</li>
+      <li><strong>Case auto-created.</strong> High-severity investigations create or link to security cases</li>
+      <li><strong>Notification sent.</strong> Configured channels receive the investigation summary</li>
+    </ol>
+
+    <h3>Human-in-the-Loop Approval</h3>
+    <p>Playbooks can require analyst approval before executing response actions:</p>
+    <pre><code>trace approval pending     # List requests waiting for review
+trace approval approve &lt;id&gt;  # Approve and execute
+trace approval deny &lt;id&gt;     # Deny and roll back</code></pre>
+
+    <!-- ============================================================ -->
+    <h2 id="playbooks">11. Playbooks</h2>
+    <p>Playbooks are YAML files that define investigation workflows. They live in <code>playbooks/</code> (external) and <code>internal/playbook/</code> (built-in). The platform ships with 27 playbooks.</p>
+
+    <h3>Complete Playbook List</h3>
+    <table>
+      <tr><th>Playbook</th><th>Purpose</th><th>Category</th></tr>
+      <tr><td><code>hash-lookup</code></td><td>Check file hash reputation</td><td class="tag tag-blue">Analysis</td></tr>
+      <tr><td><code>ip-reputation</code></td><td>Check IP across intelligence sources</td><td class="tag tag-blue">Analysis</td></tr>
+      <tr><td><code>ip-enrich</code></td><td>Enrich IP with threat intel</td><td class="tag tag-blue">Analysis</td></tr>
+      <tr><td><code>domain-reputation</code></td><td>Check domain reputation</td><td class="tag tag-blue">Analysis</td></tr>
+      <tr><td><code>file-analysis</code></td><td>Full static + dynamic file analysis</td><td class="tag tag-blue">Analysis</td></tr>
+      <tr><td><code>email-analysis</code></td><td>Analyze email headers/artifacts</td><td class="tag tag-blue">Analysis</td></tr>
+      <tr><td><code>cve-lookup</code></td><td>Look up CVE from NVD</td><td class="tag tag-blue">Analysis</td></tr>
+      <tr><td><code>mitre-lookup</code></td><td>Look up MITRE ATT&CK technique</td><td class="tag tag-blue">Analysis</td></tr>
+      <tr><td><code>log-analysis</code></td><td>Analyze log events</td><td class="tag tag-blue">Analysis</td></tr>
+      <tr><td><code>full-enrich</code></td><td>Full IOC enrichment pipeline</td><td class="tag tag-purple">Enrichment</td></tr>
+      <tr><td><code>block-ip</code></td><td>Block IP via firewall</td><td class="tag tag-red">Response</td></tr>
+      <tr><td><code>quarantine-file</code></td><td>Quarantine malicious file</td><td class="tag tag-red">Response</td></tr>
+      <tr><td><code>kill-process</code></td><td>Terminate suspicious process</td><td class="tag tag-red">Response</td></tr>
+      <tr><td><code>restart-service</code></td><td>Restart system service</td><td class="tag tag-red">Response</td></tr>
+      <tr><td><code>rollback-action</code></td><td>Roll back a response action</td><td class="tag tag-red">Response</td></tr>
+      <tr><td><code>network-scan</code></td><td>Network reconnaissance</td><td class="tag tag-yellow">Investigation</td></tr>
+      <tr><td><code>rootkit-scan</code></td><td>Rootkit detection</td><td class="tag tag-yellow">Investigation</td></tr>
+      <tr><td><code>compliance-scan</code></td><td>Security configuration assessment</td><td class="tag tag-yellow">Audit</td></tr>
+      <tr><td><code>registry-check</code></td><td>Windows registry review</td><td class="tag tag-yellow">Investigation</td></tr>
+      <tr><td><code>windows-event-analysis</code></td><td>Windows event log analysis</td><td class="tag tag-yellow">Investigation</td></tr>
+      <tr><td><code>edr-scan</code></td><td>Trigger EDR scan on host</td><td class="tag tag-red">EDR</td></tr>
+      <tr><td><code>edr-isolate</code></td><td>Isolate host via EDR</td><td class="tag tag-red">EDR</td></tr>
+      <tr><td><code>edr-kill-process</code></td><td>Kill process via EDR</td><td class="tag tag-red">EDR</td></tr>
+      <tr><td><code>slack-notify</code></td><td>Send Slack notification</td><td class="tag tag-green">Notify</td></tr>
+      <tr><td><code>discord-notify</code></td><td>Send Discord notification</td><td class="tag tag-green">Notify</td></tr>
+      <tr><td><code>telegram-notify</code></td><td>Send Telegram notification</td><td class="tag tag-green">Notify</td></tr>
+    </table>
+
+    <h3>Playbook Format</h3>
+    <pre><code>name: hash-lookup
+description: Check a file hash against local cache, YARA, and VirusTotal
+steps:
+  - agent: sift
+    action: hash_lookup
+    params:
+      hash: ${input.hash}
+  - agent: sift
+    action: yara_scan
+    params:
+      path: ${input.path}
+  - agent: sift
+    action: vt_lookup
+    params:
+      hash: ${input.hash}
+    timeout: 30s
+    optional: true
+  - agent: dispatch
+    action: synthesize_report</code></pre>
+
+    <h3>Step Features</h3>
+    <ul>
+      <li><strong>Conditional execution</strong> — <code>if</code> field to gate steps on prior results</li>
+      <li><strong>HITL approval</strong> — <code>wait: analyst_approval</code> pauses for human review</li>
+      <li><strong>Parameter interpolation</strong> — <code>${input.field}</code> and <code>${results.step_id.field}</code></li>
+      <li><strong>Timeouts</strong> — per-step <code>timeout</code> with graceful failure</li>
+      <li><strong>Optional steps</strong> — <code>optional: true</code> continues pipeline on failure</li>
+    </ul>
+
+    <!-- ============================================================ -->
+    <h2 id="compliance">12. Compliance</h2>
+    <p>Trace provides automated and manual compliance assessment against 8 major frameworks. The SCA (Security Configuration Assessment) agent runs CIS benchmark policies and maps results to compliance controls.</p>
+
+    <h3>Supported Frameworks</h3>
+    <table>
+      <tr><th>Framework</th><th>ID</th><th>Controls</th><th>Category</th></tr>
+      <tr><td>PCI DSS v4.0</td><td><code>pci_dss_v4.0</code></td><td>14</td><td>Payment security</td></tr>
+      <tr><td>PCI DSS v3.2.1</td><td><code>pci_dss_v3.2.1</code></td><td>9</td><td>Payment security</td></tr>
+      <tr><td>HIPAA Security Rule</td><td><code>hipaa</code></td><td>13</td><td>Healthcare</td></tr>
+      <tr><td>EU GDPR</td><td><code>gdpr</code></td><td>13</td><td>Data privacy</td></tr>
+      <tr><td>NIST SP 800-53 Rev.5</td><td><code>nist_sp_800-53</code></td><td>12</td><td>Government</td></tr>
+      <tr><td>ISO 27001:2013</td><td><code>iso_27001-2013</code></td><td>9</td><td>InfoSec management</td></tr>
+      <tr><td>SOC 2</td><td><code>soc_2</code></td><td>5</td><td>Service org controls</td></tr>
+      <tr><td>CIS Critical Security Controls v8</td><td><code>cis_csc_v8</code></td><td>6</td><td>Baseline security</td></tr>
+    </table>
+
+    <h3>CLI Usage</h3>
+    <pre><code># List supported frameworks
+trace compliance frameworks
+
+# Generate compliance report
+trace compliance report --framework pci_dss_v4.0 -o report.html
+
+# Manually assess a control
+trace compliance assess --framework gdpr --control Art.32 --status pass --notes "Encryption enabled"
+
+# Attach evidence
+trace compliance evidence --framework hipaa --control 164.312 --file evidence.pdf --description "Access logs"
+
+# Run SCA force scan
+trace investigate --playbook compliance-scan</code></pre>
+
+    <h3>Report Formats</h3>
+    <p>Compliance reports export in 4 formats:</p>
+    <table>
+      <tr><th>Format</th><th>Extension</th><th>Best For</th></tr>
+      <tr><td>Text</td><td><code>.txt</code></td><td>Quick terminal review</td></tr>
+      <tr><td>Markdown</td><td><code>.md</code></td><td>Version control, documentation</td></tr>
+      <tr><td>HTML</td><td><code>.html</code></td><td>Browser viewing, sharing</td></tr>
+      <tr><td>JSON</td><td><code>.json</code></td><td>Programmatic processing</td></tr>
+    </table>
+
+    <h3>MITRE-to-Compliance Mapping</h3>
+    <p>All 462 SIEM rules are mapped to MITRE ATT&CK techniques, which are further mapped to compliance controls across all 8 frameworks. Example:</p>
+    <pre><code>T1110 (Brute Force):
+  - PCI DSS 6.2, 8.2.1
+  - HIPAA 164.312(a)(1), 164.312(d)
+  - GDPR Art.32
+  - NIST AC-7, IA-5
+  - ISO A.9.2.1, A.9.4.2
+  - SOC 2 CC6.1</code></pre>
+
+    <!-- ============================================================ -->
+    <h2 id="casemanagement">13. Case Management</h2>
+    <p>Full case lifecycle management with timeline tracking, IOC management, evidence attachments, and PDF export.</p>
+
+    <h3>Case States</h3>
+    <p><span class="tag tag-blue">open</span> <span class="tag tag-yellow">investigating</span> <span class="tag tag-green">resolved</span> <span class="tag tag-red">closed</span></p>
+
+    <h3>Severity Levels</h3>
+    <p><span class="tag tag-green">low</span> <span class="tag tag-yellow">medium</span> <span class="tag tag-red">high</span> <span class="tag tag-red" style="background:oklch(0.55 0.24 25 / 0.2)">critical</span></p>
+
+    <h3>Automation</h3>
+    <p>Cases are automatically created from SIEM alerts with severity >= 4. The case inherits the alert title, severity, and links to the investigation. Manual creation is also supported:</p>
+    <pre><code>trace case create --title "Phishing campaign Q3" --severity high --description "Targeting finance department"</code></pre>
+
+    <h3>Evidence Attachments</h3>
+    <pre><code>trace case evidence &lt;case-id&gt; --file malware_sample.exe --name "Suspicious binary" --mime application/octet-stream</code></pre>
+    <p>Evidence files are stored in the case directory and included in PDF exports.</p>
+
+    <h3>PDF Export</h3>
+    <pre><code>trace case export-pdf &lt;case-id&gt; -o case_report.pdf</code></pre>
+    <p>The generated PDF includes: case metadata, timeline, IOCs, linked investigations, and evidence file list. A4 format, professional layout.</p>
+
+    <!-- ============================================================ -->
+    <h2 id="hunting">14. Threat Hunting</h2>
+    <p>Automated threat hunting with scheduled execution, configurable playbooks, and severity-based notification thresholds.</p>
+
+    <h3>Default Hunts</h3>
+    <table>
+      <tr><th>Hunt Name</th><th>Schedule</th><th>Playbook</th><th>Severity</th></tr>
+      <tr><td><code>known-malware-scan</code></td><td>Every 6h</td><td><code>hash-lookup</code></td><td>5</td></tr>
+      <tr><td><code>compliance-audit</code></td><td>Every 24h</td><td><code>compliance-scan</code></td><td>3</td></tr>
+      <tr><td><code>rootkit-sweep</code></td><td>Every 24h</td><td><code>rootkit-scan</code></td><td>5</td></tr>
+      <tr><td><code>k8s-audit</code></td><td>Every 1h</td><td><code>log-analysis</code></td><td>4</td></tr>
+    </table>
+
+    <h3>CLI Usage</h3>
+    <pre><code># List active hunts
+trace hunt list
+
+# Create a scheduled hunt
+trace hunt create --name "weekly-ioc-sweep" --schedule "168h" --playbook "full-enrich"
+
+# Run a hunt immediately
+trace hunt run known-malware-scan
+
+# Pause/resume
+trace hunt pause weekly-ioc-sweep
+trace hunt resume weekly-ioc-sweep
+
+# Delete
+trace hunt delete weekly-ioc-sweep</code></pre>
+
+    <h3>Scheduler</h3>
+    <p>The scheduler runs every 60 seconds, checking for due hunts. Each execution creates an investigation, runs the configured playbook, synthesizes a report, and updates timestamps. Maximum execution time per hunt: 10 minutes.</p>
+
+    <!-- ============================================================ -->
+    <h2 id="edr">15. EDR Connectors</h2>
+    <p>Remote endpoint management across three major EDR platforms. All operations are available as playbook steps and CLI investigations.</p>
+
+    <h3>Supported Providers</h3>
+    <table>
+      <tr><th>Provider</th><th>Authentication</th><th>Operations</th></tr>
+      <tr><td><strong>CrowdStrike</strong></td><td>OAuth2 (client_id + secret)</td><td>Agent info, isolate/release, kill process, scan, run script</td></tr>
+      <tr><td><strong>SentinelOne</strong></td><td>API Token</td><td>Same 5 operations</td></tr>
+      <tr><td><strong>Microsoft Defender for Endpoint</strong></td><td>OAuth2 (tenant + client)</td><td>Same 5 operations</td></tr>
+    </table>
+
+    <h3>EDR Playbooks</h3>
+    <table>
+      <tr><th>Playbook</th><th>Description</th></tr>
+      <tr><td><code>edr-isolate</code></td><td>Remotely isolate a host from the network</td></tr>
+      <tr><td><code>edr-scan</code></td><td>Trigger a full antivirus scan on a remote endpoint</td></tr>
+      <tr><td><code>edr-kill-process</code></td><td>Kill a process on a remote endpoint by PID</td></tr>
+    </table>
+
+    <h3>Safety Features</h3>
+    <ul>
+      <li><strong>Circuit breaker</strong> — 5 consecutive failures open the circuit for 60 seconds</li>
+      <li><strong>Rate limiting</strong> — minimum 200ms interval between API calls</li>
+      <li><strong>Audit trail</strong> — every EDR action is logged with timestamp, operator, and result</li>
+    </ul>
+
+    <!-- ============================================================ -->
+    <h2 id="threatintel">16. Threat Intelligence</h2>
+    <p>Multi-source threat intelligence enrichment with local caching and async updates.</p>
+
+    <h3>Providers</h3>
+    <table>
+      <tr><th>Provider</th><th>Type</th><th>Free Tier</th><th>Cache TTL</th></tr>
+      <tr><td>VirusTotal</td><td>Hash, URL, IP lookup</td><td>500/day</td><td>24h</td></tr>
+      <tr><td>AbuseIPDB</td><td>IP reputation</td><td>1000/day</td><td>24h</td></tr>
+      <tr><td>AlienVault OTX</td><td>Indicator pulses</td><td>Unlimited</td><td>24h</td></tr>
+      <tr><td>Firecrawl</td><td>Web search (OSINT)</td><td>500 credits</td><td>—</td></tr>
+    </table>
+
+    <h3>Built-in Intel Database</h3>
+    <p>The binary embeds a pre-seeded intel database covering:</p>
+    <ul>
+      <li><strong>MITRE ATT&CK</strong> — 81 techniques with descriptions, tactics, mitigations</li>
+      <li><strong>Malware hashes</strong> — 12 known malicious hashes (Mimikatz, CobaltStrike, Emotet, Ryuk, PlugX, AgentTesla, WannaCry, TrickBot, QakBot, NjRAT, DarkComet, Lokibot, FormBook)</li>
+      <li><strong>Malicious IPs</strong> — 6 known bad IPs</li>
+      <li><strong>Malicious domains</strong> — 3 known bad domains</li>
+    </ul>
+
+    <!-- ============================================================ -->
+    <h2 id="notifications">17. Notifications</h2>
+    <p>Trace sends investigation summaries and alerts to configured notification channels.</p>
+
+    <h3>Supported Channels</h3>
+    <table>
+      <tr><th>Channel</th><th>Method</th><th>Configuration</th></tr>
+      <tr><td>Slack</td><td>Incoming Webhook</td><td><code>slack_webhook_url</code></td></tr>
+      <tr><td>Discord</td><td>Webhook</td><td><code>discord_webhook_url</code></td></tr>
+      <tr><td>Telegram</td><td>Bot API</td><td><code>telegram_bot_token</code> + <code>telegram_chat_id</code></td></tr>
+    </table>
+
+    <p>Channels are configured during <code>trace init</code> or by editing <code>config.json</code>. Notifications are sent on high-severity investigation completion.</p>
+
+    <!-- ============================================================ -->
+    <h2 id="tui">18. Terminal UI</h2>
+    <p>The Terminal User Interface (TUI) provides a full-screen interactive console with 5 screens, keyboard navigation, and live data refresh. Built with <a href="https://github.com/charmbracelet/bubbletea">Bubbletea</a>.</p>
+
+    <h3>Screens</h3>
+    <table>
+      <tr><th>Screen</th><th>Content</th></tr>
+      <tr><td><strong>Dashboard</strong></td><td>Stats cards (total investigations, open cases, active hunts) + recent investigation table</td></tr>
+      <tr><td><strong>Investigations</strong></td><td>Filterable investigation list with status, intent, confidence, created time</td></tr>
+      <tr><td><strong>Cases</strong></td><td>Case list with filtering by status and severity</td></tr>
+      <tr><td><strong>SIEM</strong></td><td>Real-time SIEM alert viewer</td></tr>
+      <tr><td><strong>Config</strong></td><td>Read-only configuration viewer</td></tr>
+    </table>
+
+    <h3>Keyboard Shortcuts</h3>
+    <table>
+      <tr><th>Key</th><th>Action</th></tr>
+      <tr><td><code>Tab</code> / <code>Shift+Tab</code></td><td>Switch screens</td></tr>
+      <tr><td><code>Up</code> / <code>Down</code> / <code>j</code> / <code>k</code></td><td>Navigate lists</td></tr>
+      <tr><td><code>Enter</code></td><td>Select / view details</td></tr>
+      <tr><td><code>Esc</code></td><td>Go back</td></tr>
+      <tr><td><code>1</code>-<code>5</code></td><td>Filter by status</td></tr>
+      <tr><td><code>r</code></td><td>Refresh</td></tr>
+      <tr><td><code>q</code> / <code>Ctrl+C</code></td><td>Quit</td></tr>
+    </table>
+
+    <!-- ============================================================ -->
+    <h2 id="server">19. Server &amp; REST API</h2>
+    <p>The central server mode provides a web dashboard, edge node synchronization, and a REST API for third-party integrations.</p>
+
+    <h3>Server Modes</h3>
+    <pre><code># Start the web dashboard
+trace server --http-addr :8080
+
+# Enable TLS
+trace server --http-addr :443 --tls-cert /path/to/cert.pem --tls-key /path/to/key.pem</code></pre>
+
+    <h3>REST API Endpoints</h3>
+    <table>
+      <tr><th>Endpoint</th><th>Method</th><th>Auth</th><th>Purpose</th></tr>
+      <tr><td><code>/api/v1/register</code></td><td>POST</td><td>API Key</td><td>Register edge node</td></tr>
+      <tr><td><code>/api/v1/heartbeat</code></td><td>POST</td><td>API Key</td><td>Edge node heartbeat</td></tr>
+      <tr><td><code>/api/v1/push</code></td><td>POST</td><td>API Key</td><td>Push investigation from edge</td></tr>
+      <tr><td><code>/api/v1/nodes</code></td><td>GET</td><td>API Key</td><td>List registered nodes</td></tr>
+      <tr><td><code>/api/v1/investigations</code></td><td>GET</td><td>API Key</td><td>List investigations</td></tr>
+      <tr><td><code>/api/v1/investigations/{id}</code></td><td>GET</td><td>API Key</td><td>Get investigation detail</td></tr>
+      <tr><td><code>/api/v1/correlations</code></td><td>GET</td><td>API Key</td><td>Cross-node IOC correlations</td></tr>
+      <tr><td><code>/api/v1/timeline/{id}</code></td><td>GET</td><td>API Key</td><td>Investigation log timeline</td></tr>
+      <tr><td><code>/health</code></td><td>GET</td><td>None</td><td>Health check</td></tr>
+    </table>
+
+    <h3>Authentication</h3>
+    <p>API requests use Bearer token authentication. Generate an API key via <code>trace genkey</code>. The default admin user <code>admin@trace.local</code> is auto-seeded with a random key on first run.</p>
+    <pre><code># Authenticated request
+curl -H "Authorization: Bearer &lt;api-key&gt;" http://localhost:8080/api/v1/nodes</code></pre>
+
+    <h3>Dashboard Pages</h3>
+    <ul>
+      <li><code>/</code> — Main dashboard with overview stats</li>
+      <li><code>/investigations/{id}</code> — Investigation detail page</li>
+      <li><code>/correlations</code> — Cross-node IOC correlation view</li>
+      <li><code>/cases</code> — Case management page</li>
+    </ul>
+
+    <!-- ============================================================ -->
+    <h2 id="plugins">20. Plugin System</h2>
+    <p>Trace supports two plugin mechanisms: compiled-in agents (core) and external shared libraries (third-party).</p>
+
+    <h3>Built-in Plugins</h3>
+    <table>
+      <tr><th>Plugin</th><th>Purpose</th></tr>
+      <tr><td><strong>SCA Agent</strong></td><td>Security configuration assessment with CIS policy engine</td></tr>
+      <tr><td><strong>Exporter</strong></td><td>HTML report server for compliance and investigation reports</td></tr>
+    </table>
+
+    <h3>External Plugins</h3>
+    <ul>
+      <li>Go shared library (<code>.so</code>) files loaded from <code>~/.trace/plugins/</code></li>
+      <li>Must implement the <code>AgentPlugin</code> interface</li>
+      <li>Plugin registry: <code>https://github.com/yanmyoaung2004/trace/releases/latest/download/plugins/index.json</code></li>
+    </ul>
+
+    <pre><code>trace plugin list           # List all registered agents
+trace plugin search &lt;query&gt;  # Search plugin registry
+trace plugin install &lt;name&gt;  # Download and install
+trace plugin remove &lt;name&gt;   # Remove plugin</code></pre>
+
+    <!-- ============================================================ -->
+    <h2 id="internationalization">21. Internationalization</h2>
+    <p>Trace supports English and Myanmar (Burmese) languages with auto-detection based on system locale.</p>
+
+    <table>
+      <tr><th>Code</th><th>Language</th><th>Coverage</th></tr>
+      <tr><td><code>en</code></td><td>English</td><td>59 keys (full)</td></tr>
+      <tr><td><code>my</code></td><td>Myanmar (Burmese)</td><td>59 keys (full)</td></tr>
+    </table>
+
+    <h3>Language Detection</h3>
+    <p>Auto-detected via <code>LANG</code>, <code>LC_ALL</code>, or <code>LC_MESSAGES</code> environment variables. Override manually:</p>
+    <pre><code># Force Myanmar language
+$env:LC_ALL = "my"
+trace investigate</code></pre>
+
+    <h3>Translation Groups</h3>
+    <table>
+      <tr><th>Group</th><th>Keys</th></tr>
+      <tr><td>Dashboard</td><td>37 keys — titles, status labels, navigation</td></tr>
+      <tr><td>CLI</td><td>10 keys — command descriptions</td></tr>
+      <tr><td>SIEM</td><td>2 keys — alert, severity</td></tr>
+      <tr><td>Investigation lifecycle</td><td>5 keys — intent classification, report, completion</td></tr>
+    </table>
+
+    <!-- ============================================================ -->
+    <h2 id="cli-full">Appendix: Full Command Reference</h2>
+
+    <h3>init</h3>
+    <pre><code>trace init</code></pre>
+    <p>Interactive first-run setup wizard. Prompts for API keys, SIEM configuration, notification channels, and telemetry opt-in. Creates <code>~/.trace/config.json</code>.</p>
+
+    <h3>investigate</h3>
+    <pre><code>trace investigate [query] [flags]
+trace inv [query] [flags]
+
+Flags:
+  -p, --playbook string   Playbook name (skips intent classification)
+      --param strings     Playbook parameters (key=value)
+
+Examples:
+  trace investigate "check hash 275a021bbfb648"
+  trace investigate --playbook file-analysis --param path=/tmp/malware.exe
+  trace investigate --playbook domain-reputation --param domain=evil.com</code></pre>
+
+    <h3>serve</h3>
+    <pre><code>trace serve [flags]
+
+Flags:
+      --siem               Enable SIEM log monitoring
+      --syslog-addr string Syslog listener address (default ":514")
+      --log-dir strings    Directories to watch for log files
+      --export string      HTML report server address (e.g. ":8081")
+      --server-addr string Central server URL for edge sync</code></pre>
+
+    <h3>server</h3>
+    <pre><code>trace server [flags]
+
+Flags:
+      --http-addr string  HTTP API + dashboard address (default ":8080")
+      --tls-cert string   TLS certificate file
+      --tls-key string    TLS private key file</code></pre>
+
+    <h3>status</h3>
+    <pre><code>trace status &lt;investigation-id&gt;
+trace st &lt;investigation-id&gt;</code></pre>
+
+    <h3>history</h3>
+    <pre><code>trace history [flags]
+trace hist [flags]
+
+Flags:
+  -n, --limit int  Number of investigations (default 20)</code></pre>
+
+    <h3>report</h3>
+    <pre><code>trace report &lt;investigation-id&gt; [flags]
+
+Flags:
+  -o, --output string  Save report to file</code></pre>
+
+    <h3>case</h3>
+    <pre><code>trace case &lt;subcommand&gt; [args] [flags]
+
+Subcommands:
+  create                 Create a new case
+    --title string       Case title (required)
+    --description string Case description
+    --severity string    Severity (low/medium/high/critical)
+  list                   List all cases
+    --status string      Filter by status
+    --severity string    Filter by severity
+  view &lt;id&gt;              View case details
+  note &lt;id&gt; &lt;content&gt;    Add a note
+  ioc &lt;id&gt;               Add an IOC
+    --type string        IOC type (ip/domain/url/hash/email/filepath)
+    --value string       IOC value
+  evidence &lt;id&gt;          Attach evidence
+    --file string        File path
+    --name string        Display name
+    --mime string        MIME type
+  assign &lt;id&gt;            Assign case
+    --to string          Assignee
+  close &lt;id&gt;             Close case
+    --resolution string  Resolution notes
+  export &lt;id&gt;            Export as JSON
+  export-pdf &lt;id&gt;        Export as PDF
+    -o, --output string  Output path</code></pre>
+
+    <h3>hunt</h3>
+    <pre><code>trace hunt &lt;subcommand&gt; [args] [flags]
+
+Subcommands:
+  create                 Create scheduled hunt
+    --name string        Hunt name (required)
+    --description string Description
+    --schedule string    Schedule interval (e.g. "6h", "24h")
+    --playbook string    Playbook name (required)
+    --param strings      Playbook parameters
+  list                   List hunts
+    --status string      Filter (active/paused)
+  run &lt;name&gt;             Execute hunt immediately
+  pause &lt;name&gt;           Pause hunt
+  resume &lt;name&gt;          Resume hunt
+  delete &lt;name&gt;          Delete hunt</code></pre>
+
+    <h3>compliance</h3>
+    <pre><code>trace compliance &lt;subcommand&gt; [flags]
+
+Subcommands:
+  frameworks             List supported frameworks
+  report                 Generate compliance report
+    -f, --framework string  Framework ID (required)
+    -o, --output string     Output path
+  assess                 Manual control assessment
+    -f, --framework string  Framework ID (required)
+    -C, --control string    Control ID (required)
+    -s, --status string     Status (pass/fail/not-covered)
+    -n, --notes string      Assessment notes
+  evidence               Attach compliance evidence
+    -f, --framework string  Framework ID (required)
+    -C, --control string    Control ID (required)
+    -d, --description string  Description
+    --file string           Evidence file path</code></pre>
+
+    <h3>approval</h3>
+    <pre><code>trace approval &lt;subcommand&gt;
+
+Subcommands:
+  pending        List pending approval requests
+  approve &lt;id&gt;   Approve and execute
+  deny &lt;id&gt;      Deny and roll back</code></pre>
+
+    <h3>plugin</h3>
+    <pre><code>trace plugin &lt;subcommand&gt; [args] [flags]
+
+Subcommands:
+  list              List registered agents/capabilities
+  search &lt;query&gt;    Search plugin registry
+  install &lt;name&gt;    Install a plugin
+  remove &lt;name&gt;     Remove a plugin</code></pre>
+
+    <h3>update</h3>
+    <pre><code>trace update &lt;subcommand&gt;
+
+Subcommands:
+  self          Update binary
+    --dry-run   Check for update without applying
+  intel         Refresh threat intel database
+  playbooks     Fetch latest playbook library
+  rollback      Roll back to previous version</code></pre>
+
+    <h3>genkey</h3>
+    <pre><code>trace genkey [flags]
+
+Flags:
+      --host string  Hostname for cert (default "localhost")
+      --out string   Output directory
+      --bits int     RSA key bits (default 2048)</code></pre>
+
+    <h3>version</h3>
+    <pre><code>trace version</code></pre>
+
+    <div style="height:80px;"></div>
+
+  </main>
+</div>
+
+</body>
+</html>

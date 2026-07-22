@@ -46,11 +46,8 @@ nav .container {
   font-weight: 800; font-size: 1.25rem; letter-spacing: -.02em; color: var(--ink);
   display: flex; align-items: center; gap: 10px;
 }
-.nav-logo .shield {
-  width: 28px; height: 28px;
-  background: var(--primary);
-  border-radius: 6px; display: inline-flex; align-items: center; justify-content: center;
-  font-size: 16px; color: #fff;
+.nav-logo-img {
+  width: 28px; height: 28px; object-fit: contain; border-radius: 4px;
 }
 .nav-links { display: flex; gap: 28px; align-items: center; list-style: none; }
 .nav-links a { font-size: .875rem; font-weight: 500; color: var(--muted); letter-spacing: .01em; }
@@ -64,32 +61,40 @@ nav .container {
 
 /* ── Hero ── */
 .hero {
-  min-height: 100vh; display: flex; align-items: center;
-  padding: 100px 0 60px; position: relative; overflow: hidden;
+  min-height: 100dvh; display: flex; align-items: center;
+  padding: 88px 0 80px; position: relative; overflow: hidden;
+  background: #050510;
 }
-.hero-grid {
-  display: grid; grid-template-columns: 520px 1fr; gap: 48px; align-items: center;
+#radarCanvas {
+  position: absolute; inset: 0; z-index: 1;
+  width: 100%; height: 100%; pointer-events: none;
+}
+.hero .container {
+  position: relative; z-index: 2; width: 100%;
+}
+.hero-content {
+  max-width: 520px;
 }
 .hero-badge {
   display: inline-flex; align-items: center; gap: 8px;
   background: oklch(0.60 0.22 230 / 0.12);
   color: var(--primary); font-size: .8125rem; font-weight: 700;
-  padding: 6px 16px; border-radius: 100px; margin-bottom: 24px;
+  padding: 6px 16px; border-radius: 100px; margin-bottom: 20px;
   letter-spacing: .03em; text-transform: uppercase;
 }
 .hero h1 {
-  font-size: clamp(2.25rem, 5.5vw, 4rem);
-  font-weight: 800; line-height: 1.08; letter-spacing: -.035em;
-  margin-bottom: 20px; text-wrap: balance;
+  font-size: clamp(2.75rem, 5.5vw, 4.5rem);
+  font-weight: 800; line-height: 1.05; letter-spacing: -.04em;
+  margin-bottom: 16px; text-wrap: balance;
+  color: var(--ink);
 }
-.hero h1 .highlight {
-  color: var(--accent);
+.hero-sub {
+  font-size: 1.0625rem; color: var(--muted); max-width: 480px;
+  margin-bottom: 32px; line-height: 1.65;
 }
-.hero p {
-  font-size: 1.125rem; color: var(--muted); max-width: 480px;
-  margin-bottom: 32px; line-height: 1.7;
+.hero-actions {
+  display: flex; gap: 12px; flex-wrap: wrap;
 }
-.hero-buttons { display: flex; gap: 12px; flex-wrap: wrap; }
 .btn {
   display: inline-flex; align-items: center; gap: 8px; padding: 14px 30px;
   border-radius: var(--radius-sm); font-weight: 700; font-size: .9375rem;
@@ -104,11 +109,21 @@ nav .container {
 .tty {
   background: #070712; border-radius: var(--radius);
   border: 1px solid oklch(0.20 0.02 260 / 0.5);
-  overflow: hidden; box-shadow: 0 24px 80px oklch(0 0 0 / 0.5), 0 0 0 1px oklch(0.20 0.02 260 / 0.3);
-  transform: perspective(1000px) rotateY(-1deg);
-  transition: transform .4s ease;
+  overflow: hidden;
+  box-shadow:
+    0 24px 80px oklch(0 0 0 / 0.5),
+    0 0 0 1px oklch(0.20 0.02 260 / 0.3),
+    0 0 60px oklch(0.60 0.22 230 / 0.06);
+  transform: perspective(1200px) rotateY(-1.5deg) translateZ(0);
+  transition: transform .5s ease, box-shadow .5s ease;
 }
-.tty:hover { transform: perspective(1000px) rotateY(0deg); }
+.tty:hover {
+  transform: perspective(1200px) rotateY(0deg) translateZ(0);
+  box-shadow:
+    0 24px 80px oklch(0 0 0 / 0.5),
+    0 0 0 1px oklch(0.25 0.03 260 / 0.5),
+    0 0 80px oklch(0.60 0.22 230 / 0.12);
+}
 .tty-bar {
   display: flex; align-items: center; gap: 8px;
   padding: 12px 16px; background: oklch(0.06 0.01 260);
@@ -119,7 +134,7 @@ nav .container {
 .tty-dot:nth-child(2) { background: var(--warning); }
 .tty-dot:nth-child(3) { background: var(--success); }
 .tty-title { font-size: .75rem; color: var(--muted); margin-left: 10px; font-family: var(--font-mono); }
-.tty-body { padding: 20px; font-family: var(--font-mono); font-size: .8125rem; line-height: 1.7; min-height: 360px; position: relative; }
+.tty-body { padding: 24px; font-family: var(--font-mono); font-size: .8125rem; line-height: 1.7; min-height: 420px; position: relative; }
 .tty-line { opacity: 0; animation: ttyFade .3s ease forwards; white-space: pre-wrap; word-break: break-all; }
 @keyframes ttyFade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 .tty-prompt { color: var(--success); }
@@ -167,6 +182,71 @@ nav .container {
   display: inline-block; font-size: .6875rem; font-weight: 700; padding: 4px 12px; margin-top: 16px;
   border-radius: 100px; background: oklch(0.60 0.22 230 / 0.1); color: var(--primary); letter-spacing: .03em;
 }
+
+/* ── Tmux Section ── */
+.tmux-section { padding: 100px 0; border-top: 1px solid var(--border); }
+.tmux-wrap {
+  max-width: 860px; margin: 0 auto;
+  font-family: var(--font-mono); font-size: .7rem;
+}
+.tmux-bar-top {
+  display: flex; align-items: center; gap: 12px;
+  padding: 6px 12px; background: #0a0a18;
+  border: 1px solid rgba(255,255,255,0.06); border-bottom: none;
+  border-radius: 8px 8px 0 0;
+}
+.tmux-tag {
+  background: #2d2d4a; color: #888;
+  padding: 2px 8px; border-radius: 3px;
+}
+.tmux-path { color: rgba(255,255,255,0.3); }
+.tmux-tabs-info { margin-left: auto; color: rgba(255,255,255,0.2); }
+.tmux-panes {
+  display: grid; grid-template-columns: 1.2fr 0.8fr;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 0 0 8px 8px; overflow: hidden; min-height: 480px;
+}
+.tmux-pane {
+  background: #070712; padding: 16px;
+  display: flex; flex-direction: column;
+}
+.pane-alerts { border-right: 1px solid rgba(255,255,255,0.06); }
+.tmux-right { display: flex; flex-direction: column; }
+.pane-invest { flex: 1; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.pane-compliance { flex: 1; }
+.tmux-pane-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 8px; text-transform: uppercase; letter-spacing: .08em;
+  font-size: .6rem; color: rgba(255,255,255,0.25);
+}
+.tmux-badge { color: rgba(90,160,250,0.5); }
+.tmux-status-dot { font-size: .6rem; }
+.tmux-status-dot.running { color: #5adb80; }
+.tmux-status-dot.warn { color: #f0b34b; }
+.tmux-pane-body {
+  flex: 1; overflow: hidden; font-size: .7rem; line-height: 1.9;
+  white-space: pre; color: rgba(255,255,255,0.55);
+}
+.tmux-bar-bottom {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 12px; background: #0a0a18;
+  border: 1px solid rgba(255,255,255,0.06); border-top: none;
+  border-radius: 0 0 8px 8px; font-size: .6rem;
+}
+.tmux-host { color: #5adb80; }
+.tmux-session { color: rgba(255,255,255,0.25); }
+.tmux-quote { margin-left: auto; color: rgba(255,255,255,0.12); }
+.tmux-cta { display: flex; gap: 12px; justify-content: center; margin-top: 40px; flex-wrap: wrap; }
+
+/* ── Flow Section ── */
+.flow-section { padding: 100px 0; border-top: 1px solid var(--border); background: #050510; }
+.flow-canvas-wrap {
+  position: relative; width: 100%; max-width: 960px; margin: 0 auto;
+  border-radius: var(--radius); border: 1px solid rgba(255,255,255,0.06);
+  background: #070712; overflow: hidden;
+}
+.flow-canvas-wrap canvas { display: block; width: 100%; height: auto; }
+.flow-cta { display: flex; gap: 12px; justify-content: center; margin-top: 36px; flex-wrap: wrap; }
 
 /* ── TUI Demo ── */
 .tui-demo { padding: 100px 0; border-top: 1px solid var(--border); }
@@ -274,8 +354,8 @@ footer p { font-size: .8125rem; color: var(--muted); }
 
 /* ── Responsive ── */
 @media (max-width: 900px) {
-  .hero-grid { grid-template-columns: 1fr; gap: 32px; }
-  .hero h1 { font-size: 2rem; }
+  .hero h1 { font-size: 2.25rem; }
+  #radarCanvas { opacity: 0.4; }
   .tty { transform: none; }
   .tty:hover { transform: none; }
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
@@ -283,6 +363,9 @@ footer p { font-size: .8125rem; color: var(--muted); }
   .demo-grid { grid-template-columns: 1fr; }
   .demo-grid { text-align: center; }
   .nav-links li:not(.nav-cta-li) { display: none; }
+  .tmux-panes { grid-template-columns: 1fr; min-height: auto; }
+  .pane-alerts { border-right: none; border-bottom: 1px solid rgba(255,255,255,0.06); }
+  .flow-canvas-wrap canvas { min-height: 280px; }
 }
 @media (max-width: 640px) {
   .tui-grid-3 { grid-template-columns: 1fr; }
