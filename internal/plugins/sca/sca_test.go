@@ -55,7 +55,7 @@ func TestSCARunnerCommandCheck(t *testing.T) {
 	rule := "c:echo hello -> r:hello"
 	parts := strings.SplitN(rule, "->", 2)
 	cmdStr := strings.TrimSpace(strings.TrimPrefix(parts[0], "c:"))
-	expected := strings.TrimSpace(strings.TrimPrefix(parts[1], "r:"))
+	expected := strings.TrimPrefix(strings.TrimSpace(parts[1]), "r:")
 	t.Logf("cmdStr=%q expected=%q", cmdStr, expected)
 
 	cmdParts := strings.Fields(cmdStr)
