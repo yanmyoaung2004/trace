@@ -64,13 +64,29 @@ func (c *Correlator) LoadRules(path string) error {
 	}
 	var rules []*CorrRule
 	if err := json.Unmarshal(data, &rules); err != nil {
-		return err
+		return fmt.Errorf("correlator: invalid rule JSON: %w", err)
+	}
+	for i, r := range rules {
+		if r.Name == "" {
+			return fmt.Errorf("correlator: rule %d has no name", i)
+		}
+		if r.Window <= 0 {
+			return fmt.Errorf("correlator: rule %q has invalid window: %v", r.Name, r.Window)
+		}
+		if r.Threshold <= 0 {
+			return fmt.Errorf("correlator: rule %q has invalid threshold: %d", r.Name, r.Threshold)
+		}
 	}
 	c.mu.Lock()
-	c.rules = append(c.rules, rules...)
+	c.rules = rules
 	c.mu.Unlock()
-	log.Printf("[correlator] loaded %d rules from %s", len(rules), path)
+	log.Printf("[correlator] loaded %d validated rules from %s", len(rules), path)
 	return nil
+}
+
+func (c *Correlator) Reload(path string) error {
+	log.Printf("[correlator] hot-reloading rules from %s", path)
+	return c.LoadRules(path)
 }
 
 func (c *Correlator) Ingestion(evt *Event) {

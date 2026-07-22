@@ -176,6 +176,12 @@ func (t *ProcessTree) Save() error {
 	if t.dataDir == "" {
 		return nil
 	}
+	os.MkdirAll(t.dataDir, 0700)
+
+	// Write to temp file first, then rename for atomicity
+	tmpPath := filepath.Join(t.dataDir, "process_tree.tmp")
+	path := filepath.Join(t.dataDir, "process_tree.json")
+
 	nodes := make([]*ProcNode, 0, len(t.byPID))
 	for _, elem := range t.byPID {
 		nodes = append(nodes, elem.Value.(*lruEntry).node)
@@ -183,15 +189,110 @@ func (t *ProcessTree) Save() error {
 			break
 		}
 	}
+
 	data, err := json.Marshal(nodes)
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(t.dataDir, "process_tree.json")
-	os.MkdirAll(t.dataDir, 0700)
-	os.WriteFile(path, data, 0600)
+
+	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
+		return err
+	}
 	log.Printf("[tree] saved %d nodes", len(nodes))
 	return nil
+}
+
+func (t *ProcessTree) WALAppend(evt *Event) {
+	if t.dataDir == "" || evt.Process == nil {
+		return
+	}
+	entry := struct {
+		PID     int    `json:"pid"`
+		PPID    int    `json:"ppid"`
+		Name    string `json:"name"`
+		CmdLine string `json:"cmdline,omitempty"`
+		Type    EventType `json:"type"`
+		Time    int64  `json:"time"`
+	}{
+		PID: evt.Process.PID, PPID: evt.Process.PPID,
+		Name: evt.Process.Name, CmdLine: evt.Process.CmdLine,
+		Type: evt.Type, Time: evt.Timestamp.UnixNano(),
+	}
+	data, _ := json.Marshal(entry)
+	walPath := filepath.Join(t.dataDir, "wal.log")
+	os.MkdirAll(t.dataDir, 0700)
+	f, err := os.OpenFile(walPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	f.Write(data)
+	f.WriteString("\n")
+
+	// Rotate WAL every 10000 entries
+	info, _ := f.Stat()
+	if info != nil && info.Size() > 10*1024*1024 {
+		go t.Save()
+		f.Truncate(0)
+	}
+}
+
+func (t *ProcessTree) ReplayWAL() {
+	if t.dataDir == "" {
+		return
+	}
+	walPath := filepath.Join(t.dataDir, "wal.log")
+	data, err := os.ReadFile(walPath)
+	if err != nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		var entry struct {
+			PID int `json:"pid"`; PPID int `json:"ppid"`
+			Name string `json:"name"`; CmdLine string `json:"cmdline,omitempty"`
+			Type EventType `json:"type"`; Time int64 `json:"time"`
+		}
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			continue
+		}
+		if _, exists := t.byPID[entry.PID]; exists {
+			continue
+		}
+		node := &ProcNode{
+			PID: entry.PID, PPID: entry.PPID,
+			Name: entry.Name, CmdLine: entry.CmdLine,
+			StartAt: time.Unix(0, entry.Time),
+		}
+		if entry.Type == EventProcessTerminate {
+			now := time.Now()
+			node.EndAt = &now
+		}
+		if parentElem, ok := t.byPID[node.PPID]; ok {
+			parent := parentElem.Value.(*lruEntry).node
+			parent.Children = append(parent.Children, node)
+			node.Depth = parent.Depth + 1
+		}
+		elem := t.lruList.PushFront(&lruEntry{pid: node.PID, node: node})
+		t.byPID[node.PID] = elem
+	}
+	t.evictLocked()
+}
+
+func (t *ProcessTree) Close() {
+	t.Save()
+	if t.dataDir != "" {
+		os.Remove(filepath.Join(t.dataDir, "wal.log"))
+	}
 }
 
 func (t *ProcessTree) load() {

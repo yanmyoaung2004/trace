@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,11 +60,21 @@ func (q *EventQueue) Push(evt *monitor.Event) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	// Check size
 	var count int
 	q.db.QueryRow("SELECT COUNT(*) FROM event_queue").Scan(&count)
 	if count >= q.maxSize {
-		q.db.Exec("DELETE FROM event_queue WHERE id IN (SELECT id FROM event_queue ORDER BY id ASC LIMIT ?)", count-q.maxSize+100)
+		overflow := count - q.maxSize + 100
+		if overflow > 0 {
+			q.db.Exec("DELETE FROM event_queue WHERE id IN (SELECT id FROM event_queue ORDER BY id ASC LIMIT ?)", overflow)
+			log.Printf("[queue] evicted %d old events (at capacity %d)", overflow, q.maxSize)
+		}
+	}
+
+	var totalSize int64
+	q.db.QueryRow("SELECT COALESCE(SUM(LENGTH(event_data)), 0) FROM event_queue").Scan(&totalSize)
+	if totalSize > int64(q.maxSize)*1024 {
+		q.db.Exec("DELETE FROM event_queue WHERE id IN (SELECT id FROM event_queue ORDER BY id ASC LIMIT 100)")
+		log.Printf("[queue] size limit reached (%d bytes), evicted 100 events", totalSize)
 	}
 
 	data, err := json.Marshal(evt)

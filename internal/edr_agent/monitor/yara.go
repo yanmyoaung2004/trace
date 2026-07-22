@@ -51,6 +51,17 @@ func (y yaraEntropy) Matches(data []byte) bool {
 
 type yaraPENotSection struct{}
 
+type xorEncoded struct{}
+
+func (xorEncoded) Matches(data []byte) bool { return detectXOR(data) }
+
+type packedPE struct{}
+
+func (packedPE) Matches(data []byte) bool {
+	pe := AnalyzePE(data)
+	return pe.IsPE && pe.IsPacked
+}
+
 func (yaraPENotSection) Matches(data []byte) bool {
 	if len(data) < 2 || data[0] != 'M' || data[1] != 'Z' {
 		return false
@@ -130,6 +141,33 @@ func (ym *YaraMatcher) MatchProcess(pid int) ([]*YaraRule, error) {
 	return ym.MatchFile(procPath)
 }
 
+func detectXOR(data []byte) bool {
+	if len(data) < 64 {
+		return false
+	}
+	scores := make(map[byte]int)
+	var nullCount int
+	for i, b := range data {
+		if b == 0 {
+			nullCount++
+			continue
+		}
+		if i+1 < len(data) && data[i+1] != 0 {
+			scores[data[i+1]^b]++
+		}
+	}
+	nullPct := float64(nullCount) / float64(len(data))
+	if nullPct > 0.4 {
+		return false
+	}
+	for _, count := range scores {
+		if count > 50 && count > len(data)/20 {
+			return true
+		}
+	}
+	return false
+}
+
 func builtinYaraRules() []*YaraRule {
 	return []*YaraRule{
 		{
@@ -190,6 +228,16 @@ func builtinYaraRules() []*YaraRule {
 			Name: "Mimikatz_Strings", Description: "Mimikatz credential tool strings",
 			Severity: SeverityAlert,
 			Matcher:  yaraRegex{regexp.MustCompile(`(?i)(mimikatz|sekurlsa|kerberos::|lsadump::|wdigest|cache::|dpapi::|vault::)`)},
+		},
+		{
+			Name: "XOR_Encoded_Payload", Description: "XOR-encoded data detected",
+			Severity: SeverityWarning,
+			Matcher:  xorEncoded{},
+		},
+		{
+			Name: "Packed_PE_Binary", Description: "PE binary with packer indicators",
+			Severity: SeverityAlert,
+			Matcher:  packedPE{},
 		},
 		{
 			Name: "CobaltStrike_Beacon", Description: "Cobalt Strike beacon indicators",

@@ -87,6 +87,18 @@ func (w *WindowsMemScanner) ScanProcess(pid int) ([]*MemoryFinding, error) {
 		return nil, nil
 	}
 
+	if w.isProcessSuspended(pid) {
+		w.mu.Lock()
+		if !w.pplWarned[pid] {
+			w.pplWarned[pid] = true
+			w.mu.Unlock()
+			log.Printf("[mem-scan] PID %d is suspended, skipping", pid)
+		} else {
+			w.mu.Unlock()
+		}
+		return nil, nil
+	}
+
 	h, err := w.openProcess(pid)
 	if err != nil {
 		return nil, err
@@ -196,6 +208,35 @@ func (w *WindowsMemScanner) openProcess(pid int) (syscall.Handle, error) {
 		return 0, fmt.Errorf("OpenProcess(%d) failed", pid)
 	}
 	return syscall.Handle(ret), nil
+}
+
+type processBasicInfo struct {
+	ExitStatus   int
+	PebBaseAddr  uintptr
+	AffinityMask uintptr
+	BasePriority int
+	UniqueProcID uintptr
+	UniqueParentID uintptr
+}
+
+func (w *WindowsMemScanner) isProcessSuspended(pid int) bool {
+	h, err := w.openProcess(pid)
+	if err != nil {
+		return false
+	}
+	defer memCloseHandle.Call(uintptr(h))
+
+	var info processBasicInfo
+	var retLen uint32
+	ret, _, _ := memNtQueryInfoProcess.Call(
+		uintptr(h), 0,
+		uintptr(unsafe.Pointer(&info)), unsafe.Sizeof(info),
+		uintptr(unsafe.Pointer(&retLen)),
+	)
+	if ret != 0 {
+		return false
+	}
+	return info.ExitStatus == 0x107 // STATUS_SUSPENDED
 }
 
 func (w *WindowsMemScanner) isPPL(pid int) bool {

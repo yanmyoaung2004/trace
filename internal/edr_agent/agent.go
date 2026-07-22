@@ -208,7 +208,7 @@ func (a *Agent) Stop(ctx context.Context) error {
 		a.netMon.Stop()
 	}
 	if a.procTree != nil {
-		a.procTree.Save()
+		a.procTree.Close()
 	}
 	if a.dedup != nil {
 		a.dedup.Close()
@@ -425,6 +425,7 @@ func (a *Agent) analysisLoop(ctx context.Context) {
 			}
 
 			a.procTree.Insert(evt)
+			a.procTree.WALAppend(evt)
 			a.correlator.Ingestion(evt)
 
 			if a.yara != nil {

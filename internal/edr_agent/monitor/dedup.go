@@ -22,13 +22,21 @@ type Deduplicator struct {
 	maxMem    int
 	hitCount  int64
 	missCount int64
+	batch     map[string]bool
+	batchCh   chan struct{}
+	done      chan struct{}
+	dataDir   string
 }
 
 func NewDeduplicator(dataDir string) *Deduplicator {
 	d := &Deduplicator{
 		mem:     make(map[string]time.Time),
+		batch:   make(map[string]bool),
+		batchCh: make(chan struct{}, 1),
+		done:    make(chan struct{}),
 		ttl:     30 * time.Second,
 		maxMem:  10000,
+		dataDir: dataDir,
 	}
 	if dataDir != "" {
 		if err := d.openDB(dataDir); err != nil {
@@ -36,7 +44,55 @@ func NewDeduplicator(dataDir string) *Deduplicator {
 		}
 	}
 	d.loadMem()
+	go d.batchFlusher()
 	return d
+}
+
+func (d *Deduplicator) batchFlusher() {
+	tick := time.NewTicker(time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case <-d.done:
+			d.flushBatch()
+			return
+		case <-tick.C:
+			d.flushBatch()
+		case <-d.batchCh:
+		}
+	}
+}
+
+func (d *Deduplicator) flushBatch() {
+	d.mu.Lock()
+	if len(d.batch) == 0 || d.db == nil {
+		d.mu.Unlock()
+		return
+	}
+	batch := d.batch
+	d.batch = make(map[string]bool)
+	d.mu.Unlock()
+
+	tx, err := d.db.Begin()
+	if err != nil {
+		return
+	}
+	stmt, err := tx.Prepare("INSERT OR IGNORE INTO dedup_keys (key_hash, seen_at) VALUES (?, datetime('now'))")
+	if err != nil {
+		tx.Rollback()
+		return
+	}
+	defer stmt.Close()
+
+	i := 0
+	for hash := range batch {
+		stmt.Exec(hash)
+		i++
+		if i >= 50 {
+			break
+		}
+	}
+	tx.Commit()
 }
 
 func (d *Deduplicator) openDB(dataDir string) error {
@@ -93,7 +149,11 @@ func (d *Deduplicator) IsDuplicate(evt *Event) bool {
 	d.missCount++
 
 	if d.db != nil {
-		d.db.Exec("INSERT OR REPLACE INTO dedup_keys (key_hash, seen_at) VALUES (?, datetime('now'))", hash)
+		d.batch[hash] = true
+		select {
+		case d.batchCh <- struct{}{}:
+		default:
+		}
 	}
 
 	if len(d.mem) > d.maxMem {
@@ -135,6 +195,7 @@ func (d *Deduplicator) Stats() (int64, int64) {
 }
 
 func (d *Deduplicator) Close() {
+	close(d.done)
 	if d.db != nil {
 		d.db.Close()
 	}
