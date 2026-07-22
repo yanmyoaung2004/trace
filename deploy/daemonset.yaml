@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: trace-agent
+  namespace: trace-system
+  labels:
+    app: trace-agent
+spec:
+  selector:
+    matchLabels:
+      app: trace-agent
+  template:
+    metadata:
+      labels:
+        app: trace-agent
+    spec:
+      hostPID: true
+      hostNetwork: true
+      containers:
+      - name: agent
+        image: trace-agent:latest
+        imagePullPolicy: IfNotPresent
+        args: ["--config", "/etc/trace-agent/config.yaml"]
+        env:
+        - name: TRACE_AGENT_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: trace-agent-key
+              key: api-key
+        - name: TRACE_AGENT_SERVER
+          value: "https://trace-server:8080"
+        securityContext:
+          privileged: true
+          capabilities:
+            add:
+            - SYS_ADMIN
+            - SYS_PTRACE
+            - NET_ADMIN
+            - SYSLOG
+        volumeMounts:
+        - name: config
+          mountPath: /etc/trace-agent
+        - name: data
+          mountPath: /var/lib/trace-agent
+        - name: proc
+          mountPath: /host/proc
+          readOnly: true
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: config
+        configMap:
+          name: trace-agent-config
+      - name: data
+        hostPath:
+          path: /var/lib/trace-agent
+      - name: proc
+        hostPath:
+          path: /proc

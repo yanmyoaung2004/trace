@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -9,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -27,11 +29,23 @@ func main() {
 		uninstallSvc = flag.Bool("uninstall", false, "Remove system service")
 		serviceMode  = flag.Bool("service", false, "Run as system service (used by SCM)")
 		showVersion  = flag.Bool("version", false, "Show version")
+		showStatus   = flag.Bool("status", false, "Show agent status")
 	)
+	_ = showStatus
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Printf("trace-agent v%s\n", version)
+		return
+	}
+
+	if *showStatus {
+		statusCfg := loadConfig(*configPath)
+		status, err := readAgentStatus(statusCfg)
+		if err != nil {
+			log.Fatalf("status: %v", err)
+		}
+		fmt.Println(status)
 		return
 	}
 
@@ -66,6 +80,40 @@ func main() {
 	}
 
 	runAgent(cfg)
+}
+
+func readAgentStatus(cfg *edr_agent.Config) (string, error) {
+	agentPath := filepath.Join(cfg.DataDir, "agent.json")
+	data, err := os.ReadFile(agentPath)
+	if err != nil {
+		return "Agent not running (no registration file found)\n", nil
+	}
+	var meta struct {
+		AgentID string `json:"agent_id"`
+	}
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return "", fmt.Errorf("parse agent.json: %w", err)
+	}
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Agent ID:     %s\n", meta.AgentID))
+	b.WriteString(fmt.Sprintf("Version:      %s\n", version))
+	b.WriteString(fmt.Sprintf("Server:       %s\n", cfg.ServerURL))
+	b.WriteString(fmt.Sprintf("Data Dir:     %s\n", cfg.DataDir))
+
+	// Read queue stats
+	queuePath := filepath.Join(cfg.DataDir, "queue", "event_queue.db")
+	if data, err := os.ReadFile(queuePath); err == nil {
+		b.WriteString(fmt.Sprintf("Queue DB:     %d bytes\n", len(data)))
+	} else {
+		b.WriteString("Queue DB:     not found\n")
+	}
+
+	// Check if agent process is running
+	b.WriteString(fmt.Sprintf("PID:          %d\n", os.Getpid()))
+	b.WriteString("Status:       see server for live status\n")
+
+	return b.String(), nil
 }
 
 func loadConfig(path string) *edr_agent.Config {

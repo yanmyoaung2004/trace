@@ -1,0 +1,17 @@
+FROM golang:1.26-alpine AS build
+RUN apk add --no-cache git ca-certificates
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -o /trace-agent ./cmd/trace-agent
+
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates iptables
+COPY --from=build /trace-agent /usr/local/bin/trace-agent
+RUN mkdir -p /etc/trace-agent /var/lib/trace-agent
+COPY deploy/agent.yaml /etc/trace-agent/config.yaml
+
+EXPOSE 19780
+ENTRYPOINT ["trace-agent"]
+CMD ["--config", "/etc/trace-agent/config.yaml"]

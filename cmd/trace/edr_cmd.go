@@ -178,22 +178,19 @@ func newEDRListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List all registered EDR agents",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := getEDRClient(cmd.Parent())
+		RunE: func(c *cobra.Command, args []string) error {
+			client, err := getEDRClient(c.Parent())
 			if err != nil {
 				return err
 			}
-
 			agents, err := client.listAgents()
 			if err != nil {
 				return fmt.Errorf("list agents: %w", err)
 			}
-
 			if len(agents) == 0 {
 				fmt.Println("No EDR agents registered.")
 				return nil
 			}
-
 			fmt.Printf("\n  %-36s  %-20s  %-10s  %-12s  %-25s\n", "AGENT ID", "HOSTNAME", "PLATFORM", "STATUS", "LAST HEARTBEAT")
 			fmt.Println(strings.Repeat("─", 110))
 			for _, a := range agents {

@@ -1,0 +1,9 @@
+server_url: https://trace-server:8080
+poll_interval: 5s
+heartbeat_interval: 30s
+batch_interval: 2s
+max_batch_size: 100
+monitor_process: true
+monitor_file: true
+monitor_network: true
+data_dir: /var/lib/trace-agent
