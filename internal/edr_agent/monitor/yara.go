@@ -151,48 +151,13 @@ func detectXOR(data []byte) bool {
 		return false
 	}
 
-	// Brute-force all 256 single-byte XOR keys
-	bestScore := 0
-	const sampleSize = 4096
-	sample := data
-	if len(sample) > sampleSize {
-		sample = sample[:sampleSize]
+	if detectSingleByteXOR(data) {
+		return true
 	}
-
-	var printable [256]byte
-	for i := range printable {
-		printable[i] = 0
+	if detectMultiByteXOR(data) {
+		return true
 	}
-
-	for key := 0; key < 256; key++ {
-		score := 0
-		for _, b := range sample {
-			decrypted := b ^ byte(key)
-			if decrypted >= 0x20 && decrypted <= 0x7E {
-				score++
-			}
-			if decrypted == ' ' || decrypted == 'e' || decrypted == 't' || decrypted == 'a' {
-				score += 2
-			}
-			if decrypted == 0 {
-				score -= 3
-			}
-		}
-		if score > bestScore {
-			bestScore = score
-		}
-		printable[key] = byte(score)
-	}
-
-	// Check if any key produces high printable ratio
-	for _, s := range printable {
-		if int(s) > len(sample)*80/100 {
-			return true
-		}
-	}
-
-	// Kasiski-like: check for repeating XOR with key length 2-8
-	if bestScore > len(sample)*40/100 {
+	if detectAddSubCipher(data) {
 		return true
 	}
 
@@ -200,13 +165,166 @@ func detectXOR(data []byte) bool {
 }
 
 func countZeroBytes(data []byte) int {
-	count := 0
+	c := 0
 	for _, b := range data {
 		if b == 0 {
-			count++
+			c++
 		}
 	}
-	return count
+	return c
+}
+
+func detectSingleByteXOR(data []byte) bool {
+	sample := data
+	if len(sample) > 4096 {
+		sample = sample[:4096]
+	}
+
+	bestScore := 0
+	for key := 0; key < 256; key++ {
+		score := 0
+		for _, b := range sample {
+			d := b ^ byte(key)
+			if d >= 0x20 && d <= 0x7E {
+				score++
+			}
+			if d == ' ' || d == 'e' || d == 't' || d == 'a' {
+				score += 2
+			}
+			if d == 0 {
+				score -= 3
+			}
+		}
+		if score > bestScore {
+			bestScore = score
+		}
+	}
+
+	return bestScore > len(sample)*70/100
+}
+
+func detectMultiByteXOR(data []byte) bool {
+	sample := data
+	if len(sample) > 4096 {
+		sample = sample[:4096]
+	}
+
+	// Try key lengths 2-16
+	for keyLen := 2; keyLen <= 16; keyLen++ {
+		score := 0
+		// Hamming distance between consecutive keyLen-sized blocks
+		blocks := len(sample) / keyLen
+		if blocks < 2 {
+			continue
+		}
+		hamming := 0
+		for b := 0; b < blocks-1 && b < 20; b++ {
+			for i := 0; i < keyLen; i++ {
+				a1 := sample[b*keyLen+i]
+				a2 := sample[(b+1)*keyLen+i]
+				// XOR to find bits that differ
+				x := a1 ^ a2
+				// Count bits
+				for x > 0 {
+					if x&1 == 1 {
+						hamming++
+					}
+					x >>= 1
+				}
+			}
+		}
+		avgHamming := float64(hamming) / float64(min(blocks, 20))
+		normalized := avgHamming / float64(keyLen)
+
+		// Normalized Hamming distance ~ 0.5 means XOR with key length keyLen
+		if normalized > 0.35 && normalized < 0.7 {
+			score++
+		}
+
+		// Try to decrypt and check printable ratio
+		for skip := 0; skip < keyLen; skip++ {
+			printable := 0
+			total := 0
+			for i := skip; i < len(sample); i += keyLen {
+				total++
+				if sample[i] >= 0x20 && sample[i] <= 0x7E {
+					printable++
+				}
+			}
+			if total > 5 && float64(printable)/float64(total) > 0.75 {
+				score++
+			}
+		}
+
+		if score >= keyLen {
+			return true
+		}
+	}
+	return false
+}
+
+func detectAddSubCipher(data []byte) bool {
+	sample := data
+	if len(sample) > 4096 {
+		sample = sample[:4096]
+	}
+
+	// Try ADD cipher: each byte = plaintext + key (mod 256)
+	for key := 0; key < 256; key++ {
+		score := 0
+		for _, b := range sample {
+			d := (b - byte(key)) & 0xFF
+			if d >= 0x20 && d <= 0x7E {
+				score++
+			}
+			if d == ' ' || d == 'e' {
+				score += 2
+			}
+		}
+		if score > len(sample)*60/100 {
+			return true
+		}
+	}
+
+	// Try SUB cipher: each byte = plaintext - key (mod 256)
+	for key := 0; key < 256; key++ {
+		score := 0
+		for _, b := range sample {
+			d := (b + byte(key)) & 0xFF
+			if d >= 0x20 && d <= 0x7E {
+				score++
+			}
+			if d == ' ' || d == 'e' {
+				score += 2
+			}
+		}
+		if score > len(sample)*60/100 {
+			return true
+		}
+	}
+
+	// Try ROL cipher: each byte rotated left by key bits
+	for shift := 1; shift < 8; shift++ {
+		score := 0
+		for _, b := range sample {
+			d := ((b << shift) | (b >> (8 - shift))) & 0xFF
+			if d >= 0x20 && d <= 0x7E {
+				score++
+			}
+		}
+		if score > len(sample)*55/100 {
+			return true
+		}
+	}
+
+	return false
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func builtinYaraRules() []*YaraRule {

@@ -61,9 +61,7 @@ func main() {
 	}
 
 	if *serviceMode {
-		service.RunService(func() {
-			runAgent(cfg)
-		})
+		service.RunService(func() { runAgent(cfg) }, func() {})
 		return
 	}
 

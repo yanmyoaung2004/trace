@@ -57,8 +57,9 @@ func Uninstall() error {
 	return nil
 }
 
-func RunService(runFn func()) {
-	runFn()
+func RunService(startFn, stopFn func()) {
+	startFn()
+	_ = stopFn
 }
 
 func getEnvOrDefault(key, def string) string {
