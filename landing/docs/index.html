@@ -76,7 +76,13 @@
     }
     .top-nav .logo { font-weight: 700; font-size: 1.1rem; color: var(--text-primary); display: flex; align-items: center; gap: 10px; font-family: var(--font-display); }
     .top-nav .logo img { width: 24px; height: 24px; border-radius: 4px; }
-    .top-nav .back-link { font-size: .8rem; color: var(--text-dim); }
+    .top-nav .back-link {
+      font-size: .8rem; color: var(--text-secondary);
+      background: var(--bg-panel); border: 1px solid var(--border);
+      padding: 8px 18px; border-radius: var(--radius-sm);
+      transition: all .2s; font-weight: 500;
+    }
+    .top-nav .back-link:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
 
     .layout { display: flex; max-width: 1400px; margin: 64px auto 0; min-height: calc(100vh - 64px); }
     .sidebar {
@@ -90,6 +96,7 @@
       border-left: 1px solid transparent; transition: all .2s; margin: 2px 0;
     }
     .sidebar a:hover { color: var(--text-primary); border-color: var(--text-dim); }
+    .sidebar a.active { color: var(--accent); border-color: var(--accent); }
 
     .main { flex: 1; min-width: 0; padding: 48px 48px 80px 48px; max-width: 880px; }
 
@@ -441,5 +448,29 @@ k8s-audit            every 1h    log-analysis      severity 4</code></pre>
   </main>
 </div>
 
+<script>
+(function() {
+  'use strict';
+  var headings = document.querySelectorAll('.main h2[id]');
+  var links = document.querySelectorAll('.sidebar a[href^="#"]');
+  if (!headings.length || !links.length) return;
+
+  var observer = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (entry.isIntersecting) {
+        links.forEach(function(l) { l.classList.remove('active'); });
+        var id = entry.target.getAttribute('id');
+        links.forEach(function(l) {
+          if (l.getAttribute('href') === '#' + id) {
+            l.classList.add('active');
+          }
+        });
+      }
+    });
+  }, { rootMargin: '-20% 0px -60% 0px' });
+
+  headings.forEach(function(h) { observer.observe(h); });
+})();
+</script>
 </body>
 </html>
