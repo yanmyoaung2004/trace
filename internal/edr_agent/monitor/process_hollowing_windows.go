@@ -90,14 +90,31 @@ type HollowingDetector struct {
 	mu             sync.Mutex
 	done           chan struct{}
 	started        bool
+	workCh         chan int
+	workerCount    int
+	wg             sync.WaitGroup
 }
 
 func NewHollowingDetector(eventCh chan<- *Event) *HollowingDetector {
-	return &HollowingDetector{
+	hd := &HollowingDetector{
 		eventCh:      eventCh,
 		pollInterval: 15 * time.Second,
 		pebSnapshots: make(map[int]uintptr),
 		done:         make(chan struct{}),
+		workCh:       make(chan int, 200),
+		workerCount:  4,
+	}
+	for i := 0; i < hd.workerCount; i++ {
+		hd.wg.Add(1)
+		go hd.worker(i)
+	}
+	return hd
+}
+
+func (hd *HollowingDetector) worker(id int) {
+	defer hd.wg.Done()
+	for pid := range hd.workCh {
+		hd.scanSingle(pid)
 	}
 }
 
@@ -121,6 +138,8 @@ func (hd *HollowingDetector) Stop() {
 	if hd.started {
 		hd.started = false
 		close(hd.done)
+		close(hd.workCh)
+		hd.wg.Wait()
 	}
 }
 
@@ -164,15 +183,24 @@ func (hd *HollowingDetector) check() {
 		if exists && prevPeb != 0 && pebAddr != 0 && prevPeb != pebAddr {
 			hd.emitHollowingAlert(pid, prevPeb, pebAddr)
 		}
-
-		// Check for W^X violations
-		if pebAddr != 0 {
-			hd.checkWXViolations(pid)
-		}
 	}
 
 	hd.pebSnapshots = current
 	hd.mu.Unlock()
+
+	// Dispatch W^X scans to async workers — non-blocking
+	enqueued := 0
+	for _, pid := range procs {
+		select {
+		case hd.workCh <- pid:
+			enqueued++
+		default:
+			break
+		}
+	}
+	if enqueued > 0 {
+		log.Printf("[hollowing] enqueued %d W^X scans (queue: %d/%d)", enqueued, len(hd.workCh), cap(hd.workCh))
+	}
 }
 
 func (hd *HollowingDetector) checkWXViolations(pid int) {
@@ -232,6 +260,10 @@ func (hd *HollowingDetector) checkWXViolations(pid int) {
 		}
 		addr += mbi.RegionSize
 	}
+}
+
+func (hd *HollowingDetector) scanSingle(pid int) {
+	hd.checkWXViolations(pid)
 }
 
 func (hd *HollowingDetector) emitHollowingAlert(pid int, oldPeb, newPeb uintptr) {

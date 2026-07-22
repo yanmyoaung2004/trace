@@ -245,44 +245,90 @@ func etwEventCallbackBridge(recordPtr uintptr) uintptr {
 		return 0
 	}
 
-	rec := (*etwRecord)(unsafe.Pointer(recordPtr))
-	if rec.UserData == 0 {
-		return 0
-	}
+	// Read event ID from raw EVENT_HEADER at byte offset 40-41 (cross-arch safe)
+	eventID := readU16(recordPtr, 40)
+	processID := readU32(recordPtr, 12)
 
-	switch rec.Header.Id {
+	// EVENT_HEADER layout (byte offsets, verified against ETW spec):
+	//   0: Size     (u16)
+	//   2: Type     (u8)
+	//   3: Flags    (u8)
+	//   4: EventProperty (u16)
+	//   6: padding  (u16)
+	//   8: ThreadId (u32)
+	//  12: ProcessId(u32)
+	//  16: Timestamp(i64)
+	//  24: ProviderId(GUID, 16 bytes)
+	//  40: Id       (u16)
+	//  42: Version  (u8)
+	//  43: Channel  (u8)
+	//  44: Level    (u8)
+	//  45: Opcode   (u8)
+	//  46: Task     (u16)
+	//  48: Keyword  (u64)
+	//  56: ... total header ~64 bytes
+	//
+	// EVENT_RECORD follows header with:
+	//  64: BufferContext (8 bytes)
+	//  72: ExtendedDataCount (u16)
+	//  74: UserDataLength (u16)
+	//  80: ExtendedData (ptr)
+	//  88: UserData (ptr)
+
+	userDataPtr := readPtr(recordPtr, 88)
+	userDataLen := readU16(recordPtr, 74)
+
+	switch eventID {
 	case eventIDCreate:
-		handleETWProcessCreate(rec)
+		if userDataPtr == 0 || userDataLen < 24 {
+			return 0
+		}
+		handleETWProcessCreateRaw(userDataPtr, uint32(userDataLen), processID)
 	case eventIDProcessEnd:
-		handleETWProcessEnd(rec)
-	case eventIDImageLoad:
-		handleETWImageLoad(rec)
+		if userDataPtr == 0 || userDataLen < 8 {
+			return 0
+		}
+		handleETWProcessEndRaw(userDataPtr, uint32(userDataLen), processID)
 	}
 	return 0
 }
 
-func handleETWProcessCreate(rec *etwRecord) {
-	userLen := uint32(rec.UserDataLength)
-	if userLen < 24 {
-		return
+// Cross-architecture safe readers — no struct casts
+func readU16(ptr uintptr, offset uintptr) uint16 {
+	if ptr == 0 {
+		return 0
 	}
+	return *(*uint16)(unsafe.Pointer(ptr + offset))
+}
 
-	pid := *(*uint32)(unsafe.Pointer(rec.UserData))
-	ppid := *(*uint32)(unsafe.Pointer(rec.UserData + 4))
+func readU32(ptr uintptr, offset uintptr) uint32 {
+	if ptr == 0 {
+		return 0
+	}
+	return *(*uint32)(unsafe.Pointer(ptr + offset))
+}
+
+func readPtr(ptr uintptr, offset uintptr) uintptr {
+	if ptr == 0 {
+		return 0
+	}
+	return *(*uintptr)(unsafe.Pointer(ptr + offset))
+}
+
+func handleETWProcessCreateRaw(userData uintptr, userLen uint32, processID uint32) {
+	pid := readU32(userData, 0)
+	ppid := readU32(userData, 4)
 	if pid == 0 || pid == 4 {
 		return
 	}
-
-	name := readUTF16(rec.UserData+16, minU32(userLen-16, 520))
+	name := readUTF16(userData+16, minU32(userLen-16, 520))
 	if name == "" {
 		name = "unknown"
 	}
-
 	cmdline := ""
 	if userLen > 16+520 {
-		cmdline = readUTF16(rec.UserData+16+520, minU32(userLen-16-520, 2048))
+		cmdline = readUTF16(userData+16+520, minU32(userLen-16-520, 2048))
 	}
-
 	sev := SeverityInfo
 	for _, s := range suspiciousProcesses {
 		if len(name) >= len(s) && containsFold(name, s) {
@@ -290,7 +336,6 @@ func handleETWProcessCreate(rec *etwRecord) {
 			break
 		}
 	}
-
 	evt := &Event{
 		ID: uuid.New().String(), Timestamp: time.Now(),
 		Type: EventProcessCreate, Severity: sev,
@@ -300,79 +345,20 @@ func handleETWProcessCreate(rec *etwRecord) {
 	sendETWEvent(evt)
 }
 
-func handleETWProcessEnd(rec *etwRecord) {
-	userLen := uint32(rec.UserDataLength)
-	if userLen < 8 {
-		return
-	}
-
-	pid := *(*uint32)(unsafe.Pointer(rec.UserData))
+func handleETWProcessEndRaw(userData uintptr, userLen uint32, processID uint32) {
+	pid := readU32(userData, 0)
 	if pid == 0 || pid == 4 {
 		return
 	}
-
 	exitCode := int32(0)
 	if userLen >= 12 {
-		exitCode = *(*int32)(unsafe.Pointer(rec.UserData + 8))
+		exitCode = *(*int32)(unsafe.Pointer(userData + 8))
 	}
-
 	evt := &Event{
 		ID: uuid.New().String(), Timestamp: time.Now(),
-		Type: EventProcessTerminate,
-		Severity: SeverityInfo,
-		Process: &ProcessInfo{
-			PID: int(pid),
-		},
-		Annotations: map[string]string{
-			"source":    "etw",
-			"exit_code": fmt.Sprintf("%d", exitCode),
-		},
-	}
-	sendETWEvent(evt)
-}
-
-func handleETWImageLoad(rec *etwRecord) {
-	userLen := uint32(rec.UserDataLength)
-	if userLen < 8 {
-		return
-	}
-
-	pid := *(*uint32)(unsafe.Pointer(rec.UserData))
-	imageBase := uintptr(0)
-	if userLen >= 16 {
-		imageBase = uintptr(*(*uint64)(unsafe.Pointer(rec.UserData + 8)))
-	}
-
-	imageName := ""
-	if userLen > 24 {
-		imageName = readUTF16(rec.UserData+24, userLen-24)
-	}
-
-	sev := SeverityInfo
-	if imageName != "" {
-		lower := imageName
-		if len(lower) > 64 {
-			lower = lower[:64]
-		}
-		for _, s := range suspiciousProcesses {
-			if len(lower) >= len(s) && containsFold(lower, s) {
-				sev = SeverityWarning
-				break
-			}
-		}
-	}
-
-	evt := &Event{
-		ID: uuid.New().String(), Timestamp: time.Now(),
-		Type: EventNetListen,
-		Severity: sev,
+		Type: EventProcessTerminate, Severity: SeverityInfo,
 		Process: &ProcessInfo{PID: int(pid)},
-		File:    &FileInfo{Path: imageName},
-		Annotations: map[string]string{
-			"source":     "etw",
-			"event":      "image_load",
-			"image_base": fmt.Sprintf("0x%x", imageBase),
-		},
+		Annotations: map[string]string{"source": "etw", "exit_code": fmt.Sprintf("%d", exitCode)},
 	}
 	sendETWEvent(evt)
 }

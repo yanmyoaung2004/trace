@@ -14,6 +14,9 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+const batchMapMax = 500
+const batchFlushThr = 375
+
 type Deduplicator struct {
 	mu        sync.Mutex
 	mem       map[string]time.Time
@@ -26,17 +29,19 @@ type Deduplicator struct {
 	batchCh   chan struct{}
 	done      chan struct{}
 	dataDir   string
+	batchFull chan struct{}
 }
 
 func NewDeduplicator(dataDir string) *Deduplicator {
 	d := &Deduplicator{
-		mem:     make(map[string]time.Time),
-		batch:   make(map[string]bool),
-		batchCh: make(chan struct{}, 1),
-		done:    make(chan struct{}),
-		ttl:     30 * time.Second,
-		maxMem:  10000,
-		dataDir: dataDir,
+		mem:       make(map[string]time.Time),
+		batch:     make(map[string]bool),
+		batchCh:   make(chan struct{}, 1),
+		batchFull: make(chan struct{}, 1),
+		done:      make(chan struct{}),
+		ttl:       30 * time.Second,
+		maxMem:    10000,
+		dataDir:   dataDir,
 	}
 	if dataDir != "" {
 		if err := d.openDB(dataDir); err != nil {
@@ -66,6 +71,17 @@ func (d *Deduplicator) batchFlusher() {
 		case <-tick.C:
 			d.flushBatch()
 		case <-d.batchCh:
+			d.flushBatch()
+		case <-d.batchFull:
+			// Urgent flush: batch is at 75%+ capacity
+			d.flushBatch()
+			// If still >50% after flush, flush again immediately
+			d.mu.Lock()
+			remaining := len(d.batch)
+			d.mu.Unlock()
+			if remaining > batchMapMax/2 {
+				d.flushBatch()
+			}
 		}
 	}
 }
@@ -157,9 +173,23 @@ func (d *Deduplicator) IsDuplicate(evt *Event) bool {
 
 	if d.db != nil {
 		d.batch[hash] = true
-		select {
-		case d.batchCh <- struct{}{}:
-		default:
+
+		// Back-pressure: if batch is >75% full, wake the flusher
+		if len(d.batch) >= batchMapMax {
+			select {
+			case d.batchCh <- struct{}{}:
+			default:
+			}
+		} else if len(d.batch) >= batchFlushThr {
+			select {
+			case d.batchFull <- struct{}{}:
+			default:
+			}
+		} else {
+			select {
+			case d.batchCh <- struct{}{}:
+			default:
+			}
 		}
 	}
 
