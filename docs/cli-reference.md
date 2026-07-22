@@ -320,6 +320,119 @@ trace compliance report --framework gdpr -o gdpr-report.md
 
 ---
 
+## `edr`
+
+Manage EDR agents and dispatch remote actions. Connects to a running Trace server.
+
+```
+trace edr <subcommand> [args] [flags]
+```
+
+Global flags (apply before subcommand):
+| Flag | Env | Description |
+|------|-----|-------------|
+| `--server` | `TRACE_SERVER_URL` | Trace server URL (default `http://localhost:8080`) |
+| `--api-key` | `TRACE_API_KEY` | API key for server authentication |
+
+Subcommands:
+| Command | Description |
+|---------|-------------|
+| `list` | List all registered EDR agents |
+| `view <agent-id>` | View agent details and status |
+| `events <agent-id>` | View recent events from an agent |
+| `dispatch <agent-id> <action> [target]` | Send a response action to an agent |
+| `revoke <agent-id>` | Revoke and remove an agent |
+
+Dispatch actions:
+| Action | Target | Extra Flags |
+|--------|--------|-------------|
+| `kill-process` | PID or process name | `--pid N` or pass name as target |
+| `quarantine` | File path | `--path /path/to/file` |
+| `block-ip` | IP address | `--ip 192.168.1.1` |
+| `run-script` | Script content | `--script "cmd"` |
+| `isolate` | Hostname | No extra flags |
+| `collect-forensics` | (optional) | No extra flags |
+| `system-snapshot` | (optional) | No extra flags |
+
+Examples:
+```powershell
+trace edr list
+trace edr view abc123
+trace edr events abc123
+trace edr dispatch abc123 kill-process --pid 4521
+trace edr dispatch abc123 quarantine --path /tmp/malware.exe
+trace edr dispatch abc123 block-ip --ip 203.0.113.42
+trace edr dispatch abc123 isolate
+```
+
+## `trace-agent` (separate binary)
+
+The `trace-agent` binary is deployed to endpoints for local monitoring.
+
+```
+trace-agent [flags]
+```
+
+| Flag | Env | Description |
+|------|-----|-------------|
+| `--config` | — | Path to config file (default `~/.trace-agent/config.json`) |
+| `--server` | `TRACE_AGENT_SERVER` | Trace server URL |
+| `--api-key` | `TRACE_AGENT_API_KEY` | API key for agent registration |
+| `--install` | — | Install as system service (Windows SCM or systemd) |
+| `--uninstall` | — | Remove system service |
+| `--service` | — | Run as Windows service (used by SCM) |
+| `--version` | — | Print version |
+
+### Agent configuration (`~/.trace-agent/config.json`)
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `server_url` | `https://127.0.0.1:8080` | Trace server URL |
+| `poll_interval` | `5s` | Action polling interval |
+| `heartbeat_interval` | `30s` | Heartbeat interval |
+| `batch_interval` | `2s` | Event batch interval |
+| `max_batch_size` | `100` | Max events per batch |
+| `event_queue_size` | `10000` | Max queued events |
+| `monitor_process` | `true` | Enable process monitoring |
+| `monitor_file` | `true` | Enable file monitoring |
+| `monitor_network` | `true` | Enable network monitoring |
+| `monitor_registry` | (windows only) | Enable registry monitoring |
+| `data_dir` | `~/.trace-agent/data` | Data directory |
+| `tls_cert_file` | — | mTLS client certificate |
+| `tls_key_file` | — | mTLS client key |
+| `ca_file` | — | CA certificate for verification |
+
+### Monitoring modules
+
+| Module | Linux | Windows | macOS |
+|--------|-------|---------|-------|
+| **Process** | netlink proc connector (real-time) /proc polling fallback | ETW (real-time) / WMI polling fallback | ps polling |
+| **File** | inotify (real-time) + fanotify (file open) + polling fallback | ReadDirectoryChangesW (real-time) + polling fallback | polling |
+| **Network** | ss polling | netstat polling | lsof polling |
+| **Memory** | /proc/[pid]/maps + mem YARA scan | VirtualQueryEx + ReadProcessMemory + YARA | — |
+| **YARA** | 15+ rules (EICAR, PowerShell, PE packer, XOR, Mimikatz, CobaltStrike, etc.) | same | same |
+
+### Response actions
+
+| Action | Description |
+|--------|-------------|
+| `kill_process` | Kill by PID or name via taskkill/kill/pkill |
+| `quarantine_file` | Move to isolated directory + chmod 0400 |
+| `block_ip` | Firewall rule via netsh/iptables/pfctl |
+| `run_script` | Execute script with timeout |
+| `isolate_host` | Block all non-Trace traffic |
+| `release_host` | Restore network access |
+| `collect_forensics` | Snapshot processes, network, disk, memory |
+| `system_snapshot` | Lightweight system status |
+
+### Communication security
+- Bearer token + HMAC-signed request body
+- Optional mTLS with client certificate + CA verification
+- Exponential backoff (max 30s, 5 retries)
+- Circuit breaker (5 failures → open 60s)
+
+---
+
 ## `version`
 
 Print version information.

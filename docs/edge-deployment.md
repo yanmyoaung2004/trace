@@ -196,6 +196,84 @@ This ensures the first real investigation never hits cold cache and serves as a 
 
 All updates are signed. Rollback via .trace update --version <prev>`.
 
+## 10. Custom EDR Agent (trace-agent)
+
+Trace now includes its own lightweight endpoint agent, replacing the need for third-party EDR providers.
+
+### Agent Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│              Endpoint (trace-agent binary)            │
+│                                                       │
+│  ┌──────────────┐  ┌──────────────┐  ┌────────────┐ │
+│  │  Monitoring   │  │    Event     │  │  Response  │ │
+│  │  Modules      │──│   Pipeline   │──│  Executor  │ │
+│  ├──────────────┤  │  ┌────────┐  │  ├────────────┤ │
+│  │ Process (ETW │  │  │ YARA   │  │  │ kill proc  │ │
+│  │ /netlink/ps) │  │  │ scan   │  │  │ quarantine │ │
+│  │ File (inotify│  │  │ dedup  │  │  │ block IP   │ │
+│  │ /RDCW/fan)   │  │  │ corr   │  │  │ isolate    │ │
+│  │ Network (ss/ │  │  │ tree   │  │  │ forensics  │ │
+│  │ netstat/lsof)│  │  └────────┘  │  └────────────┘ │
+│  │ Memory (maps/│  │              │                  │
+│  │ VQueryEx)    │  │  ┌────────┐  │  ┌────────────┐ │
+│  └──────────────┘  │  │ SQLite │  │  │  Updater   │ │
+│                     │  │ Queue  │  │  │ (auto-SW)  │ │
+│                     │  └────────┘  │  └────────────┘ │
+│                     └──────────────┘                  │
+│                               │                       │
+│                    ┌──────────┴──────────┐            │
+│                    │  Transport (HTTPS)   │            │
+│                    │  + mTLS + HMAC      │            │
+│                    │  + Circuit Breaker   │            │
+│                    └──────────┬──────────┘            │
+└───────────────────────────────┼────────────────────────┘
+                                │
+                    ┌───────────┴───────────┐
+                    │   Trace Server         │
+                    │   /api/v1/edr/*        │
+                    │   Agent registration   │
+                    │   Event storage        │
+                    │   Action dispatch      │
+                    └───────────────────────┘
+```
+
+### Monitoring Depth
+
+| Module | Linux | Windows | macOS |
+|--------|-------|---------|-------|
+| Process | `AF_NETLINK` proc connector (real-time) → `/proc` polling fallback | ETW `StartTraceW`/`OpenTraceW`/`ProcessTrace` (real-time) → `wevtutil` → WMI polling | `ps` polling |
+| File | `inotify_init`/`inotify_add_watch` (real-time) + `fanotify` (file open) → polling | `ReadDirectoryChangesW` overlapped I/O → polling | `fsevents` polling |
+| Network | `ss -tunap` polling | `netstat -ano` polling | `lsof -i` polling |
+| Memory | `/proc/[pid]/maps` + `/proc/[pid]/mem` YARA scan | `VirtualQueryEx` + `ReadProcessMemory` + YARA + PPL detection | — |
+| On-agent YARA | 15+ rules (EICAR, PS abuse, base64, entropy, PE packer, XOR, Minikatz, CobaltStrike, etc.) | same | same |
+
+### Response Actions (8)
+
+`kill_process` · `quarantine_file` · `block_ip` · `run_script` · `isolate_host` · `release_host` · `collect_forensics` · `system_snapshot`
+
+### Resilience
+
+- **Disk-backed SQLite event queue** — WAL mode, FIFO, oldest-eviction at capacity
+- **Event deduplication** — SHA-256 keys with SQLite persistence across restarts
+- **Circuit breaker** — 5 consecutive failures → 60s open
+- **Exponential backoff** — max 30s, 5 retries, jitter
+- **mTLS** — client certificate + CA verification, TLS 1.2 minimum
+- **Auto-update** — binary download with SHA-256 verification, atomic rename swap, backup rollback
+- **Process tree persistence** — LRU 100k cap, WAL incremental log, crash replay, atomic save
+- **Local correlation** — 5 rules (process burst, rapid deletion, suspicious children, connection burst, create-then-delete), configurable via JSON, SIGHUP reload
+
+### CLI (`trace edr`)
+
+```
+trace edr list                     # List agents
+trace edr view <id>                # Agent details
+trace edr events <id>              # Recent events
+trace edr dispatch <id> <action>   # Send action
+trace edr revoke <id>              # Remove agent
+```
+
 ## What This Enables
 
 - **Deploy anywhere** — laptop, Raspberry Pi, small VM, cloud instance
