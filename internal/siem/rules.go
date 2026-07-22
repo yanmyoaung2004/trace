@@ -62,9 +62,6 @@ func NewRuleEngine() *RuleEngine {
 		suppression: make(map[string]time.Time),
 	}
 	re.LoadDefault()
-	if err := re.LoadBuiltinYAML(); err != nil {
-		fmt.Printf("[siem] warning: builtin YAML rules: %v\n", err)
-	}
 	return re
 }
 
@@ -173,11 +170,59 @@ func (re *RuleEngine) LoadDefault() {
 	re.rules = loadWazuhRules()
 	re.rules = append(re.rules, builtinRules()...)
 
+	if err := re.loadYAMLRulesLocked(); err != nil {
+		fmt.Printf("[siem] warning: yaml rules: %v\n", err)
+	}
+
 	for i := range re.rules {
 		re.rules[i].Compliance = mapCompliance(re.rules[i].MITRE, re.rules[i].Severity, re.rules[i].Description)
 	}
 
-	fmt.Printf("[siem] loaded %d external + %d built-in rules\n", len(loadWazuhRules()), len(builtinRules()))
+	fmt.Printf("[siem] loaded %d external + %d built-in + %d yaml rules\n",
+		len(loadWazuhRules()), len(builtinRules()), len(re.rules)-len(loadWazuhRules())-len(builtinRules()))
+}
+
+func (re *RuleEngine) loadYAMLRulesLocked() error {
+	entries, err := embeddedRuleFS.ReadDir("rules")
+	if err != nil {
+		return nil
+	}
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".yaml" {
+			continue
+		}
+		data, err := embeddedRuleFS.ReadFile("rules/" + e.Name())
+		if err != nil {
+			return fmt.Errorf("read %s: %w", e.Name(), err)
+		}
+		var file struct {
+			Rules []YAMLRule `yaml:"rules"`
+		}
+		if err := yaml.Unmarshal(data, &file); err != nil {
+			return fmt.Errorf("parse %s: %w", e.Name(), err)
+		}
+		for _, yr := range file.Rules {
+			cr := CompiledRule{
+				RuleID:      yr.RuleID,
+				Description: yr.Description,
+				Severity:    yr.Severity,
+				MITRE:       yr.MITRE,
+				condition:   yr.Condition,
+				windowDur:   parseDuration(yr.WindowDur),
+				threshold:   yr.Threshold,
+				suppress:    parseDuration(yr.Suppress),
+			}
+			if yr.Playbook != "" {
+				params := make(map[string]any)
+				for k, v := range yr.Params {
+					params[k] = v
+				}
+				cr.Actions = []RuleAction{{Playbook: yr.Playbook, Params: params}}
+			}
+			re.rules = append(re.rules, cr)
+		}
+	}
+	return nil
 }
 
 func mapCompliance(mitre string, severity int, description string) map[string][]string {

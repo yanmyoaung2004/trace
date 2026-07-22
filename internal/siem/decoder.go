@@ -258,6 +258,7 @@ func (d *AutoDecoder) Name() string { return "auto" }
 
 func (d *AutoDecoder) Decode(raw []byte) (*Event, error) {
 	decoders := []Decoder{
+		&K8sAuditDecoder{},
 		&JSONDecoder{},
 		&ApacheDecoder{},
 		&SyslogDecoder{},
