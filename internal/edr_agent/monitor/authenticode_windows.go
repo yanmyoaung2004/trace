@@ -4,50 +4,46 @@ package monitor
 
 import (
 	"fmt"
-	"log"
 	"syscall"
 	"unicode/utf16"
 	"unsafe"
 )
 
 var (
-	authWintrust    = syscall.NewLazyDLL("wintrust.dll")
-	authWinVerify   = authWintrust.NewProc("WinVerifyTrust")
-	authCrypt32     = syscall.NewLazyDLL("crypt32.dll")
-	authCertQuery   = authCrypt32.NewProc("CryptQueryObject")
-	authCertGetName = authCrypt32.NewProc("CertGetNameStringW")
+	authWintrust  = syscall.NewLazyDLL("wintrust.dll")
+	authVerify    = authWintrust.NewProc("WinVerifyTrust")
+	authCrypt32   = syscall.NewLazyDLL("crypt32.dll")
+	authQueryObj  = authCrypt32.NewProc("CryptQueryObject")
+	authCertName  = authCrypt32.NewProc("CertGetNameStringW")
+	authFree      = authCrypt32.NewProc("CertFreeCertificateContext")
 )
 
 const (
-	trustProvActionGenericVerifyV2 = 0x00000000 // WINTRUST_ACTION_GENERIC_VERIFY_V2
-	wtdRevokeNone    = 0
-	wtdChoiceFile    = 1
-	ubChoiceFile     = 1
-	certQueryObjectFile = 0x00000001
-	certNameSimpleDisplay = 0x00000001
+	certQueryObjectFile = 0x1
+	certNameSimpleDisplay = 0x1
 )
 
 type winTrustFileInfo struct {
-	CbStruct            uint32
-	PcwszFilePath       uintptr
-	HgFile              uintptr
-	PgKnownSubject      uintptr
+	CbStruct      uint32
+	PcwszFilePath uintptr
+	HgFile        uintptr
+	PgKnownSubject uintptr
 }
 
 type winTrustData struct {
-	CbStruct            uint32
-	PolicyCallbackData  uintptr
-	SIPCallbackData     uintptr
-	UIChoice            uint32
-	RevocationChecks    uint32
-	UnionChoice         uint32
-	FileInfo            uintptr
-	StateAction         uint32
-	StateData           uint32
-	URLReference        uintptr
-	ProvFlags           uint32
-	UIContext           uint32
-	ProvCallbackData    uintptr
+	CbStruct           uint32
+	PolicyCallbackData uintptr
+	SIPCallbackData    uintptr
+	UIChoice           uint32
+	RevocationChecks   uint32
+	UnionChoice        uint32
+	FileInfo           uintptr
+	StateAction        uint32
+	StateData          uint32
+	URLReference       uintptr
+	ProvFlags          uint32
+	UIContext          uint32
+	ProvCallbackData   uintptr
 }
 
 type SigningStatus struct {
@@ -59,10 +55,9 @@ type SigningStatus struct {
 
 func VerifySignature(filePath string) *SigningStatus {
 	result := &SigningStatus{}
-
 	pathPtr, err := syscall.UTF16PtrFromString(filePath)
 	if err != nil {
-		result.ErrorMessage = fmt.Sprintf("UTF16 conversion: %v", err)
+		result.ErrorMessage = fmt.Sprintf("UTF16: %v", err)
 		return result
 	}
 
@@ -70,75 +65,72 @@ func VerifySignature(filePath string) *SigningStatus {
 		CbStruct:      uint32(unsafe.Sizeof(winTrustFileInfo{})),
 		PcwszFilePath: uintptr(unsafe.Pointer(pathPtr)),
 	}
-	_ = wtdRevokeNone
 
 	data := &winTrustData{
 		CbStruct:   uint32(unsafe.Sizeof(winTrustData{})),
 		UIChoice:   2,
-		UnionChoice: wtdChoiceFile,
+		UnionChoice: 1,
 		FileInfo:    uintptr(unsafe.Pointer(fileInfo)),
-		ProvFlags:   trustProvActionGenericVerifyV2,
 	}
 
-	ret, _, _ := authWinVerify.Call(
-		uintptr(unsafe.Pointer(data)),
-		0, // WINTRUST_ACTION_GENERIC_VERIFY_V2
-	)
-
-	if ret == 0 {
-		result.Signed = true
-		result.Trusted = true
-	} else if ret == 0x800B0100 {
-		result.Signed = true
-		result.Trusted = false
-		result.ErrorMessage = "certificate not trusted"
-	} else if ret == 0x800B0109 {
-		result.Signed = false
-		result.ErrorMessage = "certificate chain broken"
-	} else if ret == 0x80096010 {
-		result.Signed = true
-		result.Trusted = false
-		result.ErrorMessage = "signature is valid but not trusted for this action"
-	} else if ret == 0x80092026 {
-		result.Signed = false
-		result.ErrorMessage = "file not signed"
-	} else {
-		result.ErrorMessage = fmt.Sprintf("WinVerifyTrust returned 0x%x", ret)
-	}
+	ret, _, _ := authVerify.Call(uintptr(unsafe.Pointer(data)), 0)
+	decodeVerifyResult(ret, result)
 
 	if result.Signed {
-		pub := extractPublisher(filePath)
-		if pub != "" {
-			result.Publisher = pub
-		}
+		result.Publisher = extractPublisherFromFile(filePath)
 	}
-
 	return result
 }
 
-func extractPublisher(filePath string) string {
+func decodeVerifyResult(ret uintptr, result *SigningStatus) {
+	switch {
+	case ret == 0:
+		result.Signed = true
+		result.Trusted = true
+	case ret == 0x800B0100:
+		result.Signed = true
+		result.ErrorMessage = "not trusted (root CA not in store)"
+	case ret == 0x800B0109:
+		result.ErrorMessage = "cert chain broken"
+	case ret == 0x80096010:
+		result.Signed = true
+		result.ErrorMessage = "not trusted for this action"
+	case ret == 0x80092026:
+		result.ErrorMessage = "not signed"
+	default:
+		result.ErrorMessage = fmt.Sprintf("WinVerifyTrust: 0x%x", ret)
+	}
+}
+
+func extractPublisherFromFile(filePath string) string {
 	pathPtr, err := syscall.UTF16PtrFromString(filePath)
 	if err != nil {
 		return ""
 	}
 
-	var hStore, hMsg uintptr
-	ret, _, _ := authCertQuery.Call(
+	var dwEncoding, dwContentType, dwFormatType uint32
+	var hStore uintptr
+	var hMsg uintptr
+	var pvContext uintptr
+
+	ret, _, _ := authQueryObj.Call(
 		certQueryObjectFile,
 		uintptr(unsafe.Pointer(pathPtr)),
-		0, 0, 0,
+		uintptr(unsafe.Pointer(&dwEncoding)),
+		uintptr(unsafe.Pointer(&dwContentType)),
+		uintptr(unsafe.Pointer(&dwFormatType)),
 		uintptr(unsafe.Pointer(&hStore)),
 		uintptr(unsafe.Pointer(&hMsg)),
-		0,
+		uintptr(unsafe.Pointer(&pvContext)),
 	)
-	if ret == 0 || hStore == 0 || hMsg == 0 {
+	if ret != 0 || pvContext == 0 {
 		return ""
 	}
-	defer authCertQuery.Call(0, 0, 0, 0, 0, uintptr(unsafe.Pointer(&hStore)), 0, 0)
+	defer authFree.Call(pvContext)
 
 	buf := make([]uint16, 256)
-	ret, _, _ = authCertGetName.Call(
-		hMsg,
+	ret, _, _ = authCertName.Call(
+		pvContext,
 		certNameSimpleDisplay,
 		0,
 		0,
@@ -156,5 +148,3 @@ func extractPublisher(filePath string) string {
 	}
 	return string(utf16.Decode(buf))
 }
-
-var _ = log.Printf

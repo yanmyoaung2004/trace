@@ -7,31 +7,65 @@ import (
 	"github.com/google/uuid"
 )
 
-type FloodDetector struct {
-	eventCh    chan<- *Event
-	counts     map[EventType]*windowCounter
-	mu         sync.Mutex
-	floodMode  bool
-	threshold  int
-	window     time.Duration
-}
+const (
+	minThreshold  = 20
+	maxThreshold  = 5000
+	defaultThreshold = 100
+)
 
 type windowCounter struct {
 	events  []time.Time
 }
 
+type FloodDetector struct {
+	eventCh       chan<- *Event
+	counts        map[EventType]*windowCounter
+	mu            sync.Mutex
+	floodMode     bool
+	window        time.Duration
+	baseline      map[EventType]int
+	warmupCount   map[EventType]int
+	warmupPeriod  time.Time
+	threshold     map[EventType]int
+}
+
 func NewFloodDetector(eventCh chan<- *Event) *FloodDetector {
 	return &FloodDetector{
-		eventCh:   eventCh,
-		counts:    make(map[EventType]*windowCounter),
-		threshold: 100,
-		window:    time.Second,
+		eventCh:      eventCh,
+		counts:       make(map[EventType]*windowCounter),
+		window:       time.Second,
+		baseline:     make(map[EventType]int),
+		warmupCount:  make(map[EventType]int),
+		warmupPeriod: time.Now(),
+		threshold:    make(map[EventType]int),
 	}
 }
 
 func (fd *FloodDetector) Ingest(evt *Event) {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
+
+	// Warmup: first 60 seconds, count events to establish baseline
+	if time.Since(fd.warmupPeriod) < 60*time.Second {
+		fd.warmupCount[evt.Type]++
+		return
+	}
+
+	// At 60s, calculate baseline thresholds
+	if len(fd.baseline) == 0 && time.Since(fd.warmupPeriod) >= 60*time.Second {
+		for etype, count := range fd.warmupCount {
+			avg := count / 60
+			t := avg * 3 // threshold = 3x average
+			if t < minThreshold {
+				t = minThreshold
+			}
+			if t > maxThreshold {
+				t = maxThreshold
+			}
+			fd.threshold[etype] = t
+		}
+		fd.warmupCount = nil
+	}
 
 	wc, exists := fd.counts[evt.Type]
 	if !exists {
@@ -51,9 +85,14 @@ func (fd *FloodDetector) Ingest(evt *Event) {
 	active = append(active, now)
 	wc.events = active
 
-	if len(active) > fd.threshold && !fd.floodMode {
+	t := fd.threshold[evt.Type]
+	if t == 0 {
+		t = defaultThreshold
+	}
+
+	if len(active) > t && !fd.floodMode {
 		fd.floodMode = true
-		fd.emitFloodAlert(evt.Type, len(active))
+		fd.emitFloodAlert(evt.Type, len(active), t)
 		go fd.clearAfter(fd.window * 3)
 	}
 }
@@ -72,7 +111,7 @@ func (fd *FloodDetector) IsFlooding() bool {
 	return fd.floodMode
 }
 
-func (fd *FloodDetector) emitFloodAlert(etype EventType, count int) {
+func (fd *FloodDetector) emitFloodAlert(etype EventType, count int, threshold int) {
 	alert := &Event{
 		ID:        uuid.New().String(),
 		Timestamp: time.Now(),
@@ -82,6 +121,7 @@ func (fd *FloodDetector) emitFloodAlert(etype EventType, count int) {
 			"correlation": "event_flood",
 			"event_type":  string(etype),
 			"count":       itoa(count),
+			"threshold":   itoa(threshold),
 			"window_ms":   itoa(int(fd.window.Milliseconds())),
 		},
 	}

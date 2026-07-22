@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"sync"
 )
 
@@ -17,6 +18,8 @@ type EntropyBaseline struct {
 	stddevs   map[string]float64
 	dataDir   string
 	loaded    bool
+	zScore    float64
+	decayPct  float64
 }
 
 type entropySample struct {
@@ -30,6 +33,13 @@ func NewEntropyBaseline(dataDir string) *EntropyBaseline {
 		means:   make(map[string]float64),
 		stddevs: make(map[string]float64),
 		dataDir: dataDir,
+		zScore:  3.0,
+		decayPct: 0.01,
+	}
+	if v := os.Getenv("TRACE_ENTROPY_ZSCORE"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			eb.zScore = f
+		}
 	}
 	if dataDir != "" {
 		eb.load()
@@ -77,13 +87,42 @@ func (eb *EntropyBaseline) IsAnomalous(sectionName string, entropy float64) (boo
 	stddev, hasStddev := eb.stddevs[sectionName]
 
 	if !hasMean || !hasStddev || stddev < 0.1 {
-		// Not enough data — use absolute threshold 7.0 as fallback
 		return entropy > 7.0, 0
 	}
 
-	// Z-score: how many stddevs from mean
+	// Apply time decay: shift old samples toward new observation
+	eb.decayLocked(sectionName, entropy)
+
 	z := math.Abs(entropy-mean) / stddev
-	return z > 3.0, z
+	return z > eb.zScore, z
+}
+
+func (eb *EntropyBaseline) decayLocked(sectionName string, newEntropy float64) {
+	vals, exists := eb.samples[sectionName]
+	if !exists || len(vals) < 2 {
+		return
+	}
+
+	// Shift 1% of each old sample toward the new observation
+	for i := range vals {
+		diff := newEntropy - vals[i]
+		vals[i] += diff * eb.decayPct
+	}
+
+	// Recalculate
+	var sum float64
+	for _, v := range vals {
+		sum += v
+	}
+	mean := sum / float64(len(vals))
+	var varianceSum float64
+	for _, v := range vals {
+		diff := v - mean
+		varianceSum += diff * diff
+	}
+
+	eb.means[sectionName] = mean
+	eb.stddevs[sectionName] = math.Sqrt(varianceSum / float64(len(vals)))
 }
 
 func (eb *EntropyBaseline) Warmup(paths []string) {

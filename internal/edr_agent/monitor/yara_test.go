@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestYaraMatcherEICAR(t *testing.T) {
@@ -287,29 +288,23 @@ func TestEntropyBaseline(t *testing.T) {
 }
 
 func TestFloodDetector(t *testing.T) {
-	eventCh := make(chan *Event, 100)
+	eventCh := make(chan *Event, 200)
 	fd := NewFloodDetector(eventCh)
 
-	for i := 0; i < 50; i++ {
-		fd.Ingest(&Event{
-			Type: EventProcessCreate,
-			Process: &ProcessInfo{PID: 1000 + i, Name: "flood.exe"},
-		})
-	}
+	fd.warmupPeriod = time.Now().Add(-61 * time.Second)
+	fd.warmupCount[EventProcessCreate] = 60
 
+	fd.Ingest(&Event{Type: EventProcessCreate, Process: &ProcessInfo{PID: 1}})
 	if fd.IsFlooding() {
-		t.Error("50 events should not trigger flood (threshold is 100)")
+		t.Error("single event should not trigger flood")
 	}
 
-	for i := 0; i < 200; i++ {
-		fd.Ingest(&Event{
-			Type: EventFileCreate,
-			File: &FileInfo{Path: "/tmp/flood/file.bin"},
-		})
+	for i := 0; i < 50; i++ {
+		fd.Ingest(&Event{Type: EventProcessCreate, Process: &ProcessInfo{PID: i}})
 	}
 
 	if !fd.IsFlooding() {
-		t.Error("200+ events should trigger flood mode")
+		t.Error("50 process events in 1s should exceed min threshold of 20")
 	}
 }
 

@@ -184,8 +184,15 @@ func (hd *HollowingDetector) checkWXViolations(pid int) {
 
 	addr := uintptr(0)
 	const maxRegions = 1000
+	startTime := time.Now()
+	budget := 2 * time.Second
 
 	for i := 0; i < maxRegions; i++ {
+		// Time budget check: stop if we've spent more than 2s
+		if time.Since(startTime) > budget {
+			break
+		}
+
 		var mbi struct {
 			BaseAddr       uintptr
 			AllocBase      uintptr
@@ -208,7 +215,6 @@ func (hd *HollowingDetector) checkWXViolations(pid int) {
 			break
 		}
 
-		// W^X: page went from RW to RX (typical for process hollowing)
 		if mbi.State == phMemCommit {
 			isWX := (mbi.Protect&phPageRX != 0 || mbi.Protect&phPageRWX != 0) &&
 				!(mbi.Protect&phPageGuard != 0)
@@ -216,7 +222,7 @@ func (hd *HollowingDetector) checkWXViolations(pid int) {
 			if isWX && mbi.RegionSize > 4096 {
 				if mbi.AllocProtect&phPageRW != 0 {
 					hd.emitWXViolation(pid, addr, mbi.RegionSize)
-					break // One alert per process per scan
+					break
 				}
 			}
 		}

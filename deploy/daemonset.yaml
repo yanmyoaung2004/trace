@@ -1,3 +1,62 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: trace-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trace-agent-config
+  namespace: trace-system
+data:
+  config.yaml: |
+    server_url: https://trace-server:8080
+    poll_interval: 5s
+    heartbeat_interval: 30s
+    batch_interval: 2s
+    max_batch_size: 100
+    monitor_process: true
+    monitor_file: true
+    monitor_network: true
+    data_dir: /var/lib/trace-agent
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: trace-agent-key
+  namespace: trace-system
+type: Opaque
+stringData:
+  api-key: "CHANGE_ME_TO_YOUR_API_KEY"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: trace-agent
+  namespace: trace-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: trace-agent
+rules:
+- apiGroups: [""]
+  resources: ["nodes", "pods"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: trace-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: trace-agent
+subjects:
+- kind: ServiceAccount
+  name: trace-agent
+  namespace: trace-system
+---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -14,8 +73,10 @@ spec:
       labels:
         app: trace-agent
     spec:
+      serviceAccountName: trace-agent
       hostPID: true
       hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
       containers:
       - name: agent
         image: trace-agent:latest
@@ -29,6 +90,10 @@ spec:
               key: api-key
         - name: TRACE_AGENT_SERVER
           value: "https://trace-server:8080"
+        - name: TRACE_AGENT_HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
         securityContext:
           privileged: true
           capabilities:
@@ -37,13 +102,18 @@ spec:
             - SYS_PTRACE
             - NET_ADMIN
             - SYSLOG
+            - NET_RAW
         volumeMounts:
         - name: config
           mountPath: /etc/trace-agent
+          readOnly: true
         - name: data
           mountPath: /var/lib/trace-agent
         - name: proc
           mountPath: /host/proc
+          readOnly: true
+        - name: docker
+          mountPath: /var/lib/docker
           readOnly: true
         resources:
           requests:
@@ -52,6 +122,11 @@ spec:
           limits:
             memory: "512Mi"
             cpu: "500m"
+        livenessProbe:
+          exec:
+            command: ["trace-agent", "--status"]
+          initialDelaySeconds: 30
+          periodSeconds: 60
       volumes:
       - name: config
         configMap:
@@ -59,6 +134,10 @@ spec:
       - name: data
         hostPath:
           path: /var/lib/trace-agent
+          type: DirectoryOrCreate
       - name: proc
         hostPath:
           path: /proc
+      - name: docker
+        hostPath:
+          path: /var/lib/docker
