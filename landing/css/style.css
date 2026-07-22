@@ -1083,6 +1083,48 @@ h2 {
 .final-cta .hero-actions {
   justify-content: center;
 }
+.download-row {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.btn-dl {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 24px;
+  min-width: 170px;
+  justify-content: center;
+}
+.dl-icon {
+  display: flex;
+  align-items: center;
+  opacity: 0.7;
+}
+.dl-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.2;
+}
+.dl-label {
+  font-size: 11px;
+  font-weight: 400;
+  opacity: 0.65;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.dl-platform {
+  font-size: 15px;
+  font-weight: 600;
+}
+.dl-footnote {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-top: 0;
+}
 
 /* ============================================================
    Footer
