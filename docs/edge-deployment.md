@@ -271,6 +271,7 @@ trace edr list                     # List agents
 trace edr view <id>                # Agent details
 trace edr events <id>              # Recent events
 trace edr dispatch <id> <action>   # Send action
+trace edr dismiss <alert-id>       # Mark alert as false positive (FP learning)
 trace edr revoke <id>              # Remove agent
 ```
 

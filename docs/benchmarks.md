@@ -50,3 +50,41 @@ Unknown hashes complete faster because no VT API call is attempted
 Windows Event decoder is the fastest at 212ns — simple CSV split.
 Auto Decoder probes format detection first, adding ~1-2µs overhead.
 All decoders are heap-allocated (no zero-allocation path).
+
+---
+
+## EDR Agent
+
+| Benchmark | Iterations | ns/op | B/op | allocs/op |
+|---|---|---|---|---|
+| YaraMatcher (5 samples, 17 rules) | 2,300 | 525,000 | 192 | 2 |
+| Deduplicator (1k unique + 1k dup) | — | verified pass | — | — |
+| FloodDetector (1k events) | — | verified pass | — | — |
+
+### YARA Matcher
+
+Matches 5 sample types (EICAR, Mimikatz, CobaltStrike, PowerShell encoded, benign)
+against 17 built-in rules + external .yar loader. Pure-Go implementation with
+zero C dependencies. ~1,900 ops/sec, 2 allocations per scan.
+
+### On-Agent Rules
+
+| Rule | Type | Trigger |
+|------|------|---------|
+| EICAR_Test | String match | Standard AV test file |
+| Suspicious_PowerShell | Regex | Base64 encoded PS, IEX, DownloadString |
+| Suspicious_CMD | Regex | cmd /c curl/wget/bitsadmin |
+| Base64_Encoded_Strings | Regex | Long base64 sequences |
+| Suspicious_Entropy | Entropy >7.0 | Packed/encrypted binaries |
+| Packed_Binary | PE section check | UPX, packed sections |
+| Suspicious_Imports | Regex | CreateRemoteThread, VirtualAllocEx |
+| Process_Injection_API | Regex | CreateRemoteThread + WriteProcessMemory |
+| Keylogger_Indicators | Regex | SetWindowsHookEx, GetAsyncKeyState |
+| Ransomware_Indicators | Regex | vssadmin, bcdedit, wevtutil |
+| VM_Escape_Indicators | Regex | IsDebuggerPresent, VMCheck |
+| Mimikatz_Strings | Regex | sekurlsa, lsadump, wdigest |
+| CobaltStrike_Beacon | Regex | beacon.dll, reflective_loader |
+| XOR_Encoded_Payload | Byte analysis | Single/multi-byte XOR, ADD/SUB/ROL |
+| Packed_PE_Binary | PE structure | Section entropy + EP analysis |
+
+External `.yar` files loaded from `~/.trace-agent/yara/` at startup.

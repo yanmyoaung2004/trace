@@ -535,6 +535,91 @@ Check that the following docs exist:
 - `docs/playbook-authoring.md` — YAML structure, fields, interpolation, conditions
 - `docs/plugin-development.md` — Go plugin interface, build, install, distribution
 
+---
+
+## EDR Agent Tests
+
+The EDR agent has 27+ test cases across 3 packages.
+
+### Unit Tests
+
+```bash
+cd dev
+go test ./internal/edr_agent/... -short -count=1
+```
+
+Expected: all packages pass.
+
+| Package | Tests | Coverage |
+|---------|-------|----------|
+| `edr_agent` | 4 (config) | Config load/save/defaults |
+| `edr_agent/monitor` | 17 (YARA, XOR, PE, tree, dedup, entropy, flood) | YARA 15 rules, XOR single/multi-byte, PE parser, process tree persistence, dedup in-memory + SQLite, entropy baseline, flood detector adaptive threshold |
+| `edr_agent/response` | 9 (executor) | Kill, quarantine, snapshot, block, forensics, timeout, unknown action |
+
+### Performance Benchmarks
+
+```bash
+cd dev
+go test ./internal/edr_agent/monitor -bench=BenchmarkYaraMatcher -benchmem -count=1
+```
+
+| Benchmark | Ops/sec | Allocs/op |
+|-----------|---------|-----------|
+| YaraMatcher (5 samples, 17 rules) | ~1,900 | 2 |
+
+### Integration Tests (requires httptest server)
+
+```bash
+cd dev
+go test ./cmd/trace-agent/... -tags=integration -count=1
+```
+
+| Test | Scenario |
+|------|----------|
+| TestAgentRegistrationAndHeartbeat | Register → heartbeat → stop |
+| TestAgentSendsEvents | Event batching to server |
+| TestAgentRecoversFromServerDown | Server 503 then 200, agent retries |
+| TestAgentDiskQueueFull | Server offline → disk queue → drain on reconnect |
+| TestAgentConfigPersistence | Config save/load round-trip |
+
+### Real Deployment Tests (on target system)
+
+```bash
+# Soak test: 1 hour (use 86400 for 24h)
+bash deploy/soak-test.sh 3600 http://server:8080 key
+
+# Volume stress test
+bash deploy/stress-test.sh
+
+# Malware detection test (requires YARA)
+bash deploy/malware-test.sh
+
+# Crash recovery test
+bash deploy/crash-test.sh
+```
+
+### Verification Commands
+
+```bash
+# Build agent
+go build -o trace-agent.exe ./cmd/trace-agent/
+
+# Run agent
+trace-agent.exe --server http://localhost:8080 --api-key test-key
+
+# From Trace server: list agents
+trace edr list
+
+# View agent events
+trace edr events <agent-id>
+
+# Dismiss a false positive (trains FP learning)
+trace edr dismiss <alert-id>
+
+# Dispatch a response action
+trace edr dispatch <agent-id> block-ip --ip 203.0.113.42
+```
+
 ## Quick smoke test (full pipeline)
 
 ```powershell

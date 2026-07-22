@@ -341,6 +341,7 @@ Subcommands:
 | `view <agent-id>` | View agent details and status |
 | `events <agent-id>` | View recent events from an agent |
 | `dispatch <agent-id> <action> [target]` | Send a response action to an agent |
+| `dismiss <alert-id>` | Mark an alert as false positive (trains FP learning) |
 | `revoke <agent-id>` | Revoke and remove an agent |
 
 Dispatch actions:
@@ -363,6 +364,7 @@ trace edr dispatch abc123 kill-process --pid 4521
 trace edr dispatch abc123 quarantine --path /tmp/malware.exe
 trace edr dispatch abc123 block-ip --ip 203.0.113.42
 trace edr dispatch abc123 isolate
+trace edr dismiss a1b2c3d4-e5f6-7890-abcd-ef1234567890
 ```
 
 ## `trace-agent` (separate binary)
@@ -410,7 +412,7 @@ trace-agent [flags]
 | **File** | inotify (real-time) + fanotify (file open) + polling fallback | ReadDirectoryChangesW (real-time) + polling fallback | polling |
 | **Network** | ss polling | netstat polling | lsof polling |
 | **Memory** | /proc/[pid]/maps + mem YARA scan | VirtualQueryEx + ReadProcessMemory + YARA | — |
-| **YARA** | 15+ rules (EICAR, PowerShell, PE packer, XOR, Mimikatz, CobaltStrike, etc.) | same | same |
+| **YARA** | 17 rules + external .yar loader (EICAR, PS encoded, cmd abuse, base64, entropy, PE packer, XOR, packed PE, proc injection, keylogger, ransomware, VM escape, Minikatz, CobaltStrike, etc.) | same | same |
 
 ### Response actions
 
