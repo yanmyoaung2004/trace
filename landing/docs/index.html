@@ -236,7 +236,7 @@
       </ol>
     </div>
 
-    <h2 id="overview">1. Overview</h2>
+    <h2 id="overview">Overview</h2>
     <p>TRACE is an open-source cybersecurity operations platform designed for security analysts, SOC teams, and DevSecOps engineers. It replaces 4+ traditional security tools — SIEM, SOAR, compliance scanner, EDR console — with a single Go binary that runs on any OS without Docker, Elasticsearch, or any external service.</p>
 
     <h3>Key Design Principles</h3>
@@ -248,7 +248,7 @@
       <li><strong>Edge-to-server sync.</strong> Deploy agents at network edges; results sync to a central dashboard with cross-node IOC correlation.</li>
     </ul>
 
-    <h2 id="quickstart">2. Quick Start</h2>
+    <h2 id="quickstart">Quick Start</h2>
     <pre><code>git clone https://github.com/yanmyoaung2004/trace.git
 cd trace/dev
 go build -o trace ./cmd/trace
@@ -259,7 +259,7 @@ go build -o trace ./cmd/trace
 # Start the SIEM engine
 ./trace serve --siem --log-dir /var/log</code></pre>
 
-    <h2 id="configuration">3. Configuration</h2>
+    <h2 id="configuration">Configuration</h2>
     <p>Configuration is stored at <code>~/.trace/config.json</code>. Run <code>trace init</code> for the interactive setup wizard.</p>
     <table>
       <tr><th>Field</th><th>Env Override</th><th>Default</th></tr>
@@ -273,7 +273,7 @@ go build -o trace ./cmd/trace
       <tr><td><code>telegram_bot_token</code></td><td></td><td></td></tr>
     </table>
 
-    <h2 id="architecture">4. System Architecture</h2>
+    <h2 id="architecture">System Architecture</h2>
     <p>TRACE operates as a multi-agent system where specialized agents collaborate to process security investigations through a SQLite-backed task queue.</p>
     <pre><code>Input (CLI / API / SIEM alert)
   └─ Dispatch Agent (orchestrator)
@@ -286,7 +286,7 @@ go build -o trace ./cmd/trace
        └─ Exporter (report serving)
   └─ Investigation Report + Case</code></pre>
 
-    <h2 id="agents">5. Agent System</h2>
+    <h2 id="agents">Agent System</h2>
     <table>
       <tr><th>Agent</th><th>Actions</th></tr>
       <tr><td><strong>Dispatch</strong></td><td><code>synthesize_report</code>, <code>plan_investigation</code>, <code>classify_intent</code>, <code>calculate_confidence</code></td></tr>
@@ -299,7 +299,7 @@ go build -o trace ./cmd/trace
       <tr><td><strong>Exporter</strong></td><td><code>serve_reports</code></td></tr>
     </table>
 
-    <h2 id="deployment">6. Deployment Models</h2>
+    <h2 id="deployment">Deployment Models</h2>
     <p><strong>Standalone:</strong> Run <code>trace</code> or <code>trace serve</code> on a single machine. All agents, database, and SIEM engine run in one process.</p>
     <p><strong>Central Server + Edge:</strong> Deploy <code>trace-agent</code> on endpoints. Each edge runs the full monitoring stack and syncs investigations to a central server every 30s.</p>
     <pre><code># Central server
@@ -311,7 +311,7 @@ trace-agent --server http://central:8080 --api-key xxx
 # On the server
 trace edr list</code></pre>
 
-    <h2 id="edr">15. EDR Agent</h2>
+    <h2 id="edr">EDR Agent</h2>
     <p>TRACE ships its own lightweight endpoint agent (<code>trace-agent</code>) — no third-party EDR required. The agent runs on Windows, Linux, and macOS.</p>
 
     <h3>CLI</h3>
@@ -365,7 +365,7 @@ trace edr dispatch <id> <action>   # Send action
 trace edr dismiss <alert-id>       # Mark false positive
 trace edr revoke <id>              # Remove agent</code></pre>
 
-    <h2 id="cli">7. CLI Reference</h2>
+    <h2 id="cli">CLI Reference</h2>
     <p>18 commands with shell completion and interactive prompt fallback.</p>
     <table>
       <tr><th>Command</th><th>Alias</th><th>Description</th></tr>
@@ -387,7 +387,7 @@ trace edr revoke <id>              # Remove agent</code></pre>
       <tr><td><code>version</code></td><td></td><td>Print version</td></tr>
     </table>
 
-    <h2 id="siem">8. SIEM Engine</h2>
+    <h2 id="siem">SIEM Engine</h2>
     <table>
       <tr><th>Metric</th><th>Value</th></tr>
       <tr><td>Detection rules</td><td>496 total (446 Wazuh + 16 built-in + 34 K8s)</td></tr>
@@ -396,13 +396,13 @@ trace edr revoke <id>              # Remove agent</code></pre>
       <tr><td>Correlation</td><td>Time-windowed, threshold-based, suppression</td></tr>
     </table>
 
-    <h2 id="soar">9. SOAR Pipeline</h2>
+    <h2 id="soar">SOAR Pipeline</h2>
     <p>SIEM alert → auto-investigation → playbook dispatch → response → report → auto-case → notification. All within the same binary.</p>
 
-    <h2 id="playbooks">10. Playbooks</h2>
+    <h2 id="playbooks">Playbooks</h2>
     <p>27 YAML playbooks covering: hash-lookup, ip-reputation, file-analysis, cve-lookup, mitre-lookup, full-enrich, block-ip, quarantine-file, kill-process, edr-isolate, edr-scan, edr-kill-process, compliance-scan, rootkit-scan, and more.</p>
 
-    <h2 id="compliance">11. Compliance</h2>
+    <h2 id="compliance">Compliance</h2>
     <table>
       <tr><th>Framework</th><th>Controls</th></tr>
       <tr><td>PCI DSS v4.0</td><td>14</td></tr>
@@ -415,32 +415,32 @@ trace edr revoke <id>              # Remove agent</code></pre>
     </table>
     <p>Formats: Text, Markdown, HTML, JSON. Evidence collection and manual assessment support.</p>
 
-    <h2 id="casemanagement">12. Case Management</h2>
+    <h2 id="casemanagement">Case Management</h2>
     <p>Full case lifecycle: status (open/investigating/resolved/closed), severity (low/medium/high/critical), timeline with event types, IOC management, evidence attachments, PDF export, auto-creation from SIEM alerts (severity ≥ 4).</p>
 
-    <h2 id="hunting">13. Threat Hunting</h2>
+    <h2 id="hunting">Threat Hunting</h2>
     <pre><code>trace hunt list
 known-malware-scan   every 6h    hash-lookup       severity 5
 compliance-audit     every 24h   compliance-scan   severity 3
 rootkit-sweep        every 24h   rootkit-scan      severity 5
 k8s-audit            every 1h    log-analysis      severity 4</code></pre>
 
-    <h2 id="threatintel">15. Threat Intelligence</h2>
+    <h2 id="threatintel">Threat Intelligence</h2>
     <p>VirusTotal (hash/URL/IP), AbuseIPDB (IP reputation), AlienVault OTX (indicator pulses), Firecrawl (web search OSINT). Built-in MITRE ATT&CK (81 techniques) + 23 IOC entries.</p>
 
-    <h2 id="notifications">16. Notifications</h2>
+    <h2 id="notifications">Notifications</h2>
     <p>Slack (webhook), Discord (webhook), Telegram (bot API). Configured via <code>trace init</code> or config file.</p>
 
-    <h2 id="tui">17. Terminal UI</h2>
+    <h2 id="tui">Terminal UI</h2>
     <p>5 screens: Dashboard, Investigations, Cases, SIEM, Config. Keyboard navigation (Tab, arrows, Enter, Esc, 1-5). Built with Bubbletea.</p>
 
-    <h2 id="server">18. Server &amp; API</h2>
+    <h2 id="server">Server &amp; API</h2>
     <p>REST API with Bearer token auth. Endpoints: register, heartbeat, push, nodes, investigations, correlations, timeline, health. Default user auto-seeded with random API key.</p>
 
-    <h2 id="plugins">19. Plugin System</h2>
+    <h2 id="plugins">Plugin System</h2>
     <p>Built-in: SCA Agent, Exporter. External: Go shared libraries (.so) loaded from <code>~/.trace/plugins/</code>. Must implement <code>AgentPlugin</code> interface.</p>
 
-    <h2 id="internationalization">20. Internationalization</h2>
+    <h2 id="internationalization">Internationalization</h2>
     <p>English + Myanmar (Burmese). Auto-detected via <code>LANG</code>/<code>LC_ALL</code> env vars.</p>
 
     <div style="height:80px;"></div>
