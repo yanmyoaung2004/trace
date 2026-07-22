@@ -366,7 +366,7 @@ svg {
 .hero-inner {
   position: relative;
   z-index: 1;
-  max-width: 760px;
+  max-width: 860px;
 }
 .hero-title {
   font-size: clamp(38px, 5.4vw, 62px);
@@ -389,7 +389,7 @@ svg {
 .hero-desc {
   font-size: 17px;
   color: var(--text-secondary);
-  max-width: 600px;
+  max-width: 680px;
   margin-bottom: 34px;
 }
 .hero-actions {
@@ -634,6 +634,11 @@ h2 {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 28px;
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+.siem-panel:hover {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 1px var(--accent-dim);
 }
 .stacked-bar {
   display: flex;
@@ -817,11 +822,19 @@ h2 {
   color: var(--text-secondary);
   font-size: 12.5px;
 }
+.compliance-table tr:hover td {
+  background: rgba(91, 154, 255, 0.03);
+}
 .compliance-table tr:last-child td {
   border-bottom: none;
 }
 
 .status-legend {
+  transition: border-color 0.25s;
+}
+.status-legend:hover {
+  border-color: var(--accent-line);
+}
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -880,6 +893,11 @@ h2 {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 22px;
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+.edr-card:hover {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 1px var(--accent-dim);
 }
 .edr-card h3 {
   font-size: 16px;
@@ -917,6 +935,10 @@ h2 {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 28px;
+  transition: border-color 0.25s;
+}
+.edr-details:hover {
+  border-color: var(--accent-line);
 }
 .edr-details-col2 {
   display: grid;
@@ -927,6 +949,10 @@ h2 {
   border-radius: var(--radius);
   padding: 28px;
   margin-top: 12px;
+  transition: border-color 0.25s;
+}
+.edr-details-col2:hover {
+  border-color: var(--accent-line);
 }
 
 /* ============================================================

@@ -822,21 +822,24 @@
 <span class="out-ok">&#10003; data directory ready at ~/.trace</span>
 <span class="out-ok">&#10003; loaded 496 detection rules, 26 playbooks</span>
 
-<span class="prompt-char">$</span> trace investigate --host 10.0.4.12
-<span class="out-dim">Dispatch: classifying intent...</span>       intent: malware
-<span class="out-dim">Dispatch: dispatching Sift, Archive...</span>
-<span class="out-warn">Sift: yara_scan matched Suspicious_PowerShell</span>
-<span class="out-crit">Archive: mitre_lookup -> T1059.001, T1055</span>
-<span class="out-ok">Report ready</span>   investigation: a3f9e1   severity: high   confidence: 0.86
+<span class="prompt-char">$</span> trace investigate "check hash 275a021bbfb6489e54d471899f7db9d16"
+<span class="out-dim">Dispatch: classifying intent...</span>       intent: hash_lookup
+<span class="out-dim">Dispatch: dispatching Sift...</span>
+<span class="out-warn">Sift: hash_lookup matched CobaltStrike Beacon</span>
+<span class="out-dim">Sift: vt_lookup completed (7/72 detections)</span>
+<span class="out-ok">Report ready</span>   investigation: a3f9e1d0   confidence: 0.86
 
-<span class="prompt-char">$</span> trace hunt list
-known-malware-scan   every 6h    hash-lookup       severity 5
-compliance-audit     every 24h   compliance-scan   severity 3
-rootkit-sweep        every 24h   rootkit-scan      severity 5
-k8s-audit            every 1h    log-analysis      severity 4
+<span class="prompt-char">$</span> trace compliance report --framework pci_dss_v4.0
+<span class="out-dim">PCI DSS v4.0 Compliance Report</span>
+<span class="out-ok">Score: 86%</span>   (12/14 controls passed)
+1.2.5  Network access controls     <span class="out-ok">PASS</span>
+2.2.7  Insecure protocols           <span class="out-warn">FAIL</span>
+8.3.2  MFA for admin access        <span class="out-ok">PASS</span>
 
-<span class="prompt-char">$</span> trace case create --title "Suspicious PowerShell on WIN-4412"
-<span class="out-ok">Case CASE-0091 created</span>   status: open   severity: high</code></pre>
+<span class="prompt-char">$</span> trace edr list
+<span class="out-dim">Agent                          Hostname       Platform    Status       Last Heartbeat</span>
+abc12345-6789-def0   win-4412       windows     active       2026-07-22T19:00
+fedcba98-7654-3210   linux-node-3   linux       active       2026-07-22T18:59</code></pre>
           </div>
 
           <div class="cli-command-grid reveal">
@@ -874,6 +877,10 @@ k8s-audit            every 1h    log-analysis      severity 4
             </div>
             <div class="cli-cmd">
               <code>compliance</code><span>Run compliance scans</span>
+            </div>
+            <div class="cli-cmd">
+              <code>edr</code><span class="alias">dismiss</span
+              ><span>Manage EDR agents &amp; dismiss alerts</span>
             </div>
             <div class="cli-cmd">
               <code>approval</code><span>HITL approval management</span>
