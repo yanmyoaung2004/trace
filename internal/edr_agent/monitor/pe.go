@@ -2,153 +2,241 @@ package monitor
 
 import (
 	"encoding/binary"
+	"log"
 )
 
+const maxPESize = 100 * 1024 * 1024
+
 type PEMemory struct {
-	IsPE         bool
-	Sections     []PESection
-	EntryPoint   uint32
-	ImageBase    uint32
-	Subsystem    uint16
-	IsPacked     bool
-	PackerName   string
+	IsPE          bool
+	Sections      []PESection
+	EntryPoint    uint32
+	ImageBase     uint32
+	Subsystem     uint16
+	IsPacked      bool
+	PackerName    string
+	PackerConf    float64
+	NumImports    int
+	HasTLS        bool
+	HasRelocs     bool
+	SuspiciousSections int
 }
 
 type PESection struct {
-	Name       string
+	Name        string
 	VirtualAddr uint32
+	VirtualSize uint32
 	RawSize     uint32
 	RawOffset   uint32
 	Entropy     float64
+	Characteristics uint32
 }
 
 func AnalyzePE(data []byte) *PEMemory {
-	result := &PEMemory{}
-	if len(data) < 64 {
-		return result
+	r := &PEMemory{}
+	if len(data) < 64 || len(data) > maxPESize {
+		return r
 	}
-
 	if data[0] != 'M' || data[1] != 'Z' {
-		return result
+		return r
 	}
 
-	peOffset := int(binary.LittleEndian.Uint32(data[0x3C:0x40]))
-	if peOffset+4 > len(data) {
-		return result
+	peOff := int(binary.LittleEndian.Uint32(data[0x3C:0x40]))
+	if peOff < 64 || peOff+64 > len(data) {
+		return r
+	}
+	if data[peOff] != 'P' || data[peOff+1] != 'E' {
+		return r
 	}
 
-	if data[peOffset] != 'P' || data[peOffset+1] != 'E' {
-		return result
+	r.IsPE = true
+	pe := peOff
+
+	// Validate PE header bounds
+	if pe+248 > len(data) {
+		return r
 	}
 
-	result.IsPE = true
-	pe := peOffset
-
-	if pe+20 > len(data) {
-		return result
-	}
-	result.EntryPoint = binary.LittleEndian.Uint32(data[pe+16 : pe+20])
-	result.Subsystem = binary.LittleEndian.Uint16(data[pe+68 : pe+70])
-	result.ImageBase = binary.LittleEndian.Uint32(data[pe+52 : pe+56])
+	r.EntryPoint = binary.LittleEndian.Uint32(data[pe+16 : pe+20])
+	r.Subsystem = binary.LittleEndian.Uint16(data[pe+68 : pe+70])
+	r.ImageBase = binary.LittleEndian.Uint32(data[pe+52 : pe+56])
 
 	numSections := int(binary.LittleEndian.Uint16(data[pe+2 : pe+4]))
-	sectionOffset := pe + 24 + 216
+	numSections = clamp(numSections, 0, 40)
 
-	for i := 0; i < numSections && i < 40; i++ {
-		off := sectionOffset + i*40
+	// Import directory
+	importRVA := binary.LittleEndian.Uint32(data[pe+104 : pe+108])
+	importSize := binary.LittleEndian.Uint32(data[pe+112 : pe+116])
+	if importSize > 0 && importRVA > 0 {
+		r.NumImports = countPEImports(data)
+	}
+
+	// TLS directory
+	tlsRVA := binary.LittleEndian.Uint32(data[pe+136 : pe+140])
+	r.HasTLS = tlsRVA > 0 && binary.LittleEndian.Uint32(data[pe+140:pe+144]) > 0
+
+	// Relocations
+	relocRVA := binary.LittleEndian.Uint32(data[pe+160 : pe+164])
+	r.HasRelocs = relocRVA > 0 && binary.LittleEndian.Uint32(data[pe+164:pe+168]) > 0
+
+	secStart := pe + 24 + 208
+	for i := 0; i < numSections; i++ {
+		off := secStart + i*40
 		if off+40 > len(data) {
 			break
 		}
 
-		secNameBytes := data[off : off+8]
-		secName := string(secNameBytes)
-		secName = trimNull(secName)
-
 		sec := PESection{
-			Name:        secName,
-			VirtualAddr: binary.LittleEndian.Uint32(data[off+12 : off+16]),
-			RawSize:     binary.LittleEndian.Uint32(data[off+16 : off+20]),
-			RawOffset:   binary.LittleEndian.Uint32(data[off+20 : off+24]),
-			Entropy:     0,
+			Name:             trimNull(string(data[off : off+8])),
+			VirtualAddr:      binary.LittleEndian.Uint32(data[off+12 : off+16]),
+			VirtualSize:      binary.LittleEndian.Uint32(data[off+8 : off+12]),
+			RawSize:          binary.LittleEndian.Uint32(data[off+16 : off+20]),
+			RawOffset:        binary.LittleEndian.Uint32(data[off+20 : off+24]),
+			Characteristics:  binary.LittleEndian.Uint32(data[off+36 : off+40]),
 		}
 
-		if sec.RawSize > 0 && int(sec.RawOffset+sec.RawSize) <= len(data) {
+		if sec.RawSize > 0 && int(sec.RawOffset+sec.RawSize) <= len(data) && sec.RawSize <= maxPESize {
 			sec.Entropy = calculateEntropy(data[sec.RawOffset : sec.RawOffset+sec.RawSize])
 		}
 
-		result.Sections = append(result.Sections, sec)
+		r.Sections = append(r.Sections, sec)
 	}
 
-	// Packer detection
-	result.IsPacked = detectPacker(result)
-	if result.IsPacked {
-		result.PackerName = identifyPacker(result)
-	}
-
-	return result
+	r.detectPacker()
+	return r
 }
 
 func detectPacker(pe *PEMemory) bool {
 	if !pe.IsPE || len(pe.Sections) == 0 {
 		return false
 	}
-
-	// One section with high entropy = packed
-	if len(pe.Sections) <= 2 {
-		for _, s := range pe.Sections {
-			if s.Entropy > 7.0 && s.RawSize > 4096 {
-				return true
-			}
-		}
-	}
-
-	// Suspicious section names
-	packedNames := map[string]bool{
-		"UPX0": true, "UPX1": true, "UPX2": true,
-		".packed": true, ".pdata": true, ".mackt": true,
-		".MPRSS": true, ".SHELL": true, ".text!": true,
-	}
-
-	for _, s := range pe.Sections {
-		if packedNames[s.Name] {
-			return true
-		}
-		if s.Name != "" && (s.Name[0] == '.' && len(s.Name) > 8) {
-			return true
-		}
-	}
-
-	// Entry point in last section (typical for packers)
-	if len(pe.Sections) > 2 {
-		last := pe.Sections[len(pe.Sections)-1]
-		if pe.EntryPoint >= last.VirtualAddr && pe.EntryPoint < last.VirtualAddr+last.RawSize {
-			if last.Entropy > 6.5 {
-				return true
-			}
-		}
-	}
-
-	return false
+	return pe.IsPacked
 }
 
-func identifyPacker(pe *PEMemory) string {
+func (pe *PEMemory) detectPacker() {
+	score := 0.0
+
+	if len(pe.Sections) == 0 {
+		return
+	}
+
 	for _, s := range pe.Sections {
 		switch s.Name {
 		case "UPX0", "UPX1", "UPX2":
-			return "UPX"
+			pe.PackerName = "UPX"; score = 0.95
 		case ".packed":
-			return "Generic Packer"
+			pe.PackerName = "Generic Packer"; score = 0.8
 		case ".MPRSS":
-			return "MPRESS"
+			pe.PackerName = "MPRESS"; score = 0.95
 		case ".SHELL":
-			return "ShellCrypt"
+			pe.PackerName = "ShellCrypt"; score = 0.9
 		case ".mackt":
-			return "Themida"
+			pe.PackerName = "Themida"; score = 0.95
 		case ".text!":
-			return "Enigma Protector"
+			pe.PackerName = "Enigma Protector"; score = 0.9
+		case "PACKER":
+			pe.PackerName = "PACKER"; score = 0.9
+		}
+		if pe.PackerName != "" {
+			pe.IsPacked = true; pe.PackerConf = score
+			return
 		}
 	}
-	return "Unknown Packer"
+
+	// Check 2: Section name length anomaly
+	for _, s := range pe.Sections {
+		if s.Name != "" && len(s.Name) > 8 {
+			score += 0.25
+			pe.SuspiciousSections++
+		}
+	}
+
+	// Check 3: Single high-entropy section (packed binary)
+	highEntropySections := 0
+	for _, s := range pe.Sections {
+		if s.Entropy > 7.0 && s.RawSize > 2048 {
+			highEntropySections++
+		}
+	}
+	score += float64(highEntropySections) * 0.2
+
+	// Check 4: Entry point in last section (packer characteristic)
+	if len(pe.Sections) > 1 {
+		last := pe.Sections[len(pe.Sections)-1]
+		epRange := pe.EntryPoint >= last.VirtualAddr &&
+			pe.EntryPoint < last.VirtualAddr+last.VirtualSize
+		if epRange && last.Entropy > 6.5 {
+			score += 0.3
+		}
+		if epRange && last.Entropy > 7.5 {
+			score += 0.2
+		}
+	}
+
+	// Check 5: Very few imports for a normal PE
+	if pe.NumImports < 5 && len(pe.Sections) > 2 {
+		score += 0.3
+	}
+
+	// Check 6: TLS callbacks present (common in packers)
+	if pe.HasTLS && pe.NumImports < 10 {
+		score += 0.2
+	}
+
+	// Check 7: High entropy in first section (code section should be 4-6)
+	if len(pe.Sections) > 0 && pe.Sections[0].Entropy > 7.0 {
+		score += 0.2
+	}
+
+	if score >= 0.6 {
+		pe.IsPacked = true
+		pe.PackerConf = score
+		if pe.PackerName == "" && highEntropySections > 1 {
+			pe.PackerName = "VMProtect/Confuser"
+		} else if pe.PackerName == "" {
+			pe.PackerName = "Unknown Packer"
+		}
+	}
+}
+
+func countPEImports(data []byte) int {
+	// Simple import count by looking for DLL name references
+	// Real implementation would walk the import directory table
+	count := 0
+	markers := [][]byte{
+		{'K', 'E', 'R', 'N', 'E', 'L', '3', '2', '.', 'd', 'l', 'l'},
+		{'n', 't', 'd', 'l', 'l', '.', 'd', 'l', 'l'},
+		{'U', 'S', 'E', 'R', '3', '2', '.', 'd', 'l', 'l'},
+		{'A', 'D', 'V', 'A', 'P', 'I', '3', '2', '.', 'd', 'l', 'l'},
+		{'W', 'S', '2', '_', '3', '2', '.', 'd', 'l', 'l'},
+		{'w', 'i', 'n', 'i', 'n', 'e', 't', '.', 'd', 'l', 'l'},
+		{'w', 'i', 'n', 'h', 't', 't', 'p', '.', 'd', 'l', 'l'},
+	}
+	for _, m := range markers {
+		if containsBytes(data, m) {
+			count++
+		}
+	}
+	return count
+}
+
+func containsBytes(data, sub []byte) bool {
+	if len(sub) > len(data) {
+		return false
+	}
+	for i := 0; i <= len(data)-len(sub); i++ {
+		match := true
+		for j := range sub {
+			if data[i+j] != sub[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
 }
 
 func trimNull(s string) string {
@@ -159,3 +247,15 @@ func trimNull(s string) string {
 	}
 	return s
 }
+
+func clamp(n, min, max int) int {
+	if n < min {
+		return min
+	}
+	if n > max {
+		return max
+	}
+	return n
+}
+
+var _ = log.Printf

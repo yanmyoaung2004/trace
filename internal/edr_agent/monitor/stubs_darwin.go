@@ -4,43 +4,63 @@ package monitor
 
 import (
 	"context"
-	"encoding/json"
 	"log"
+	"time"
 )
 
-type DarwinFileMonitor struct{}
-
-func NewDarwinFileMonitor(_ chan<- *Event) *DarwinFileMonitor {
-	return &DarwinFileMonitor{}
+type DarwinFileMonitor struct {
+	eventCh chan<- *Event
+	poller  *FileMonitor
 }
-func (*DarwinFileMonitor) Start(_ context.Context) error {
-	log.Printf("[file-mon] darwin: fsevents not available, using polling")
-	fm := NewFileMonitor(nil, nil, nil)
-	go fm.pollingLoop(context.Background())
+
+func NewDarwinFileMonitor(eventCh chan<- *Event) *DarwinFileMonitor {
+	return &DarwinFileMonitor{eventCh: eventCh}
+}
+
+func (m *DarwinFileMonitor) Start(ctx context.Context) error {
+	log.Printf("[file-mon] darwin: fsevents unavailable, polling /tmp /var/tmp /etc")
+	m.poller = NewFileMonitor(m.eventCh, []string{"/tmp", "/var/tmp", "/etc", "/Library/LaunchAgents", "/Users/Shared"}, nil)
+	m.poller.Start(ctx)
 	return nil
 }
-func (*DarwinFileMonitor) Stop() {}
 
-type DarwinProcMonitor struct{}
-
-func NewDarwinProcMonitor(_ chan<- *Event) *DarwinProcMonitor {
-	return &DarwinProcMonitor{}
+func (m *DarwinFileMonitor) Stop() {
+	if m.poller != nil {
+		m.poller.Stop()
+	}
 }
-func (*DarwinProcMonitor) Start(ctx context.Context) error {
-	log.Printf("[proc-mon] darwin: endpoint security not available, using polling")
-	pm := NewProcessMonitor(nil)
-	pm.Start(ctx)
+
+type DarwinProcMonitor struct {
+	eventCh chan<- *Event
+	poller  *ProcessMonitor
+}
+
+func NewDarwinProcMonitor(eventCh chan<- *Event) *DarwinProcMonitor {
+	return &DarwinProcMonitor{eventCh: eventCh}
+}
+
+func (m *DarwinProcMonitor) Start(ctx context.Context) error {
+	log.Printf("[proc-mon] darwin: endpoint security unavailable, polling /bin/ps")
+	m.poller = NewProcessMonitor(m.eventCh)
+	m.poller.interval = 5 * time.Second
+	m.poller.Start(ctx)
 	return nil
 }
-func (*DarwinProcMonitor) Stop() {}
 
-type DarwinMemScanner struct{}
-
-func NewDarwinMemScanner() *DarwinMemScanner {
-	return &DarwinMemScanner{}
+func (m *DarwinProcMonitor) Stop() {
+	if m.poller != nil {
+		m.poller.Stop()
+	}
 }
+
+type DarwinMemScanner struct {
+	eventCh chan<- *Event
+}
+
+func NewDarwinMemScanner(eventCh chan<- *Event) *DarwinMemScanner {
+	return &DarwinMemScanner{eventCh: eventCh}
+}
+
 func (*DarwinMemScanner) ScanProcess(pid int) ([]*MemoryFinding, error) {
 	return nil, nil
 }
-
-var _ = json.Marshal

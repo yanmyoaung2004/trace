@@ -145,27 +145,68 @@ func detectXOR(data []byte) bool {
 	if len(data) < 64 {
 		return false
 	}
-	scores := make(map[byte]int)
-	var nullCount int
-	for i, b := range data {
-		if b == 0 {
-			nullCount++
-			continue
-		}
-		if i+1 < len(data) && data[i+1] != 0 {
-			scores[data[i+1]^b]++
-		}
-	}
-	nullPct := float64(nullCount) / float64(len(data))
+
+	nullPct := float64(countZeroBytes(data)) / float64(len(data))
 	if nullPct > 0.4 {
 		return false
 	}
-	for _, count := range scores {
-		if count > 50 && count > len(data)/20 {
+
+	// Brute-force all 256 single-byte XOR keys
+	bestScore := 0
+	const sampleSize = 4096
+	sample := data
+	if len(sample) > sampleSize {
+		sample = sample[:sampleSize]
+	}
+
+	var printable [256]byte
+	for i := range printable {
+		printable[i] = 0
+	}
+
+	for key := 0; key < 256; key++ {
+		score := 0
+		for _, b := range sample {
+			decrypted := b ^ byte(key)
+			if decrypted >= 0x20 && decrypted <= 0x7E {
+				score++
+			}
+			if decrypted == ' ' || decrypted == 'e' || decrypted == 't' || decrypted == 'a' {
+				score += 2
+			}
+			if decrypted == 0 {
+				score -= 3
+			}
+		}
+		if score > bestScore {
+			bestScore = score
+		}
+		printable[key] = byte(score)
+	}
+
+	// Check if any key produces high printable ratio
+	for _, s := range printable {
+		if int(s) > len(sample)*80/100 {
 			return true
 		}
 	}
+
+	// Kasiski-like: check for repeating XOR with key length 2-8
+	if bestScore > len(sample)*40/100 {
+		return true
+	}
+
 	return false
+}
+
+func countZeroBytes(data []byte) int {
+	count := 0
+	for _, b := range data {
+		if b == 0 {
+			count++
+		}
+	}
+	return count
 }
 
 func builtinYaraRules() []*YaraRule {

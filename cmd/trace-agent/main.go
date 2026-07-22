@@ -8,22 +8,25 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
 	"github.com/yanmyoaung2004/trace/internal/edr_agent"
+	"github.com/yanmyoaung2004/trace/internal/edr_agent/service"
 )
 
 var version = "0.1.1"
 
 func main() {
 	var (
-		configPath  = flag.String("config", "", "Path to config file")
-		serverURL   = flag.String("server", "", "Trace server URL")
-		apiKey      = flag.String("api-key", "", "API key for server authentication")
-		installSvc  = flag.Bool("install", false, "Install as system service")
+		configPath   = flag.String("config", "", "Path to config file")
+		serverURL    = flag.String("server", "", "Trace server URL")
+		apiKey       = flag.String("api-key", "", "API key for server authentication")
+		installSvc   = flag.Bool("install", false, "Install as system service")
 		uninstallSvc = flag.Bool("uninstall", false, "Remove system service")
-		showVersion = flag.Bool("version", false, "Show version")
+		serviceMode  = flag.Bool("service", false, "Run as system service (used by SCM)")
+		showVersion  = flag.Bool("version", false, "Show version")
 	)
 	flag.Parse()
 
@@ -42,23 +45,29 @@ func main() {
 	}
 
 	if *installSvc {
-		if err := installService(cfg); err != nil {
+		exe, _ := os.Executable()
+		if err := service.Install(exe); err != nil {
 			log.Fatalf("install service: %v", err)
 		}
-		fmt.Println("Service installed")
+		fmt.Println("Service installed and started")
 		return
 	}
 	if *uninstallSvc {
-		if err := uninstallService(); err != nil {
+		if err := service.Uninstall(); err != nil {
 			log.Fatalf("uninstall service: %v", err)
 		}
 		fmt.Println("Service uninstalled")
 		return
 	}
 
-	if err := run(cfg); err != nil {
-		log.Fatalf("agent: %v", err)
+	if *serviceMode {
+		service.RunService(func() {
+			runAgent(cfg)
+		})
+		return
 	}
+
+	runAgent(cfg)
 }
 
 func loadConfig(path string) *edr_agent.Config {
@@ -79,13 +88,16 @@ func loadConfig(path string) *edr_agent.Config {
 	if cfg.ServerURL == "" {
 		cfg.ServerURL = os.Getenv("TRACE_AGENT_SERVER")
 	}
+	if cfg.Hostname == "" {
+		cfg.Hostname, _ = os.Hostname()
+	}
 
 	return cfg
 }
 
-func run(cfg *edr_agent.Config) error {
+func runAgent(cfg *edr_agent.Config) {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-	log.Printf("[trace-agent] starting v%s", version)
+	log.Printf("[trace-agent] v%s (%s/%s)", version, runtime.GOOS, runtime.GOARCH)
 
 	agent := edr_agent.New(cfg)
 
@@ -93,13 +105,20 @@ func run(cfg *edr_agent.Config) error {
 	defer cancel()
 
 	if err := agent.Start(ctx); err != nil {
-		return fmt.Errorf("start: %w", err)
+		log.Fatalf("start: %v", err)
 	}
 
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 
-	<-sigCh
+	for sig := range sigCh {
+		if sig == syscall.SIGHUP {
+			log.Printf("[trace-agent] SIGHUP — reloading correlator rules")
+			agent.ReloadCorrelator()
+			continue
+		}
+		break
+	}
 	log.Printf("[trace-agent] shutting down...")
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -109,13 +128,5 @@ func run(cfg *edr_agent.Config) error {
 		log.Printf("[trace-agent] stop error: %v", err)
 	}
 
-	return nil
-}
-
-func installService(cfg *edr_agent.Config) error {
-	return fmt.Errorf("service installation not yet implemented for this platform")
-}
-
-func uninstallService() error {
-	return fmt.Errorf("service uninstallation not yet implemented for this platform")
+	log.Printf("[trace-agent] stopped")
 }

@@ -49,6 +49,13 @@ func NewDeduplicator(dataDir string) *Deduplicator {
 }
 
 func (d *Deduplicator) batchFlusher() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[dedup] flusher panic: %v (restarting)", r)
+			time.Sleep(time.Second)
+			go d.batchFlusher()
+		}
+	}()
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	for {

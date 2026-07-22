@@ -182,6 +182,18 @@ func (a *Agent) Start(ctx context.Context) error {
 	return nil
 }
 
+func (a *Agent) ReloadCorrelator() {
+	if a.correlator == nil {
+		return
+	}
+	path := filepath.Join(a.config.DataDir, "correlator_rules.json")
+	if err := a.correlator.Reload(path); err != nil {
+		log.Printf("[trace-agent] correlator reload failed: %v", err)
+	} else {
+		log.Printf("[trace-agent] correlator rules reloaded from %s", path)
+	}
+}
+
 func (a *Agent) Stop(ctx context.Context) error {
 	a.mu.Lock()
 	if !a.running {

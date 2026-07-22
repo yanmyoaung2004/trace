@@ -3,625 +3,967 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Trace - One binary. Full SOC.</title>
+    <title>TRACE | Autonomous AI That Investigates Cyber Threats</title>
     <meta
       name="description"
-      content="Trace is an open-source cybersecurity operations platform that fits in one binary. SIEM, SOAR, compliance, EDR - zero dependencies."
+      content="TRACE is a single Go binary that runs a full autonomous SOC: seven specialist agents, a 496-rule correlation engine, MITRE ATT&CK mapping, compliance scanning, and EDR response. Open source, MIT licensed."
     />
-    <meta name="theme-color" content="#050510" />
-
-    <meta property="og:title" content="Trace - One binary. Full SOC." />
-    <meta
-      property="og:description"
-      content="Open-source multi-agent cybersecurity platform. SIEM (462 rules), SOAR, TUI, compliance (GDPR/HIPAA/PCI). Single Go binary."
-    />
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://github.com/yanmyoaung2004/trace" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Trace - One binary. Full SOC." />
-    <meta
-      name="twitter:description"
-      content="Open-source cybersecurity platform. SIEM, SOAR, TUI, compliance. Single Go binary."
-    />
-
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="css/style.css" />
-    <link
-      rel="icon"
-      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>"
-    />
   </head>
   <body>
-    <!-- Nav -->
-    <nav>
-      <div class="container">
-        <a href="/" class="nav-logo"
-          ><img
-            src="assets/logo.png"
-            width="300"
-            alt="Trace"
-            class="nav-logo-img"
-        /></a>
-        <ul class="nav-links">
-          <li><a href="#features">Features</a></li>
-          <li><a href="#tmux">Terminal</a></li>
-          <li><a href="#tui">TUI</a></li>
-          <li><a href="#flow">Architecture</a></li>
-          <li><a href="docs/index.html">Docs</a></li>
-          <li><a href="#download">Download</a></li>
-          <li class="nav-cta-li">
-            <a
-              href="https://github.com/yanmyoaung2004/trace"
-              class="nav-cta"
-              target="_blank"
-              rel="noopener"
-              >GitHub</a
-            >
-          </li>
-        </ul>
-      </div>
-    </nav>
+    <div class="grain"></div>
 
-    <!-- Hero: Radar -->
-    <section class="hero" id="hero">
-      <canvas id="radarCanvas"></canvas>
-      <div class="container" style="position:relative;z-index:2;width:100%;">
-        <div class="hero-content">
-          <div class="hero-badge">Detection Engine</div>
-          <h1>See threats before<br />they see you.</h1>
-          <p class="hero-sub">
-            Trace monitors 462 rule sets across your infrastructure in real time.
-            Every anomaly is detected, enriched, and investigated.
-          </p>
-          <div class="hero-actions">
-            <a href="#features" class="btn btn-primary">Explore Trace &rarr;</a>
-            <a href="#download" class="btn btn-secondary">Download</a>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Stats -->
-    <section class="stats">
-      <div class="container">
-        <div class="stats-grid">
-          <div class="stat-card">
-            <div class="num" aria-label="464">464</div>
-            <div class="label">Detection Rules</div>
-          </div>
-          <div class="stat-card">
-            <div class="num" aria-label="1567">1,567</div>
-            <div class="label">Log Decoders</div>
-          </div>
-          <div class="stat-card">
-            <div class="num" aria-label="8">8</div>
-            <div class="label">Compliance Frameworks</div>
-          </div>
-          <div class="stat-card">
-            <div class="num">1</div>
-            <div class="label">Binary</div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Features -->
-    <section class="features" id="features">
-      <div class="container">
-        <div class="section-header">
-          <h2>Everything a SOC needs. Nothing it doesn't.</h2>
-          <p>
-            From log ingestion to compliance reports, Trace replaces 4+ services
-            with one binary that runs anywhere - Windows, Linux, or macOS.
-          </p>
-        </div>
-        <div class="features-grid">
-          <article class="feature-card">
-            <span class="feature-icon">🕵️</span>
-            <h3>SIEM Engine</h3>
-            <p>
-              462 detection rules imported from Wazuh, 1,567 log decoders,
-              syslog + file watcher, windowed correlation, and 18 built-in
-              rules. Every rule maps to MITRE ATT&CK and compliance frameworks.
-            </p>
-            <span class="feature-tag">462 rules</span>
-          </article>
-          <article class="feature-card">
-            <span class="feature-icon">⚡</span>
-            <h3>SOAR Pipeline</h3>
-            <p>
-              Alert → auto-investigation → playbook dispatch → response →
-              report. Automatic case creation from high-severity alerts with
-              full investigation-to-case linking.
-            </p>
-            <span class="feature-tag">Automated</span>
-          </article>
-          <article class="feature-card">
-            <span class="feature-icon">⌨️</span>
-            <h3>Interactive TUI</h3>
-            <p>
-              Full-screen terminal UI with 5 screens - Dashboard,
-              Investigations, Cases, SIEM, Config. Tab navigation, arrow keys,
-              live refresh. No server process required.
-            </p>
-            <span class="feature-tag">bubbletea</span>
-          </article>
-          <article class="feature-card">
-            <span class="feature-icon">🔌</span>
-            <h3>EDR Connectors</h3>
-            <p>
-              Remote isolate, scan, kill, and script execution via CrowdStrike,
-              SentinelOne, and Microsoft Defender. Built-in circuit breaker
-              prevents API abuse.
-            </p>
-            <span class="feature-tag">3 providers</span>
-          </article>
-          <article class="feature-card">
-            <span class="feature-icon">📋</span>
-            <h3>Compliance Reports</h3>
-            <p>
-              8 frameworks: PCI DSS v3/v4, HIPAA, GDPR, NIST 800-53, ISO 27001,
-              SOC 2, CIS v8. Manual assessment, evidence collection,
-              HTML/MD/JSON export. 464 detection rules mapped.
-            </p>
-            <span class="feature-tag">8 frameworks</span>
-          </article>
-          <article class="feature-card">
-            <span class="feature-icon">🔐</span>
-            <h3>Case Management</h3>
-            <p>
-              Full case lifecycle with notes, IOCs, evidence attachments,
-              investigation linking, and PDF export. Auto-created from SIEM
-              alerts. RBAC with API key authentication.
-            </p>
-            <span class="feature-tag">PDF export</span>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <!-- Multi-Pane Terminal -->
-    <section class="tmux-section" id="tmux">
-      <div class="container">
-        <div class="section-header">
-          <div class="hero-badge" style="margin-bottom:16px;">One Process. Zero Daemons.</div>
-          <h2>Your SOC ships in a<br />single binary.</h2>
-          <p>
-            Trace replaces Elasticsearch, Wazuh, TheHive, and your compliance
-            stack. One download, no Docker, no config hell.
-          </p>
-        </div>
-
-        <div class="tmux-wrap">
-          <!-- Top bar -->
-          <div class="tmux-bar-top">
-            <span class="tmux-tag">bash</span>
-            <span class="tmux-path">trace: ~/soc</span>
-            <span class="tmux-tabs-info">0: SIEM* 1: invest 2: compliance</span>
-          </div>
-
-          <!-- Panes -->
-          <div class="tmux-panes">
-            <!-- Left: SIEM -->
-            <div class="tmux-pane pane-alerts">
-              <div class="tmux-pane-header">
-                <span>SIEM / Alerts</span>
-                <span class="tmux-badge">462 rules active</span>
-              </div>
-              <div class="tmux-pane-body" id="tmuxAlerts"></div>
-            </div>
-
-            <!-- Right: stacked -->
-            <div class="tmux-right">
-              <div class="tmux-pane pane-invest">
-                <div class="tmux-pane-header">
-                  <span>Investigation</span>
-                  <span class="tmux-status-dot running">running</span>
-                </div>
-                <div class="tmux-pane-body" id="tmuxInvest"></div>
-              </div>
-              <div class="tmux-pane pane-compliance">
-                <div class="tmux-pane-header">
-                  <span>Compliance</span>
-                  <span class="tmux-status-dot warn">PCI DSS v4.0</span>
-                </div>
-                <div class="tmux-pane-body" id="tmuxCompliance"></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Bottom bar -->
-          <div class="tmux-bar-bottom">
-            <span class="tmux-host">[trace@node-1]</span>
-            <span class="tmux-session">1:bash*</span>
-            <span class="tmux-quote">"One binary. Full SOC."</span>
-          </div>
-        </div>
-
-        <div class="tmux-cta">
-          <a href="#download" class="btn btn-primary">curl -O trace.sh &rarr;</a>
-          <a href="https://github.com/yanmyoaung2004/trace" class="btn btn-secondary" target="_blank" rel="noopener">Read the docs</a>
-        </div>
-      </div>
-    </section>
-
-    <!-- TUI Demo -->
-    <section class="tui-demo" id="tui">
-      <div class="container">
-        <div class="section-header">
-          <h2>Terminal UI. No server.</h2>
-          <p>
-            Type
-            <code
-              style="
-                background: var(--surface);
-                padding: 3px 10px;
-                border-radius: 4px;
-                color: var(--primary);
-                font-family: var(--font-mono);
-                font-size: 0.875rem;
-              "
-              >trace</code
-            >
-            with no arguments. The full-screen TUI launches instantly.
-          </p>
-        </div>
-
-        <div class="tui-window">
-          <div class="tui-window-bar">
-            <span class="tty-dot"></span><span class="tty-dot"></span
-            ><span class="tty-dot"></span>
-            <span class="tui-title2">trace TUI</span>
-          </div>
-          <div class="tui-tabs" id="tui-tabs">
-            <span class="tui-tab active" data-tab="0">Dashboard</span>
-            <span class="tui-tab" data-tab="1">Investigations</span>
-            <span class="tui-tab" data-tab="2">Cases</span>
-            <span class="tui-tab" data-tab="3">SIEM</span>
-            <span class="tui-tab" data-tab="4">Config</span>
-          </div>
-          <div class="tui-content">
-            <div class="tui-screen active" id="tui-screen-0">
-              <div class="tui-grid-3">
-                <div class="tui-card2">
-                  <div class="tui-stat-num">42</div>
-                  <div class="tui-stat-label">Investigations</div>
-                  <div class="tui-bar">
-                    <div class="tui-bar-fill" style="width: 70%"></div>
-                  </div>
-                </div>
-                <div class="tui-card2">
-                  <div class="tui-stat-num">3</div>
-                  <div class="tui-stat-label">Open Cases</div>
-                  <div class="tui-bar">
-                    <div class="tui-bar-fill" style="width: 30%"></div>
-                  </div>
-                </div>
-                <div class="tui-card2">
-                  <div class="tui-stat-num">2</div>
-                  <div class="tui-stat-label">Active Hunts</div>
-                  <div class="tui-bar">
-                    <div class="tui-bar-fill" style="width: 50%"></div>
-                  </div>
-                </div>
-              </div>
-              <div class="tui-table">
-                <div class="tui-th">
-                  <span>Status</span><span>Intent</span><span>Conf</span
-                  ><span>Created</span>
-                </div>
-                <div class="tui-tr">
-                  <span class="tui-status completed">completed</span
-                  ><span>check hash 275a021bbfb648</span><span>90%</span
-                  ><span>2026-07-19</span>
-                </div>
-                <div class="tui-tr">
-                  <span class="tui-status running">running</span
-                  ><span>file-analysis on notepad.exe</span><span>-</span
-                  ><span>2026-07-19</span>
-                </div>
-                <div class="tui-tr">
-                  <span class="tui-status failed">failed</span
-                  ><span>cve-lookup on CVE-2021-44228</span><span>-</span
-                  ><span>2026-07-18</span>
-                </div>
-              </div>
-              <div class="tui-help">
-                [Tab] next screen [↑↓] navigate [Enter] select [q] quit
-              </div>
-            </div>
-            <div class="tui-screen" id="tui-screen-1">
-              <div class="tui-filters">
-                <span class="tui-filter active">all</span>
-                <span class="tui-filter">completed</span>
-                <span class="tui-filter">running</span>
-                <span class="tui-filter">failed</span>
-                <span class="tui-filter">pending</span>
-              </div>
-              <div class="tui-table">
-                <div class="tui-th">
-                  <span>Status</span><span>Intent</span><span>Pbook</span
-                  ><span>Created</span>
-                </div>
-                <div class="tui-tr">
-                  <span class="tui-status completed">completed</span
-                  ><span>check hash 275a021b</span><span>hash-lookup</span
-                  ><span>02:15</span>
-                </div>
-                <div class="tui-tr">
-                  <span class="tui-status completed">completed</span
-                  ><span>scan IP 172.104.59.38</span><span>ip-enrich</span
-                  ><span>01:45</span>
-                </div>
-                <div class="tui-tr">
-                  <span class="tui-status failed">failed</span
-                  ><span>analyze malware.exe</span><span>file-analysis</span
-                  ><span>22:30</span>
-                </div>
-                <div class="tui-tr">
-                  <span class="tui-status completed">completed</span
-                  ><span>CVE-2021-44228</span><span>cve-lookup</span
-                  ><span>21:15</span>
-                </div>
-              </div>
-              <div class="tui-help">▸ filter by status [1-5] [r] refresh</div>
-            </div>
-            <div class="tui-screen" id="tui-screen-2">
-              <div class="tui-table">
-                <div class="tui-th">
-                  <span>Status</span><span>Title</span><span>Severity</span
-                  ><span>Created</span>
-                </div>
-                <div class="tui-tr">
-                  <span class="tui-status completed">resolved</span
-                  ><span>SIEM: Multiple failed logins</span
-                  ><span class="tui-sev med">medium</span><span>07-19</span>
-                </div>
-                <div class="tui-tr">
-                  <span class="tui-status running">open</span
-                  ><span>Phishing investigation Q3</span
-                  ><span class="tui-sev high">high</span><span>07-18</span>
-                </div>
-                <div class="tui-tr">
-                  <span class="tui-status pending">open</span
-                  ><span>malware.exe file analysis</span
-                  ><span class="tui-sev crit">critical</span><span>07-17</span>
-                </div>
-              </div>
-              <div class="tui-help">▸ Enter for detail [Tab] next screen</div>
-            </div>
-            <div class="tui-screen" id="tui-screen-3">
-              <div class="tui-alert-list">
-                <div class="tui-alert">
-                  <span class="tui-alert-sev-5">SEV 5</span
-                  ><span>sshd: authentication failed</span
-                  ><span class="tui-alert-time">1 min ago</span>
-                </div>
-                <div class="tui-alert">
-                  <span class="tui-alert-sev-4">SEV 4</span
-                  ><span>Multiple failed logins from 10.0.0.5</span
-                  ><span class="tui-alert-time">5 min ago</span>
-                </div>
-                <div class="tui-alert">
-                  <span class="tui-alert-sev-3">SEV 3</span
-                  ><span>HTTP 500 on /api/users</span
-                  ><span class="tui-alert-time">12 min ago</span>
-                </div>
-              </div>
-              <div class="tui-help">[r] Refresh [Tab] next screen</div>
-            </div>
-            <div class="tui-screen" id="tui-screen-4">
-              <div class="tui-config-list">
-                <div>
-                  <span class="tui-config-key">db_path</span
-                  ><span class="tui-config-val">~/.trace/trace.db</span>
-                </div>
-                <div>
-                  <span class="tui-config-key">llm_provider</span
-                  ><span class="tui-config-val">openai</span>
-                </div>
-                <div>
-                  <span class="tui-config-key">siem_enabled</span
-                  ><span class="tui-config-val">true</span>
-                </div>
-                <div>
-                  <span class="tui-config-key">server_addr</span
-                  ><span class="tui-config-val">:8080</span>
-                </div>
-              </div>
-              <div class="tui-help">Read-only config viewer</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Demo Commands -->
-    <section class="demo-section">
-      <div class="container demo-grid">
-        <div>
-          <h2>Start investigating in 10 seconds</h2>
-          <p>
-            Download the binary. Run your first investigation. No installers, no
-            Docker images, no cloud signup.
-          </p>
-          <div class="cmd-row">
-            <span class="prompt">$</span>
-            <span class="text"
-              >trace investigate "check hash
-              275a021bbfb6489e54d471899f7db9d16..."</span
-            >
-            <button
-              class="copy-btn"
-              data-cmd='trace investigate "check hash 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"'
-            >
-              Copy
-            </button>
-          </div>
-          <div class="cmd-row">
-            <span class="prompt">$</span>
-            <span class="text">trace serve --siem --log-dir /var/log</span>
-            <button
-              class="copy-btn"
-              data-cmd="trace serve --siem --log-dir /var/log"
-            >
-              Copy
-            </button>
-          </div>
-          <div class="cmd-row">
-            <span class="prompt">$</span>
-            <span class="text">trace compliance report --framework gdpr</span>
-            <button
-              class="copy-btn"
-              data-cmd="trace compliance report --framework gdpr"
-            >
-              Copy
-            </button>
-          </div>
-        </div>
-
-        <!-- Static terminal showing command output -->
-        <div class="tty">
-          <div class="tty-bar">
-            <span class="tty-dot"></span><span class="tty-dot"></span
-            ><span class="tty-dot"></span>
-            <span class="tty-title">trace output</span>
-          </div>
-          <div class="tty-body" style="font-size: 0.8125rem; line-height: 1.85">
-            <div style="opacity: 1">
-              <span class="tty-prompt">$ </span
-              ><span class="tty-cmd"
-                >trace compliance report --framework pci_dss_v4.0</span
-              >
-            </div>
-            <div style="opacity: 1">
-              <span class="tty-output"
-                >PCI DSS v4.0: <span class="tty-highlight">86%</span> (12/14
-                passed)</span
-              >
-            </div>
-            <div style="opacity: 1; margin-top: 14px">
-              <span class="tty-prompt">$ </span
-              ><span class="tty-cmd"
-                >trace investigate CVE-2021-44228 --playbook cve-lookup</span
-              >
-            </div>
-            <div style="opacity: 1">
-              <span class="tty-output"
-                >CVE-2021-44228: Apache Log4j2 RCE - CVSS 10.0 (Critical)<br />
-                • Description: JNDI features do not protect against<br />
-                attacker-controlled LDAP endpoints.</span
-              >
-            </div>
-            <div style="opacity: 1; margin-top: 14px">
-              <span class="tty-prompt">$ </span
-              ><span class="tty-cmd">trace st</span>
-            </div>
-            <div style="opacity: 1">
-              <span class="tty-output"
-                >8cfb1e92 - sshd: authentication failed [completed]<br />bebf9290
-                - file-analysis on notepad.exe [completed]<br />642eb993 -
-                cve-lookup [failed]</span
-              >
-            </div>
-            <div style="opacity: 1; margin-top: 14px">
-              <span class="tty-prompt">$ </span
-              ><span class="tty-cmd"><span class="tty-cursor"></span></span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Architecture Flow -->
-    <section class="flow-section" id="flow">
-      <div class="container">
-        <div class="section-header">
-          <div class="hero-badge" style="margin-bottom:16px;background:rgba(232,80,80,0.1);color:#e85050;">Agent Architecture</div>
-          <h2>Multi-agent threat<br />response, visualized.</h2>
-          <p>
-            Seven specialized agents collaborate in real time. Each one handles
-            a domain - detection, enrichment, response, compliance.
-          </p>
-        </div>
-
-        <div class="flow-canvas-wrap" id="flowCanvasWrap">
-          <canvas id="flowCanvas"></canvas>
-        </div>
-
-        <div class="flow-cta">
-          <a href="https://github.com/yanmyoaung2004/trace" class="btn btn-primary" target="_blank" rel="noopener" style="background:#e85050;">Explore the architecture &rarr;</a>
-        </div>
-      </div>
-    </section>
-
-    <!-- Download -->
-    <section class="download" id="download">
-      <div class="container">
-        <h2>Get Trace</h2>
-        <p>
-          One binary, zero dependencies. Download for your platform or build
-          from source.
-        </p>
-        <div class="dl-grid">
-          <a
-            href="https://github.com/yanmyoaung2004/trace/releases/latest/download/trace-linux-amd64"
-            class="dl-btn"
-            data-os="linux"
-            target="_blank"
-            rel="noopener"
+    <header class="site-header" id="site-header">
+      <div class="container header-inner">
+        <a href="#top" class="logo" aria-label="TRACE home">
+          <svg
+            class="logo-mark"
+            width="22"
+            height="22"
+            viewBox="0 0 22 22"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
           >
-            <span class="ico">🐧</span>
-            <span>Linux <span class="sub">amd64</span></span>
-          </a>
-          <a
-            href="https://github.com/yanmyoaung2004/trace/releases/latest/download/trace-darwin-amd64"
-            class="dl-btn"
-            data-os="darwin"
-            target="_blank"
-            rel="noopener"
+            <circle
+              cx="11"
+              cy="11"
+              r="9.5"
+              stroke="var(--accent)"
+              stroke-width="1.2"
+            />
+            <path
+              d="M2 11H7L9 6L13 16L15 11H20"
+              stroke="var(--accent)"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <span class="logo-word">TRACE</span>
+        </a>
+
+        <nav class="main-nav" id="main-nav">
+          <a href="#workflow">Workflow</a>
+          <a href="#agents">Agents</a>
+          <a href="#siem">SIEM Engine</a>
+          <a href="#compliance">Compliance</a>
+          <a href="#edr">EDR</a>
+          <a href="#cli">CLI</a>
+        </nav>
+
+        <div class="header-actions">
+          <a href="#cli" class="btn btn-ghost btn-small">Get started</a>
+          <button
+            class="nav-toggle"
+            id="nav-toggle"
+            aria-label="Toggle menu"
+            aria-expanded="false"
           >
-            <span class="ico">🍎</span>
-            <span>macOS <span class="sub">Intel</span></span>
-          </a>
-          <a
-            href="https://github.com/yanmyoaung2004/trace/releases/latest/download/trace-windows-amd64.exe"
-            class="dl-btn"
-            data-os="windows"
-            target="_blank"
-            rel="noopener"
-          >
-            <span class="ico">🖥️</span>
-            <span>Windows <span class="sub">amd64</span></span>
-          </a>
-          <a
-            href="https://github.com/yanmyoaung2004/trace"
-            class="dl-btn"
-            target="_blank"
-            rel="noopener"
-          >
-            <span class="ico">📦</span>
-            <span>Source <span class="sub">go install</span></span>
-          </a>
+            <span></span><span></span><span></span>
+          </button>
         </div>
       </div>
-    </section>
+    </header>
 
-    <!-- Footer -->
-    <footer>
-      <div class="container">
-        <p>
-          <a href="https://github.com/yanmyoaung2004/trace">Trace</a> - Open
-          source, MIT License, Built with Go
-        </p>
+    <main id="top">
+      <!-- HERO -->
+      <section class="hero">
+        <div class="hero-field" aria-hidden="true">
+          <div class="hero-dots"></div>
+          <div class="trace-sweep"></div>
+        </div>
+
+        <div class="container hero-inner">
+          <div class="badge-row reveal">
+            <span class="pill">Open source</span>
+            <span class="pill">MIT licensed</span>
+            <span class="pill pill-mono">Go</span>
+            <span class="pill pill-mono">v0.1.1</span>
+            <span class="pill pill-mono">~10&nbsp;MB binary</span>
+            <span class="pill pill-mono">0 external deps</span>
+          </div>
+
+          <h1 class="hero-title reveal">
+            Autonomous AI that<br />
+            <span class="accent-text">investigates</span> cyber threats.
+          </h1>
+
+          <p class="hero-tagline reveal">
+            <span class="prompt-char">$</span> One binary. Full SOC.
+          </p>
+
+          <p class="hero-desc reveal">
+            TRACE runs the whole incident response loop by itself: classify the
+            alert, dispatch specialist agents in parallel, correlate what they
+            find, and hand your team a report worth acting on. No cloud
+            dependency, no vendor lock-in, no fleet of microservices to babysit.
+          </p>
+
+          <div class="hero-actions reveal">
+            <a href="#workflow" class="btn btn-primary">See how it works</a>
+            <a href="#cli" class="btn btn-secondary">View the CLI</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- STATS STRIP -->
+      <section class="stats-strip reveal">
+        <div class="container">
+          <div class="terminal-label">
+            <span class="prompt-char">$</span> trace status
+            <span class="dim">--summary</span>
+          </div>
+          <div class="stats-grid">
+            <div class="stat">
+              <span class="stat-num" data-count="496">0</span
+              ><span class="stat-label">Detection rules</span>
+            </div>
+            <div class="stat">
+              <span class="stat-num" data-count="7">0</span
+              ><span class="stat-label">Core agents</span>
+            </div>
+            <div class="stat">
+              <span class="stat-num" data-count="26">0</span
+              ><span class="stat-label">Playbooks</span>
+            </div>
+            <div class="stat">
+              <span class="stat-num" data-count="81">0</span
+              ><span class="stat-label">MITRE techniques</span>
+            </div>
+            <div class="stat">
+              <span class="stat-num" data-count="8">0</span
+              ><span class="stat-label">Compliance frameworks</span>
+            </div>
+            <div class="stat">
+              <span class="stat-num" data-count="3">0</span
+              ><span class="stat-label">EDR providers</span>
+            </div>
+            <div class="stat">
+              <span class="stat-num" data-count="15">0</span
+              ><span class="stat-label">YARA rules</span>
+            </div>
+            <div class="stat">
+              <span class="stat-num" data-count="2">0</span
+              ><span class="stat-label">Languages, EN / MY</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- WORKFLOW -->
+      <section class="section" id="workflow">
+        <div class="container">
+          <div class="section-head reveal">
+            <span class="eyebrow">Investigation loop</span>
+            <h2>How an alert becomes a report</h2>
+            <p class="section-sub">
+              Every alert follows the same path: one planner, several
+              specialists working in parallel, one synthesized report. Nothing
+              waits in a queue longer than it has to.
+            </p>
+          </div>
+
+          <div
+            class="pipeline reveal"
+            role="img"
+            aria-label="Alert flows into Dispatch, which fans out to Archive, Sift, Response and SCA in parallel, then converges into a synthesized report delivered via Notifier and Exporter."
+          >
+            <svg
+              viewBox="0 0 1000 340"
+              class="pipeline-svg"
+              preserveAspectRatio="xMidYMid meet"
+            >
+              <!-- connecting lines -->
+              <path id="p-in" class="p-line" d="M70,170 H260" />
+              <path class="p-line" d="M340,170 C400,170 400,60 460,60" />
+              <path class="p-line" d="M340,170 C400,170 400,120 460,120" />
+              <path class="p-line" d="M340,170 C400,170 400,220 460,220" />
+              <path class="p-line" d="M340,170 C400,170 400,280 460,280" />
+              <path class="p-line" d="M620,60 C680,60 680,170 740,170" />
+              <path class="p-line" d="M620,120 C680,120 680,170 740,170" />
+              <path class="p-line" d="M620,220 C680,220 680,170 740,170" />
+              <path class="p-line" d="M620,280 C680,280 680,170 740,170" />
+              <path id="p-out" class="p-line" d="M820,170 H930" />
+
+              <circle class="p-pulse" r="4">
+                <animateMotion
+                  dur="3.4s"
+                  repeatCount="indefinite"
+                  path="M70,170 H260"
+                />
+              </circle>
+              <circle class="p-pulse" r="4">
+                <animateMotion
+                  dur="3.4s"
+                  begin="0.3s"
+                  repeatCount="indefinite"
+                  path="M340,170 C400,170 400,60 460,60"
+                />
+              </circle>
+              <circle class="p-pulse" r="4">
+                <animateMotion
+                  dur="3.4s"
+                  begin="0.5s"
+                  repeatCount="indefinite"
+                  path="M340,170 C400,170 400,120 460,120"
+                />
+              </circle>
+              <circle class="p-pulse" r="4">
+                <animateMotion
+                  dur="3.4s"
+                  begin="0.7s"
+                  repeatCount="indefinite"
+                  path="M340,170 C400,170 400,220 460,220"
+                />
+              </circle>
+              <circle class="p-pulse" r="4">
+                <animateMotion
+                  dur="3.4s"
+                  begin="0.9s"
+                  repeatCount="indefinite"
+                  path="M340,170 C400,170 400,280 460,280"
+                />
+              </circle>
+              <circle class="p-pulse" r="4">
+                <animateMotion
+                  dur="2.2s"
+                  begin="2.4s"
+                  repeatCount="indefinite"
+                  path="M620,170 H740"
+                />
+              </circle>
+              <circle class="p-pulse" r="4">
+                <animateMotion
+                  dur="2.2s"
+                  begin="3.2s"
+                  repeatCount="indefinite"
+                  path="M820,170 H930"
+                />
+              </circle>
+
+              <!-- Alert node -->
+              <g transform="translate(10,145)">
+                <rect
+                  width="60"
+                  height="50"
+                  rx="8"
+                  class="node-box node-alert"
+                />
+                <text x="30" y="30" class="node-icon">&#9888;</text>
+              </g>
+              <text x="40" y="215" class="node-label">Alert</text>
+
+              <!-- Dispatch node -->
+              <g transform="translate(260,130)">
+                <rect
+                  width="80"
+                  height="80"
+                  rx="10"
+                  class="node-box node-core"
+                />
+                <text x="40" y="46" class="node-icon">&#9673;</text>
+              </g>
+              <text x="300" y="235" class="node-label">Dispatch</text>
+              <text x="300" y="253" class="node-sublabel">
+                classify &amp; plan
+              </text>
+
+              <!-- specialists -->
+              <g transform="translate(460,35)">
+                <rect width="160" height="50" rx="8" class="node-box" />
+                <text x="80" y="30" class="node-text">Archive</text>
+              </g>
+              <g transform="translate(460,95)">
+                <rect width="160" height="50" rx="8" class="node-box" />
+                <text x="80" y="30" class="node-text">Sift</text>
+              </g>
+              <g transform="translate(460,195)">
+                <rect width="160" height="50" rx="8" class="node-box" />
+                <text x="80" y="30" class="node-text">Response</text>
+              </g>
+              <g transform="translate(460,255)">
+                <rect width="160" height="50" rx="8" class="node-box" />
+                <text x="80" y="30" class="node-text">SCA</text>
+              </g>
+
+              <!-- report node -->
+              <g transform="translate(740,130)">
+                <rect
+                  width="80"
+                  height="80"
+                  rx="10"
+                  class="node-box node-core"
+                />
+                <text x="40" y="46" class="node-icon">&#9993;</text>
+              </g>
+              <text x="780" y="235" class="node-label">Report</text>
+              <text x="780" y="253" class="node-sublabel">synthesized</text>
+
+              <!-- delivery -->
+              <g transform="translate(930,145)">
+                <rect
+                  width="60"
+                  height="50"
+                  rx="8"
+                  class="node-box node-alert"
+                />
+                <text x="30" y="30" class="node-icon">&#8674;</text>
+              </g>
+              <text x="960" y="215" class="node-label">Notifier /</text>
+              <text x="960" y="230" class="node-label">Exporter</text>
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <!-- AGENTS -->
+      <section class="section section-alt" id="agents">
+        <div class="container">
+          <div class="section-head reveal">
+            <span class="eyebrow">The roster</span>
+            <h2>Seven agents, one dispatch board</h2>
+            <p class="section-sub">
+              Each agent has a narrow job and a fixed set of actions. Dispatch
+              never does the work itself, it decides who does.
+            </p>
+          </div>
+
+          <div class="agent-grid">
+            <article class="agent-card reveal">
+              <div class="agent-icon">&#9673;</div>
+              <h3>Dispatch</h3>
+              <p class="agent-role">Planner / orchestrator</p>
+              <p class="agent-desc">
+                Classifies intent, plans the investigation, and synthesizes the
+                final report from every specialist's findings.
+              </p>
+              <div class="tag-row">
+                <span class="tag">synthesize_report</span
+                ><span class="tag">plan_investigation</span
+                ><span class="tag">classify_intent</span
+                ><span class="tag">calculate_confidence</span>
+              </div>
+            </article>
+
+            <article class="agent-card reveal">
+              <div class="agent-icon">&#128269;</div>
+              <h3>Sift</h3>
+              <p class="agent-role">Malware analysis</p>
+              <p class="agent-desc">
+                Scans binaries, checks hashes against known threats, and hunts
+                for rootkits and trojans on the host.
+              </p>
+              <div class="tag-row">
+                <span class="tag">yara_scan</span
+                ><span class="tag">pe_analyze</span
+                ><span class="tag">hash_lookup</span
+                ><span class="tag">vt_lookup</span
+                ><span class="tag">scan_rootkits</span
+                ><span class="tag">check_trojans</span>
+              </div>
+            </article>
+
+            <article class="agent-card reveal">
+              <div class="agent-icon">&#128218;</div>
+              <h3>Archive</h3>
+              <p class="agent-role">Threat intelligence</p>
+              <p class="agent-desc">
+                Cross-references MITRE ATT&amp;CK, CVEs, and IOC feeds so every
+                finding arrives with context attached.
+              </p>
+              <div class="tag-row">
+                <span class="tag">mitre_lookup</span
+                ><span class="tag">cve_lookup</span
+                ><span class="tag">malware_lookup</span
+                ><span class="tag">ioc_enrich</span
+                ><span class="tag">web_search</span>
+              </div>
+            </article>
+
+            <article class="agent-card reveal">
+              <div class="agent-icon">&#9889;</div>
+              <h3>Response</h3>
+              <p class="agent-role">Host response</p>
+              <p class="agent-desc">
+                Acts directly on the host: block, quarantine, kill, restart, or
+                roll back a change.
+              </p>
+              <div class="tag-row">
+                <span class="tag">block_ip</span
+                ><span class="tag">quarantine_file</span
+                ><span class="tag">kill_process</span
+                ><span class="tag">restart_service</span
+                ><span class="tag">rollback</span>
+              </div>
+            </article>
+
+            <article class="agent-card reveal">
+              <div class="agent-icon">&#9745;</div>
+              <h3>SCA</h3>
+              <p class="agent-role">Compliance scanning</p>
+              <p class="agent-desc">
+                Runs policy checks against your compliance baseline and reports
+                pass or fail per control.
+              </p>
+              <div class="tag-row">
+                <span class="tag">run_policy</span
+                ><span class="tag">scan_system</span
+                ><span class="tag">list_policies</span>
+              </div>
+            </article>
+
+            <article class="agent-card reveal">
+              <div class="agent-icon">&#128276;</div>
+              <h3>Notifier</h3>
+              <p class="agent-role">Notifications</p>
+              <p class="agent-desc">
+                Pushes findings straight to the channels your team already has
+                open.
+              </p>
+              <div class="tag-row">
+                <span class="tag">slack</span><span class="tag">discord</span
+                ><span class="tag">telegram</span>
+              </div>
+            </article>
+
+            <article class="agent-card reveal">
+              <div class="agent-icon">&#128194;</div>
+              <h3>Exporter</h3>
+              <p class="agent-role">Report serving</p>
+              <p class="agent-desc">
+                Serves the finished report in whatever format your ticketing
+                system expects.
+              </p>
+              <div class="tag-row">
+                <span class="tag">serve_reports</span>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- SIEM ENGINE -->
+      <section class="section" id="siem">
+        <div class="container">
+          <div class="section-head reveal">
+            <span class="eyebrow">Correlation core</span>
+            <h2>A SIEM engine that ships inside the binary</h2>
+            <p class="section-sub">
+              496 detection rules, nine log decoders, and a correlation layer
+              that groups related events before anything reaches an analyst.
+            </p>
+          </div>
+
+          <div class="siem-grid reveal">
+            <div class="siem-panel">
+              <h3 class="panel-title">Rule composition</h3>
+              <div
+                class="stacked-bar"
+                role="img"
+                aria-label="446 Wazuh-derived rules, 16 built-in rules, 34 Kubernetes rules, 496 total"
+              >
+                <span class="bar-seg bar-wazuh" style="width: 89.9%"></span>
+                <span class="bar-seg bar-builtin" style="width: 3.2%"></span>
+                <span class="bar-seg bar-k8s" style="width: 6.9%"></span>
+              </div>
+              <ul class="legend">
+                <li><i class="dot dot-wazuh"></i>Wazuh-derived <b>446</b></li>
+                <li><i class="dot dot-builtin"></i>Built-in <b>16</b></li>
+                <li><i class="dot dot-k8s"></i>Kubernetes <b>34</b></li>
+              </ul>
+              <p class="panel-note">
+                Kubernetes rules cover execution, credential access,
+                persistence, privilege escalation, defense evasion, discovery,
+                lateral movement, and impact.
+              </p>
+            </div>
+
+            <div class="siem-panel">
+              <h3 class="panel-title">Decoders</h3>
+              <div class="tag-row wrap">
+                <span class="tag tag-mono">json</span
+                ><span class="tag tag-mono">apache</span
+                ><span class="tag tag-mono">syslog</span>
+                <span class="tag tag-mono">csv</span
+                ><span class="tag tag-mono">windows_event</span
+                ><span class="tag tag-mono">evtx</span>
+                <span class="tag tag-mono">k8s_audit</span
+                ><span class="tag tag-mono">wazuh</span
+                ><span class="tag tag-mono">auto</span>
+              </div>
+              <p class="panel-note">
+                Plus 1,567 embedded Wazuh decoder definitions for sshd, sudo,
+                su, pam, auditd, fim-state, and more.
+              </p>
+
+              <h3 class="panel-title panel-title-spaced">Correlation</h3>
+              <ul class="check-list">
+                <li>Time-windowed event correlation</li>
+                <li>Per-rule suppression durations</li>
+                <li>Auto-playbook triggering from rule actions</li>
+                <li>
+                  Field operators: <code>==</code> <code>!=</code>
+                  <code>~=</code> <code>&gt;</code> <code>&lt;</code>
+                  <code>in</code> (CIDR)
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="ticker-wrap reveal" aria-hidden="true">
+            <div class="ticker-track">
+              <span class="ticker-item">MULTIPLE_FAILED_LOGINS</span
+              ><span class="ticker-item">FAILED_LOGIN_BRUTE</span
+              ><span class="ticker-item">HTTP_5XX_ERROR</span
+              ><span class="ticker-item">HTTP_4XX_BURST</span
+              ><span class="ticker-item">SUSPICIOUS_PROCESS</span
+              ><span class="ticker-item">HIGH_SEVERITY_ERROR</span
+              ><span class="ticker-item">WINDOWS_EVENT_4625_BURST</span
+              ><span class="ticker-item">BRUTE_FORCE_FALLBACK</span
+              ><span class="ticker-item">WIN_POWERSHELL_4104</span
+              ><span class="ticker-item">WIN_SCHEDULED_TASK_4698</span
+              ><span class="ticker-item">WIN_SERVICE_INSTALL_7045</span
+              ><span class="ticker-item">WIN_DEFENDER_1116</span
+              ><span class="ticker-item">WIN_PROCESS_4688_CREATION</span
+              ><span class="ticker-item">WIN_REGISTRY_PERSISTENCE</span
+              ><span class="ticker-item">WIN_RDP_LOGIN_4625</span
+              ><span class="ticker-item">WIN_ACCOUNT_LOCKOUT_4740</span>
+              <span class="ticker-item">MULTIPLE_FAILED_LOGINS</span
+              ><span class="ticker-item">FAILED_LOGIN_BRUTE</span
+              ><span class="ticker-item">HTTP_5XX_ERROR</span
+              ><span class="ticker-item">HTTP_4XX_BURST</span
+              ><span class="ticker-item">SUSPICIOUS_PROCESS</span
+              ><span class="ticker-item">HIGH_SEVERITY_ERROR</span
+              ><span class="ticker-item">WINDOWS_EVENT_4625_BURST</span
+              ><span class="ticker-item">BRUTE_FORCE_FALLBACK</span
+              ><span class="ticker-item">WIN_POWERSHELL_4104</span
+              ><span class="ticker-item">WIN_SCHEDULED_TASK_4698</span
+              ><span class="ticker-item">WIN_SERVICE_INSTALL_7045</span
+              ><span class="ticker-item">WIN_DEFENDER_1116</span
+              ><span class="ticker-item">WIN_PROCESS_4688_CREATION</span
+              ><span class="ticker-item">WIN_REGISTRY_PERSISTENCE</span
+              ><span class="ticker-item">WIN_RDP_LOGIN_4625</span
+              ><span class="ticker-item">WIN_ACCOUNT_LOCKOUT_4740</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- DETECTION ARSENAL + THREAT INTEL -->
+      <section class="section section-alt" id="detection">
+        <div class="container">
+          <div class="two-col">
+            <div class="reveal">
+              <span class="eyebrow">Sift agent</span>
+              <h2 class="h2-tight">Malware analysis, built in</h2>
+              <p class="section-sub">
+                No sandbox round-trip required for the common cases.
+              </p>
+
+              <div class="mini-stat-row">
+                <div class="mini-stat"><span>15</span>YARA rules</div>
+                <div class="mini-stat">
+                  <span>271</span>rootkit file patterns
+                </div>
+                <div class="mini-stat"><span>76</span>trojan signatures</div>
+                <div class="mini-stat"><span>8</span>OS behavior checks</div>
+              </div>
+
+              <p class="panel-note">
+                Rootkit coverage spans 60+ families, including Adore, t0rn,
+                Knark, Lion, SuckIT, and Fu. Behavior checks watch for hidden
+                processes, rogue kernel modules, LD_PRELOAD abuse, fileless
+                execution, container escape, and persistence mechanisms.
+              </p>
+
+              <h3 class="panel-title panel-title-spaced">
+                Built-in hash cache
+              </h3>
+              <div class="tag-row wrap">
+                <span class="tag tag-crit">Mimikatz</span
+                ><span class="tag tag-crit">EICAR test file</span>
+                <span class="tag tag-crit">CobaltStrike Beacon</span
+                ><span class="tag tag-crit">Emotet</span>
+                <span class="tag tag-crit">Ryuk</span
+                ><span class="tag tag-crit">PlugX RAT</span>
+                <span class="tag tag-crit">AgentTesla</span
+                ><span class="tag tag-crit">WannaCry</span>
+              </div>
+            </div>
+
+            <div class="reveal">
+              <span class="eyebrow">Archive agent</span>
+              <h2 class="h2-tight">Context, not just a match</h2>
+              <p class="section-sub">
+                Every hit gets tied back to a technique, a CVE, or a known
+                campaign.
+              </p>
+
+              <div class="mini-stat-row">
+                <div class="mini-stat"><span>81</span>MITRE techniques</div>
+                <div class="mini-stat"><span>23</span>built-in IOCs</div>
+                <div class="mini-stat"><span>24h</span>CVE cache TTL</div>
+                <div class="mini-stat"><span>NVD v2.0</span>CVE source</div>
+              </div>
+
+              <p class="panel-note">
+                CVE lookups return CVSS score, severity, vector, description,
+                and affected CPEs, cached locally in SQLite. Built-in intel
+                covers 12 malicious hashes, 6 malicious IPs, and 3 malicious
+                domains, spanning campaigns like Emotet, TrickBot, QakBot,
+                Remcos, DarkComet, and FormBook. Archive can also reach out to
+                the web via Firecrawl when local intel isn't enough.
+              </p>
+
+              <h3 class="panel-title panel-title-spaced">
+                MITRE ATT&amp;CK fields
+              </h3>
+              <div class="tag-row wrap">
+                <span class="tag tag-mono">ID</span
+                ><span class="tag tag-mono">name</span
+                ><span class="tag tag-mono">description</span>
+                <span class="tag tag-mono">tactics</span
+                ><span class="tag tag-mono">platforms</span
+                ><span class="tag tag-mono">mitigations</span
+                ><span class="tag tag-mono">detection</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- COMPLIANCE -->
+      <section class="section" id="compliance">
+        <div class="container">
+          <div class="section-head reveal">
+            <span class="eyebrow">SCA agent</span>
+            <h2>Eight frameworks, four honest statuses</h2>
+            <p class="section-sub">
+              Every control resolves to pass, fail, not covered, or not
+              applicable. No control is ever silently skipped.
+            </p>
+          </div>
+
+          <div class="compliance-layout reveal">
+            <table class="compliance-table">
+              <thead>
+                <tr>
+                  <th>Framework</th>
+                  <th>ID</th>
+                  <th>Controls</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>PCI DSS v4.0</td>
+                  <td><code>pci_dss_v4.0</code></td>
+                  <td>14</td>
+                </tr>
+                <tr>
+                  <td>PCI DSS v3.2.1</td>
+                  <td><code>pci_dss_v3.2.1</code></td>
+                  <td>9</td>
+                </tr>
+                <tr>
+                  <td>HIPAA Security Rule</td>
+                  <td><code>hipaa</code></td>
+                  <td>13</td>
+                </tr>
+                <tr>
+                  <td>GDPR</td>
+                  <td><code>gdpr</code></td>
+                  <td>13</td>
+                </tr>
+                <tr>
+                  <td>NIST SP 800-53 Rev.5</td>
+                  <td><code>nist_sp_800-53</code></td>
+                  <td>12</td>
+                </tr>
+                <tr>
+                  <td>ISO 27001:2013</td>
+                  <td><code>iso_27001-2013</code></td>
+                  <td>9</td>
+                </tr>
+                <tr>
+                  <td>SOC 2</td>
+                  <td><code>soc_2</code></td>
+                  <td>5</td>
+                </tr>
+                <tr>
+                  <td>CIS Critical Security Controls v8</td>
+                  <td><code>cis_csc_v8</code></td>
+                  <td>6</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div class="status-legend">
+              <h3 class="panel-title">Control status</h3>
+              <div class="status-row">
+                <span class="status-pill status-pass">pass</span
+                ><span class="status-desc">control satisfied</span>
+              </div>
+              <div class="status-row">
+                <span class="status-pill status-fail">fail</span
+                ><span class="status-desc">control violated</span>
+              </div>
+              <div class="status-row">
+                <span class="status-pill status-muted">not-covered</span
+                ><span class="status-desc">no rule mapped yet</span>
+              </div>
+              <div class="status-row">
+                <span class="status-pill status-info">not-applicable</span
+                ><span class="status-desc">excluded by scope</span>
+              </div>
+              <h3 class="panel-title panel-title-spaced">Report formats</h3>
+              <div class="tag-row wrap">
+                <span class="tag tag-mono">text</span
+                ><span class="tag tag-mono">markdown</span
+                ><span class="tag tag-mono">html</span
+                ><span class="tag tag-mono">json</span
+                ><span class="tag tag-mono">pdf (cases)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- EDR -->
+      <section class="section section-alt" id="edr">
+        <div class="container">
+          <div class="section-head reveal">
+            <span class="eyebrow">Response agent</span>
+            <h2>EDR when a report isn't enough</h2>
+            <p class="section-sub">
+              When Response needs to act on an endpoint, it goes through the
+              same three providers your team already runs.
+            </p>
+          </div>
+
+          <div class="edr-grid reveal">
+            <div class="edr-card">
+              <h3>CrowdStrike</h3>
+              <p class="edr-auth">OAuth2 &middot; client ID + secret</p>
+            </div>
+            <div class="edr-card">
+              <h3>SentinelOne</h3>
+              <p class="edr-auth">API token</p>
+            </div>
+            <div class="edr-card">
+              <h3>Microsoft Defender for Endpoint</h3>
+              <p class="edr-auth">OAuth2 &middot; tenant + client</p>
+            </div>
+          </div>
+
+          <div class="edr-details reveal">
+            <div>
+              <h3 class="panel-title">Operations</h3>
+              <div class="tag-row wrap">
+                <span class="tag">get_agent_info</span
+                ><span class="tag">isolate_host</span
+                ><span class="tag">release_host</span>
+                <span class="tag">kill_process</span
+                ><span class="tag">scan_host</span
+                ><span class="tag">run_script</span>
+              </div>
+            </div>
+            <div>
+              <h3 class="panel-title">Safety rails</h3>
+              <ul class="check-list">
+                <li>Circuit breaker: 5 failures trips a 60s open state</li>
+                <li>Rate limit: 200ms minimum interval between calls</li>
+                <li>Every action written to a full audit trail</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- CLI -->
+      <section class="section" id="cli">
+        <div class="container">
+          <div class="section-head reveal">
+            <span class="eyebrow">One binary</span>
+            <h2>Everything above, from a terminal</h2>
+            <p class="section-sub">
+              Install it, initialize it, point it at a host. No control plane to
+              stand up first.
+            </p>
+          </div>
+
+          <div class="terminal-window reveal">
+            <div class="terminal-bar">
+              <span class="dot dot-red"></span
+              ><span class="dot dot-yellow"></span
+              ><span class="dot dot-green"></span>
+              <span class="terminal-title">trace &middot; zsh</span>
+              <button class="copy-btn" id="copy-btn" type="button">Copy</button>
+            </div>
+            <pre
+              class="terminal-body"
+              id="terminal-body"
+            ><code><span class="prompt-char">$</span> trace init
+<span class="out-dim">Running first-run setup wizard...</span>
+<span class="out-ok">&#10003; data directory ready at ~/.trace</span>
+<span class="out-ok">&#10003; loaded 496 detection rules, 26 playbooks</span>
+
+<span class="prompt-char">$</span> trace investigate --host 10.0.4.12
+<span class="out-dim">Dispatch: classifying intent...</span>       intent: malware
+<span class="out-dim">Dispatch: dispatching Sift, Archive...</span>
+<span class="out-warn">Sift: yara_scan matched Suspicious_PowerShell</span>
+<span class="out-crit">Archive: mitre_lookup -> T1059.001, T1055</span>
+<span class="out-ok">Report ready</span>   investigation: a3f9e1   severity: high   confidence: 0.86
+
+<span class="prompt-char">$</span> trace hunt list
+known-malware-scan   every 6h    hash-lookup       severity 5
+compliance-audit     every 24h   compliance-scan   severity 3
+rootkit-sweep        every 24h   rootkit-scan      severity 5
+k8s-audit            every 1h    log-analysis      severity 4
+
+<span class="prompt-char">$</span> trace case create --title "Suspicious PowerShell on WIN-4412"
+<span class="out-ok">Case CASE-0091 created</span>   status: open   severity: high</code></pre>
+          </div>
+
+          <div class="cli-command-grid reveal">
+            <div class="cli-cmd">
+              <code>init</code><span>First-run setup wizard</span>
+            </div>
+            <div class="cli-cmd">
+              <code>investigate</code><span class="alias">inv</span
+              ><span>Run a security investigation</span>
+            </div>
+            <div class="cli-cmd">
+              <code>serve</code
+              ><span>Start the daemon: SIEM, scheduler, worker</span>
+            </div>
+            <div class="cli-cmd">
+              <code>server</code
+              ><span>Central server mode + web dashboard</span>
+            </div>
+            <div class="cli-cmd">
+              <code>status</code><span class="alias">st</span
+              ><span>View investigation status</span>
+            </div>
+            <div class="cli-cmd">
+              <code>history</code><span class="alias">hist</span
+              ><span>List recent investigations</span>
+            </div>
+            <div class="cli-cmd">
+              <code>report</code><span>Generate or view a report</span>
+            </div>
+            <div class="cli-cmd">
+              <code>case</code><span>Manage cases</span>
+            </div>
+            <div class="cli-cmd">
+              <code>hunt</code><span>Manage threat hunts</span>
+            </div>
+            <div class="cli-cmd">
+              <code>compliance</code><span>Run compliance scans</span>
+            </div>
+            <div class="cli-cmd">
+              <code>approval</code><span>HITL approval management</span>
+            </div>
+            <div class="cli-cmd">
+              <code>plugin</code><span>Plugin management</span>
+            </div>
+            <div class="cli-cmd">
+              <code>genkey</code><span>Generate a TLS certificate</span>
+            </div>
+            <div class="cli-cmd">
+              <code>update</code><span>Update binary, intel, or playbooks</span>
+            </div>
+            <div class="cli-cmd">
+              <code>version</code><span>Print version</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ARCHITECTURE -->
+      <section class="section section-alt" id="architecture">
+        <div class="container">
+          <div class="two-col">
+            <div class="reveal">
+              <span class="eyebrow">Multi-node</span>
+              <h2 class="h2-tight">Edge nodes report to one server</h2>
+              <p class="section-sub">
+                Run TRACE at the edge on every host, sync to a central server,
+                and let correlation confidence grow with the number of nodes
+                that agree.
+              </p>
+              <ul class="check-list">
+                <li>Edge nodes sync every 30 seconds</li>
+                <li>1 node reporting an IOC: 0.5 confidence</li>
+                <li>2 nodes agree: 0.75 confidence</li>
+                <li>3+ nodes agree: 0.9 confidence</li>
+              </ul>
+            </div>
+
+            <div class="reveal">
+              <span class="eyebrow">Storage</span>
+              <h2 class="h2-tight">SQLite, one file, WAL mode</h2>
+              <p class="section-sub">
+                No database server to run. 14 tables cover investigations,
+                tasks, results, cache, config, events, alerts, response actions,
+                hunts, cases, and case sub-records.
+              </p>
+              <div class="mini-stat-row">
+                <div class="mini-stat">
+                  <span>EN / MY</span>auto-detected via LANG
+                </div>
+                <div class="mini-stat"><span>3</span>LLM planner providers</div>
+              </div>
+              <p class="panel-note">
+                Planner works with OpenAI, Anthropic, or a local Ollama model,
+                so the reasoning layer isn't locked to one vendor either.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- FINAL CTA -->
+      <section class="final-cta">
+        <div class="container">
+          <div class="reveal">
+            <h2>Point it at a host. See what it finds.</h2>
+            <p>Single binary, MIT licensed, no telemetry phoning home.</p>
+            <div class="hero-actions">
+              <a href="#cli" class="btn btn-primary">View the CLI</a>
+              <a href="#agents" class="btn btn-secondary">Meet the agents</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-inner">
+        <div class="footer-brand">
+          <span class="logo-word">TRACE</span>
+          <p>Autonomous AI that investigates cyber threats.</p>
+        </div>
+        <div class="footer-links">
+          <a href="#workflow">Workflow</a>
+          <a href="#agents">Agents</a>
+          <a href="#siem">SIEM Engine</a>
+          <a href="#compliance">Compliance</a>
+          <a href="#edr">EDR</a>
+          <a href="#cli">CLI</a>
+        </div>
+        <div class="footer-meta">
+          <span>MIT License</span><span class="dim">&middot;</span
+          ><span>v0.1.1</span><span class="dim">&middot;</span><span>Go</span>
+        </div>
       </div>
     </footer>
 
-    <script src="js/main.js" defer></script>
+    <script src="js/main.js"></script>
   </body>
 </html>

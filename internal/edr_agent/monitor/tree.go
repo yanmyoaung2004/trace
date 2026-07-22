@@ -206,6 +206,15 @@ func (t *ProcessTree) Save() error {
 	return nil
 }
 
+func (t *ProcessTree) maybeCompact() {
+	t.mu.RLock()
+	count := len(t.byPID)
+	t.mu.RUnlock()
+	if count > t.maxNodes*9/10 {
+		go t.compactWAL()
+	}
+}
+
 func (t *ProcessTree) WALAppend(evt *Event) {
 	if t.dataDir == "" || evt.Process == nil {
 		return
@@ -236,8 +245,11 @@ func (t *ProcessTree) WALAppend(evt *Event) {
 	// Rotate WAL every 10000 entries
 	info, _ := f.Stat()
 	if info != nil && info.Size() > 10*1024*1024 {
-		go t.Save()
-		f.Truncate(0)
+		go func() {
+			t.Save()
+			f.Truncate(0)
+			t.maybeCompact()
+		}()
 	}
 }
 
@@ -288,7 +300,22 @@ func (t *ProcessTree) ReplayWAL() {
 	t.evictLocked()
 }
 
+func (t *ProcessTree) compactWAL() {
+	if t.dataDir == "" {
+		return
+	}
+	walPath := filepath.Join(t.dataDir, "wal.log")
+	info, err := os.Stat(walPath)
+	if err != nil || info.Size() < 5*1024*1024 {
+		return
+	}
+	log.Printf("[tree] compacting WAL (%.1f MB)", float64(info.Size())/(1024*1024))
+	t.Save()
+	os.Truncate(walPath, 0)
+}
+
 func (t *ProcessTree) Close() {
+	t.compactWAL()
 	t.Save()
 	if t.dataDir != "" {
 		os.Remove(filepath.Join(t.dataDir, "wal.log"))
