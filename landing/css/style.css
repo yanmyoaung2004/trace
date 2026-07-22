@@ -12,10 +12,10 @@
   --text-secondary: #8d96aa;
   --text-dim: #565f74;
 
-  --accent: #f2a93d;
-  --accent-bright: #ffc168;
-  --accent-dim: rgba(242, 169, 61, 0.14);
-  --accent-line: rgba(242, 169, 61, 0.45);
+  --accent: #5b9aff;
+  --accent-bright: #7bb4ff;
+  --accent-dim: rgba(91, 154, 255, 0.14);
+  --accent-line: rgba(91, 154, 255, 0.45);
 
   --status-ok: #4ade80;
   --status-warn: #fbbf24;
