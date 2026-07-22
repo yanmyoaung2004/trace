@@ -35,6 +35,13 @@ config.json
 # Search cache
 .firecrawl/
 
+# skill
+.agents/
+skills-lock.json
+
+# opencode
+.opencode/
+
 # Stray test artifacts
 internal/response/start
 internal/response/stop
