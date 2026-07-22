@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/yanmyoaung2004/trace/internal/investigation"
 )
 
@@ -61,6 +63,15 @@ func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/investigations", readOnly(h.handleInvestigations))
 	mux.HandleFunc("/api/v1/correlations", readOnly(h.handleCorrelations))
 	mux.HandleFunc("/api/v1/timeline/", readOnly(h.handleTimeline))
+
+	mux.HandleFunc("/api/v1/edr/register", h.handleEDRRegister)
+	mux.HandleFunc("/api/v1/edr/heartbeat", h.handleEDRHeartbeat)
+	mux.HandleFunc("/api/v1/edr/events", h.handleEDREvents)
+	mux.HandleFunc("/api/v1/edr/actions/pending", h.handleEDRActionsPending)
+	mux.HandleFunc("/api/v1/edr/actions/result", h.handleEDRActionResult)
+	mux.HandleFunc("/api/v1/edr/actions/dispatch", protected(h.handleEDRDispatch))
+	mux.HandleFunc("/api/v1/edr/agents", readOnly(h.handleEDRAgentsList))
+	mux.HandleFunc("/api/v1/edr/agents/", readOnly(h.handleEDRAgentByID))
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -244,6 +255,374 @@ func (h *SyncHandler) handleTimeline(w http.ResponseWriter, r *http.Request) {
 		entries = []investigation.LogEntry{}
 	}
 	writeJSON(w, http.StatusOK, entries)
+}
+
+// ── EDR Agent Handlers ──
+
+func (h *SyncHandler) handleEDRRegister(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	var req struct {
+		Hostname      string `json:"hostname"`
+		Platform      string `json:"platform"`
+		Arch          string `json:"arch"`
+		Version       string `json:"version"`
+		KernelVersion string `json:"kernel_version,omitempty"`
+		CPUCount      int    `json:"cpu_count"`
+		MemoryMB      int64  `json:"memory_mb"`
+		AgentVersion  string `json:"agent_version"`
+		Monitors      string `json:"monitors"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if req.Hostname == "" {
+		writeError(w, http.StatusBadRequest, "hostname required")
+		return
+	}
+
+	id := uuid.New().String()
+	now := time.Now().UTC().Format(time.RFC3339)
+	ip := strings.Split(r.RemoteAddr, ":")[0]
+
+	_, err := h.manager.db.ExecContext(r.Context(),
+		`INSERT INTO edr_agents (id, hostname, platform, arch, version, agent_version, status, ip_address, cpu_count, memory_mb, kernel_version, monitors, last_heartbeat, last_ip, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, req.Hostname, req.Platform, req.Arch, req.Version, req.AgentVersion, ip, req.CPUCount, req.MemoryMB, req.KernelVersion, req.Monitors, now, ip, now, now)
+	if err != nil {
+		log.Printf("[edr] register error: %v", err)
+		writeError(w, http.StatusInternalServerError, "registration failed")
+		return
+	}
+
+	log.Printf("[edr] agent registered: %s (%s/%s)", req.Hostname, req.Platform, req.Arch)
+	writeJSON(w, http.StatusOK, map[string]string{"agent_id": id, "status": "registered"})
+}
+
+func (h *SyncHandler) handleEDRHeartbeat(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	var hb struct {
+		AgentID  string `json:"agent_id"`
+		Hostname string `json:"hostname"`
+		Status   string `json:"status"`
+		Version  string `json:"version"`
+		Uptime   int64  `json:"uptime"`
+		Stats    struct {
+			EventsCollected int64   `json:"events_collected"`
+			EventsSent      int64   `json:"events_sent"`
+			ActionsExecuted int64   `json:"actions_executed"`
+			ActionsFailed   int64   `json:"actions_failed"`
+			CPUPercent      float64 `json:"cpu_percent"`
+			MemoryMB        int64   `json:"memory_mb"`
+		} `json:"stats"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&hb); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	ip := strings.Split(r.RemoteAddr, ":")[0]
+
+	_, err := h.manager.db.ExecContext(r.Context(),
+		`UPDATE edr_agents SET status = ?, last_heartbeat = ?, last_ip = ?, updated_at = ? WHERE id = ?`,
+		hb.Status, now, ip, now, hb.AgentID)
+	if err != nil {
+		log.Printf("[edr] heartbeat error: %v", err)
+	}
+}
+
+func (h *SyncHandler) handleEDREvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "GET" {
+		h.handleEDREventsQuery(w, r)
+		return
+	}
+	if r.Method != "POST" {
+		writeError(w, http.StatusMethodNotAllowed, "POST or GET")
+		return
+	}
+	var body struct {
+		AgentID string `json:"agent_id"`
+		Events  []json.RawMessage `json:"events"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+
+	tx, err := h.manager.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(r.Context(),
+		`INSERT INTO edr_events (id, agent_id, event_type, severity, data, timestamp, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "prepare error")
+		return
+	}
+	defer stmt.Close()
+
+	stored := 0
+	for _, raw := range body.Events {
+		var evt struct {
+			ID        string `json:"id"`
+			Type      string `json:"type"`
+			Severity  int    `json:"severity"`
+			Timestamp string `json:"timestamp"`
+		}
+		if err := json.Unmarshal(raw, &evt); err != nil || evt.ID == "" {
+			continue
+		}
+		if _, err := stmt.ExecContext(r.Context(), evt.ID, body.AgentID, evt.Type, evt.Severity, string(raw), evt.Timestamp); err != nil {
+			log.Printf("[edr] event insert error: %v", err)
+			continue
+		}
+		stored++
+	}
+
+	if err := tx.Commit(); err != nil {
+		writeError(w, http.StatusInternalServerError, "commit error")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"stored": stored, "received": len(body.Events)})
+}
+
+func (h *SyncHandler) handleEDRActionsPending(w http.ResponseWriter, r *http.Request) {
+	agentID := r.URL.Query().Get("agent_id")
+	if agentID == "" {
+		writeError(w, http.StatusBadRequest, "agent_id required")
+		return
+	}
+
+	rows, err := h.manager.db.QueryContext(r.Context(),
+		`SELECT id, action_type, target, params, timeout_seconds FROM edr_actions
+		 WHERE agent_id = ? AND status = 'pending' ORDER BY created_at ASC LIMIT 10`, agentID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	defer rows.Close()
+
+	type action struct {
+		ID      string           `json:"id"`
+		Type    string           `json:"type"`
+		Target  string           `json:"target,omitempty"`
+		Params  map[string]any   `json:"params,omitempty"`
+		Timeout int              `json:"timeout_seconds"`
+	}
+
+	actions := []*action{}
+	for rows.Next() {
+		var a action
+		var paramsStr string
+		if err := rows.Scan(&a.ID, &a.Type, &a.Target, &paramsStr, &a.Timeout); err != nil {
+			continue
+		}
+		json.Unmarshal([]byte(paramsStr), &a.Params)
+		actions = append(actions, &a)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"actions": actions})
+}
+
+func (h *SyncHandler) handleEDRActionResult(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	var result struct {
+		AgentID    string         `json:"agent_id"`
+		ActionID   string         `json:"action_id"`
+		Status     string         `json:"status"`
+		Error      string         `json:"error,omitempty"`
+		Output     map[string]any `json:"output,omitempty"`
+		ExecutedAt string         `json:"executed_at"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&result); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+
+	outputJSON, _ := json.Marshal(result.Output)
+	_, err := h.manager.db.ExecContext(r.Context(),
+		`UPDATE edr_actions SET status = ?, result = ?, error = ?, completed_at = ? WHERE id = ?`,
+		result.Status, string(outputJSON), result.Error, result.ExecutedAt, result.ActionID)
+	if err != nil {
+		log.Printf("[edr] action result error: %v", err)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *SyncHandler) handleEDRAgentsList(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.manager.db.QueryContext(r.Context(),
+		`SELECT id, hostname, platform, arch, agent_version, status, ip_address, last_heartbeat, cpu_count, memory_mb, created_at
+		 FROM edr_agents ORDER BY last_heartbeat DESC`)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	defer rows.Close()
+
+	type agent struct {
+		ID            string `json:"id"`
+		Hostname      string `json:"hostname"`
+		Platform      string `json:"platform"`
+		Arch          string `json:"arch"`
+		Version       string `json:"version"`
+		Status        string `json:"status"`
+		IP            string `json:"ip"`
+		LastHeartbeat string `json:"last_heartbeat"`
+		CPUCount      int    `json:"cpu_count"`
+		MemoryMB      int64  `json:"memory_mb"`
+		CreatedAt     string `json:"created_at"`
+	}
+
+	agents := []*agent{}
+	for rows.Next() {
+		var a agent
+		if err := rows.Scan(&a.ID, &a.Hostname, &a.Platform, &a.Arch, &a.Version, &a.Status, &a.IP, &a.LastHeartbeat, &a.CPUCount, &a.MemoryMB, &a.CreatedAt); err != nil {
+			continue
+		}
+		agents = append(agents, &a)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"agents": agents})
+}
+
+func (h *SyncHandler) handleEDRAgentByID(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/v1/edr/agents/")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "agent_id required")
+		return
+	}
+
+	if r.Method == "DELETE" {
+		_, err := h.manager.db.ExecContext(r.Context(),
+			`UPDATE edr_agents SET status = 'revoked' WHERE id = ?`, id)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "revoke failed")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
+		return
+	}
+
+	// GET agent detail
+	var a struct {
+		ID        string `json:"id"`
+		Hostname  string `json:"hostname"`
+		Platform  string `json:"platform"`
+		Arch      string `json:"arch"`
+		Version   string `json:"version"`
+		Status    string `json:"status"`
+		IP        string `json:"ip"`
+		LastSeen  string `json:"last_heartbeat"`
+		CPUCount  int    `json:"cpu_count"`
+		MemoryMB  int64  `json:"memory_mb"`
+		CreatedAt string `json:"created_at"`
+	}
+	err := h.manager.db.QueryRowContext(r.Context(),
+		`SELECT id, hostname, platform, arch, agent_version, status, ip_address, last_heartbeat, cpu_count, memory_mb, created_at
+		 FROM edr_agents WHERE id = ?`, id).Scan(
+		&a.ID, &a.Hostname, &a.Platform, &a.Arch, &a.Version, &a.Status, &a.IP, &a.LastSeen, &a.CPUCount, &a.MemoryMB, &a.CreatedAt)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "agent not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, a)
+}
+
+func (h *SyncHandler) handleEDREventsQuery(w http.ResponseWriter, r *http.Request) {
+	agentID := r.URL.Query().Get("agent_id")
+	if agentID == "" {
+		writeError(w, http.StatusBadRequest, "agent_id required")
+		return
+	}
+
+	limitStr := r.URL.Query().Get("limit")
+	limit := 50
+	if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 500 {
+		limit = l
+	}
+
+	rows, err := h.manager.db.QueryContext(r.Context(),
+		`SELECT event_type, severity, timestamp, data FROM edr_events
+		 WHERE agent_id = ? ORDER BY timestamp DESC LIMIT ?`, agentID, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	defer rows.Close()
+
+	type evt struct {
+		EventType string `json:"event_type"`
+		Severity  int    `json:"severity"`
+		Timestamp string `json:"timestamp"`
+		Data      string `json:"data,omitempty"`
+	}
+
+	events := make([]evt, 0, limit)
+	for rows.Next() {
+		var e evt
+		rows.Scan(&e.EventType, &e.Severity, &e.Timestamp, &e.Data)
+		events = append(events, e)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"events": events})
+}
+
+func (h *SyncHandler) handleEDRDispatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+
+	var req struct {
+		AgentID    string         `json:"agent_id"`
+		ActionType string         `json:"action_type"`
+		Target     string         `json:"target,omitempty"`
+		Params     map[string]any `json:"params,omitempty"`
+		Timeout    int            `json:"timeout_seconds"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if req.AgentID == "" || req.ActionType == "" {
+		writeError(w, http.StatusBadRequest, "agent_id and action_type required")
+		return
+	}
+	if req.Timeout <= 0 {
+		req.Timeout = 30
+	}
+
+	paramsJSON, _ := json.Marshal(req.Params)
+	id := uuid.New().String()
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	_, err := h.manager.db.ExecContext(r.Context(),
+		`INSERT INTO edr_actions (id, agent_id, action_type, target, params, status, timeout_seconds, created_at)
+		 VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)`,
+		id, req.AgentID, req.ActionType, req.Target, string(paramsJSON), req.Timeout, now)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "insert failed")
+		return
+	}
+
+	log.Printf("[edr] action dispatched: %s → %s (%s)", id, req.AgentID, req.ActionType)
+	writeJSON(w, http.StatusOK, map[string]string{"action_id": id, "status": "dispatched"})
 }
 
 type ServeOptions struct {

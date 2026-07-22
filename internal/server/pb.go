@@ -91,6 +91,53 @@ func (m *ServerManager) Migrate() error {
 			last_seen TEXT NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_corr_ioc ON server_correlations(ioc)`,
+		`CREATE TABLE IF NOT EXISTS edr_agents (
+			id TEXT PRIMARY KEY,
+			hostname TEXT NOT NULL,
+			platform TEXT NOT NULL,
+			arch TEXT NOT NULL,
+			version TEXT NOT NULL,
+			agent_version TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'active',
+			ip_address TEXT,
+			cpu_count INTEGER DEFAULT 0,
+			memory_mb INTEGER DEFAULT 0,
+			kernel_version TEXT,
+			monitors TEXT,
+			api_key_hash TEXT,
+			last_heartbeat TEXT,
+			last_ip TEXT,
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+		)`,
+		`CREATE TABLE IF NOT EXISTS edr_events (
+			id TEXT PRIMARY KEY,
+			agent_id TEXT NOT NULL REFERENCES edr_agents(id),
+			event_type TEXT NOT NULL,
+			severity INTEGER NOT NULL DEFAULT 1,
+			data TEXT NOT NULL,
+			timestamp TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_edr_events_agent ON edr_events(agent_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_edr_events_type ON edr_events(event_type)`,
+		`CREATE INDEX IF NOT EXISTS idx_edr_events_severity ON edr_events(severity)`,
+		`CREATE INDEX IF NOT EXISTS idx_edr_events_time ON edr_events(timestamp)`,
+		`CREATE TABLE IF NOT EXISTS edr_actions (
+			id TEXT PRIMARY KEY,
+			agent_id TEXT NOT NULL REFERENCES edr_agents(id),
+			action_type TEXT NOT NULL,
+			target TEXT,
+			params TEXT NOT NULL DEFAULT '{}',
+			status TEXT NOT NULL DEFAULT 'pending',
+			result TEXT,
+			error TEXT,
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			completed_at TEXT,
+			timeout_seconds INTEGER NOT NULL DEFAULT 30
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_edr_actions_agent ON edr_actions(agent_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_edr_actions_status ON edr_actions(status)`,
 	}
 
 	for _, q := range queries {

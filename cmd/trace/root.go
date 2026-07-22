@@ -518,6 +518,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newComplianceCmd())
 	cmd.AddCommand(newUpdateCmd())
 	cmd.AddCommand(newVersionCmd())
+	cmd.AddCommand(newEDRCmd())
 
 	return cmd
 }
