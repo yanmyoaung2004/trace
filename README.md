@@ -11,6 +11,9 @@
   It watches logs, detects threats, enriches indicators, runs investigations, and responds — automatically.<br><br>
   No Docker required. No Python runtime. No Elasticsearch cluster. No SIEM license fees.<br>
   Just a single statically-linked Go binary that runs anywhere.
+  <br><br>
+  <a href="https://github.com/yanmyoaung2004/trace"><img src="https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github" alt="GitHub"></a>
+  <a href="https://github.com/yanmyoaung2004/trace/releases"><img src="https://img.shields.io/badge/Download%20v0.1.1-5b9aff?style=for-the-badge&logo=go" alt="Download"></a>
 </p>
 
 ## Why Trace?
