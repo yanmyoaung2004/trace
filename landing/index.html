@@ -738,15 +738,20 @@
       <section class="section section-alt" id="edr">
         <div class="container">
           <div class="section-head reveal">
-            <span class="eyebrow">Response agent</span>
-            <h2>EDR when a report isn't enough</h2>
+            <span class="eyebrow">Endpoint agent</span>
+            <h2>Built-in EDR. No vendor lock-in.</h2>
             <p class="section-sub">
-              When Response needs to act on an endpoint, it goes through the
-              same three providers your team already runs.
+              TRACE ships its own lightweight endpoint agent (&lt;10 MB). No
+              CrowdStrike, no SentinelOne, no MDE required. Deploy it, get a
+              full endpoint monitoring pipeline out of the box.
             </p>
           </div>
 
           <div class="edr-grid reveal">
+            <div class="edr-card edr-card-em">
+              <h3>trace-agent</h3>
+              <p class="edr-auth">Built-in &middot; Go binary &middot; ~10 MB</p>
+            </div>
             <div class="edr-card">
               <h3>CrowdStrike</h3>
               <p class="edr-auth">OAuth2 &middot; client ID + secret</p>
@@ -763,22 +768,47 @@
 
           <div class="edr-details reveal">
             <div>
-              <h3 class="panel-title">Operations</h3>
+              <h3 class="panel-title">Custom agent monitoring</h3>
               <div class="tag-row wrap">
-                <span class="tag">get_agent_info</span
-                ><span class="tag">isolate_host</span
-                ><span class="tag">release_host</span>
-                <span class="tag">kill_process</span
-                ><span class="tag">scan_host</span
-                ><span class="tag">run_script</span>
+                <span class="tag">process (netlink/ETW)</span
+                ><span class="tag">file (inotify/RDCW)</span
+                ><span class="tag">network (ss/netstat)</span
+                ><span class="tag">memory YARA scan</span>
+                <span class="tag">USB detection</span>
+                <span class="tag">DNS query logging</span>
               </div>
             </div>
             <div>
-              <h3 class="panel-title">Safety rails</h3>
+              <h3 class="panel-title">Response actions</h3>
+              <div class="tag-row wrap">
+                <span class="tag">kill_process</span
+                ><span class="tag">quarantine_file</span
+                ><span class="tag">block_ip</span>
+                <span class="tag">run_script</span
+                ><span class="tag">isolate_host</span
+                ><span class="tag">collect_forensics</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="edr-details-col2 reveal">
+            <div>
+              <h3 class="panel-title">Safety &amp; resilience</h3>
               <ul class="check-list">
-                <li>Circuit breaker: 5 failures trips a 60s open state</li>
-                <li>Rate limit: 200ms minimum interval between calls</li>
-                <li>Every action written to a full audit trail</li>
+                <li>Disk-backed SQLite event queue (WAL mode)</li>
+                <li>Event dedup with cross-restart persistence</li>
+                <li>Circuit breaker &middot; exponential backoff</li>
+                <li>mTLS + HMAC-signed transport</li>
+              </ul>
+            </div>
+            <div>
+              <h3 class="panel-title">On-agent detection</h3>
+              <ul class="check-list">
+                <li>YARA matcher &mdash; 17 rules, pure Go, no C deps</li>
+                <li>PE parser &mdash; import table, sections, packer ID</li>
+                <li>XOR cipher detector &mdash; single &amp; multi-byte</li>
+                <li>Process ancestry tree &mdash; 100k LRU, WAL persistence</li>
+                <li>FP learning &mdash; auto-throttles after 10 dismissals</li>
               </ul>
             </div>
           </div>
