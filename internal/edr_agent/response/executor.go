@@ -37,6 +37,58 @@ func (e *Executor) Execute(ctx context.Context, action *transport.PendingAction)
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	// Snapshot registry before modification
+	if action.Type == "block_ip" || action.Type == "quarantine_file" {
+		e.snapshotBefore(action)
+	}
+
+	result, err := e.executeSingle(ctx, action)
+	if err != nil {
+		return nil, err
+	}
+
+	// Execute chained actions
+	if chain, ok := action.Params["chain"].([]any); ok && len(chain) > 0 {
+		chainResults := make([]map[string]any, 0)
+		for _, link := range chain {
+			if linkStr, ok := link.(string); ok && linkStr != "" {
+				chainAction := &transport.PendingAction{
+					ID:   action.ID + "_chain_" + linkStr,
+					Type: linkStr,
+					Params: action.Params,
+				}
+				chainResult, chainErr := e.executeSingle(ctx, chainAction)
+				if chainErr != nil {
+					result["chain_aborted"] = true
+					result["chain_error"] = chainErr.Error()
+					break
+				}
+				chainResults = append(chainResults, chainResult)
+			}
+		}
+		if len(chainResults) > 0 {
+			result["chain_results"] = chainResults
+		}
+	}
+
+	return result, nil
+}
+
+func (e *Executor) snapshotBefore(action *transport.PendingAction) {
+	if action.Type != "block_ip" {
+		return
+	}
+	ip, _ := action.Params["ip"].(string)
+	if ip == "" {
+		return
+	}
+	out, _ := e.runShell(context.Background(), getRegistryBackupCmd(ip))
+	if out != "" {
+		log.Printf("[executor] registry backup: %s", out[:min(len(out), 200)])
+	}
+}
+
+func (e *Executor) executeSingle(ctx context.Context, action *transport.PendingAction) (map[string]any, error) {
 	switch action.Type {
 	case "kill_process":
 		return e.killProcess(ctx, action)
@@ -396,6 +448,16 @@ func getMemoryCmd() string {
 		return "free -h"
 	default:
 		return "vm_stat"
+	}
+}
+
+func getRegistryBackupCmd(ip string) string {
+	switch runtime.GOOS {
+	case "windows":
+		ruleName := "trace-block-" + strings.ReplaceAll(ip, ".", "-")
+		return fmt.Sprintf("reg export HKLM\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy %s_fw_backup.reg", ruleName)
+	default:
+		return "true"
 	}
 }
 
