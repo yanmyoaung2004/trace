@@ -21,6 +21,13 @@ const (
 	dirEntryDelayImport = 15
 )
 
+type PEResource struct {
+	Type       string `json:"type"`
+	Name       string `json:"name"`
+	Size       uint32 `json:"size"`
+	Data       []byte `json:"-"`
+}
+
 type PEMemory struct {
 	IsPE       bool
 	Is64       bool
@@ -35,6 +42,7 @@ type PEMemory struct {
 	HasTLS     bool
 	HasRelocs  bool
 	SuspiciousSections int
+	Resources  []PEResource
 }
 
 type PESection struct {
@@ -133,6 +141,12 @@ func AnalyzePE(data []byte) *PEMemory {
 	relocRVA, relocSize := parseDir(5)
 	r.HasRelocs = relocRVA > 0 && relocSize > 0
 
+	// Parse resource directory (index 2)
+	resRVA, resSize := parseDir(2)
+	if resRVA > 0 && resSize > 0 {
+		r.Resources = parsePEResources(data, resRVA, r.Sections)
+	}
+
 	// Sections
 	secStart := pe + 24 + optHdrSize
 	for i := 0; i < numSections; i++ {
@@ -168,6 +182,107 @@ func rvaToOffset(rva uint32, sections []PESection, imageBase uint64) int {
 		}
 	}
 	return int(rva)
+}
+
+func parsePEResources(data []byte, resRVA uint32, sections []PESection) []PEResource {
+	var res []PEResource
+	off := rvaToOffset(resRVA, sections, 0)
+	if off < 0 || off+16 > len(data) {
+		return nil
+	}
+
+	numNamed := int(binary.LittleEndian.Uint16(data[off+12 : off+14]))
+	numID := int(binary.LittleEndian.Uint16(data[off+14 : off+16]))
+	totalEntries := numNamed + numID
+
+	entryOff := off + 16
+	for i := 0; i < totalEntries && i < 20; i++ {
+		if entryOff+8 > len(data) {
+			break
+		}
+		entry := binary.LittleEndian.Uint32(data[entryOff : entryOff+4])
+		_ = entry
+
+		subOff := int(binary.LittleEndian.Uint32(data[entryOff+4:entryOff+8])) & 0x7FFFFFFF
+		subOff = rvaToOffset(uint32(subOff), sections, 0) + off - rvaToOffset(resRVA, sections, 0)
+		if subOff < off || subOff+16 > len(data) {
+			entryOff += 8
+			continue
+		}
+
+		subNamed := int(binary.LittleEndian.Uint16(data[subOff+12 : subOff+14]))
+		subID := int(binary.LittleEndian.Uint16(data[subOff+14 : subOff+16]))
+		subTotal := subNamed + subID
+
+		subEntryOff := subOff + 16
+		for j := 0; j < subTotal && j < 20; j++ {
+			if subEntryOff+8 > len(data) {
+				break
+			}
+			dataOff := int(binary.LittleEndian.Uint32(data[subEntryOff+4:subEntryOff+8])) & 0x7FFFFFFF
+			dataOff = rvaToOffset(uint32(dataOff), sections, 0)
+			if dataOff < 0 || dataOff+16 > len(data) {
+				subEntryOff += 8
+				continue
+			}
+
+			dataRVA := binary.LittleEndian.Uint32(data[dataOff : dataOff+4])
+			dataSize := binary.LittleEndian.Uint32(data[dataOff+4 : dataOff+8])
+			dataOff2 := rvaToOffset(dataRVA, sections, 0)
+
+			r := PEResource{
+				Size: dataSize,
+			}
+
+			if dataOff2 >= 0 && dataOff2+int(dataSize) <= len(data) && dataSize > 0 && dataSize < 10*1024*1024 {
+				r.Data = make([]byte, dataSize)
+				copy(r.Data, data[dataOff2:dataOff2+int(dataSize)])
+				r.Name = detectResourceType(r.Data)
+				r.Type = detectResourceCategory(i)
+			}
+
+			res = append(res, r)
+			subEntryOff += 8
+		}
+
+		entryOff += 8
+	}
+	return res
+}
+
+func detectResourceCategory(index int) string {
+	categories := map[int]string{
+		0: "CURSOR", 1: "BITMAP", 2: "ICON", 3: "MENU",
+		4: "DIALOG", 5: "STRING", 6: "FONTDIR", 7: "FONT",
+		8: "ACCELERATOR", 9: "RCDATA", 10: "MESSAGETABLE",
+		11: "GROUP_CURSOR", 12: "GROUP_ICON", 14: "VERSION",
+		16: "PLUGPLAY", 17: "VXD", 19: "ANICURSOR",
+		20: "ANIICON", 21: "HTML", 23: "MANIFEST",
+		24: "LINK_INFO",
+	}
+	if name, ok := categories[index]; ok {
+		return name
+	}
+	return fmt.Sprintf("RES_%d", index)
+}
+
+func detectResourceType(data []byte) string {
+	if len(data) < 4 {
+		return ""
+	}
+	if len(data) > 8 && data[0] == 'V' && data[1] == 'S' && data[2] == '_' && data[3] == 'V' {
+		return "VERSION_INFO"
+	}
+	if len(data) > 12 && string(data[:10]) == "<?xml vers" {
+		return "XML_MANIFEST"
+	}
+	if len(data) > 40 && data[0] == 'M' && data[1] == 'Z' {
+		return "EMBEDDED_PE"
+	}
+	if len(data) > 4 && data[0] == 0x00 && data[1] == 0x00 && data[2] == 0x00 && data[3] == 0x00 {
+		return "ICON_GROUP"
+	}
+	return ""
 }
 
 func walkImportDescriptors(data []byte, importRVA uint32, sections []PESection, is64 bool) []ImportDLL {
