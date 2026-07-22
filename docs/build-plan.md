@@ -274,3 +274,4 @@ type Capability struct {
 | 8 — Plugins          | 7 days     | 63 days     | Extensibility + gRPC doc           | ✅ |
 | 9 — Central server   | 14 days    | 77 days     | Team deployment, RBAC              | ✅ |
 | 10 — Polish          | 7 days     | 84 days     | v0.1.0 release, i18n, hardening    | ✅ |
+| **11 — Custom EDR**  | **10 days**| **94 days** | **trace-agent binary, endpoint monitoring, 8 response actions, ETW/inotify/fanotify/ReadDirectoryChangesW, on-agent YARA, memory scanning, process tree, correlator, dedup, mTLS, auto-update, SCM service** | ✅ |

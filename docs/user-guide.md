@@ -796,6 +796,81 @@ trace report <investigation-id> -o breach-report.md
 
 ---
 
+## 15. Custom EDR Agent
+
+Trace includes its own lightweight endpoint agent (`trace-agent`) that replaces third-party EDR providers.
+
+### Installation
+
+```bash
+# Build from source
+cd dev
+go build -o trace-agent ./cmd/trace-agent
+
+# Or download a release binary
+```
+
+### Configuration
+
+The agent looks for `~/.trace-agent/config.json`. Generate one with defaults or set env vars:
+
+```bash
+export TRACE_AGENT_SERVER="https://trace-server:8080"
+export TRACE_AGENT_API_KEY="your-api-key"
+trace-agent
+```
+
+### Deploying as a Service
+
+```bash
+# Linux (systemd)
+sudo ./trace-agent --install
+
+# Windows (SCM)
+trace-agent.exe --install
+
+# Verify
+trace edr list
+```
+
+### What It Monitors
+
+| Module | Technique | Events Emitted |
+|--------|-----------|----------------|
+| Process | netlink/ETW (real-time) or polling | process_create, process_terminate |
+| File | inotify/RDCW (real-time) or polling | file_create, file_modify, file_delete |
+| Network | ss/netstat/lsof polling | net_connect, net_listen, net_disconnect |
+| Memory | /proc/mem or VirtualQueryEx + YARA | alert (on YARA match) |
+| YARA | 15 rules on process + file create | alert (on rule match) |
+
+### Response Actions
+
+| Action | CLI Command |
+|--------|-------------|
+| Kill process | `trace edr dispatch <id> kill-process --pid 4521` |
+| Quarantine file | `trace edr dispatch <id> quarantine --path /tmp/evil.exe` |
+| Block IP | `trace edr dispatch <id> block-ip --ip 203.0.113.42` |
+| Isolate host | `trace edr dispatch <id> isolate` |
+| Collect forensics | `trace edr dispatch <id> collect-forensics` |
+
+### Viewing Agent Data
+
+```bash
+# List agents
+trace edr list
+
+# View agent details
+trace edr view <agent-id>
+
+# View recent events
+trace edr events <agent-id>
+
+# Revoke an agent
+trace edr revoke <agent-id>
+```
+
+---
+
 > For playbook authoring: see `docs/playbook-authoring.md`
 > For plugin development: see `docs/plugin-development.md`
 > For CLI reference: see `docs/cli-reference.md`

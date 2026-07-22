@@ -138,7 +138,7 @@ Trace is uniquely positioned in the **high ease-of-use / medium feature-depth** 
 
 ### Long-term (6-12 months)
 9. **SaaS read-only dashboard** — free tier that shows investigation results
-10. **EDR agent** — lightweight endpoint agent (this fills the agent gap vs Wazuh)
+10. **Custom EDR agent** — built-in endpoint agent with process/file/network/memory monitoring, 8 response actions, on-agent YARA, real-time ETW/inotify/RDCW. Fills the agent gap vs Wazuh. ✅ COMPLETED
 11. **Compliance report templates** — PCI, HIPAA, SOC2 PDF exports
 12. **Plugin marketplace** — community plugins for log sources, playbooks
 

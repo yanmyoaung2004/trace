@@ -74,6 +74,7 @@ That's it. No config files, no API keys, no containers. The built-in IOC databas
 | **Archive**  | MITRE ATT&CK (750 techniques), CVE lookup, IOC enrichment, web search                 |
 | **Response** | Block IP, quarantine files, kill processes, restart services — with rollback          |
 | **SCA**      | CIS benchmark compliance scanning (64 policies, auto-detect OS)                       |
+| **EDR**      | Custom endpoint agent — process/file/network/memory monitoring, 8 response actions    |
 
 ### 🔗 Threat Intelligence
 
@@ -107,7 +108,31 @@ Ships with 3 default hunts: malware scan, compliance audit, rootkit sweep.
 | Quarantine file | OS-level move + chmod              | ✅                 |
 | Kill process    | By PID or name                     | ❌ (cannot unkill) |
 | Restart service | systemctl, sc, launchctl           | ✅ (idempotent)    |
-| EDR isolate     | CrowdStrike, SentinelOne, Defender | ✅                 |
+| EDR (3rd party) | CrowdStrike, SentinelOne, Defender | ✅                 |
+| EDR (custom)    | trace-agent: 8 response actions    | ✅                 |
+
+### 🤖 Custom EDR Agent
+
+Trace ships its own endpoint agent (`trace-agent`) — no third-party EDR required.
+
+| Capability | Real-Time | Fallback |
+|------------|-----------|----------|
+| Process monitoring | Linux: netlink proc connector / Windows: ETW | /proc or WMI polling |
+| File monitoring | Linux: inotify + fanotify / Windows: ReadDirectoryChangesW | Directory polling |
+| Network monitoring | Cross-platform: ss, netstat, lsof | — |
+| Memory scanning | Linux: /proc/pid/mem / Windows: VirtualQueryEx | — |
+| On-agent YARA | 15+ rules (packer, XOR, Mimikatz, CobaltStrike, PS abuse, etc.) | SHA256 cache |
+| Response actions | kill, quarantine, block, script, isolate, release, forensics, snapshot | — |
+
+**Deploy:**
+```bash
+# On the endpoint
+trace-agent --server https://trace-server:8080 --api-key xxx
+
+# From the Trace server
+trace edr list
+trace edr dispatch <agent-id> isolate
+```
 
 ## Architecture
 
@@ -175,6 +200,7 @@ Run `./trace init` for the interactive setup wizard.
 | `init`                                        | First-run setup wizard                              |
 | `serve`                                       | Start daemon with SIEM, hunts, edge sync            |
 | `server`                                      | Start central server with dashboard + API           |
+| `edr list/view/events/dispatch/revoke`        | Manage EDR agents, dispatch remote actions          |
 | `investigate` / `inv`                        | Run an investigation (prompts if no args)           |
 | `status` / `st`                               | View investigation status                           |
 | `history` / `hist`                            | List recent investigations                          |
