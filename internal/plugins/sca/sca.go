@@ -318,7 +318,7 @@ func (a *Agent) evaluateRule(ctx context.Context, rawRule string) (bool, error) 
 		cmdStr := strings.TrimSpace(strings.TrimPrefix(parts[0], "c:"))
 		expected := ""
 		if len(parts) > 1 {
-			expected = strings.TrimSpace(strings.TrimPrefix(parts[1], "r:"))
+			expected = strings.TrimPrefix(strings.TrimSpace(parts[1]), "r:")
 		}
 
 		cmdParts := strings.Fields(cmdStr)
@@ -351,7 +351,7 @@ func (a *Agent) evaluateRule(ctx context.Context, rawRule string) (bool, error) 
 		path := strings.TrimSpace(strings.TrimPrefix(parts[0], "f:"))
 		expected := ""
 		if len(parts) > 1 {
-			expected = strings.TrimSpace(strings.TrimPrefix(parts[1], "r:"))
+			expected = strings.TrimPrefix(strings.TrimSpace(parts[1]), "r:")
 		}
 
 		data, err := os.ReadFile(path)
@@ -374,10 +374,10 @@ func (a *Agent) evaluateRule(ctx context.Context, rawRule string) (bool, error) 
 		fileRe := ""
 		contentRe := ""
 		if len(parts) > 1 {
-			fileRe = strings.TrimSpace(strings.TrimPrefix(parts[1], "r:"))
+			fileRe = strings.TrimPrefix(strings.TrimSpace(parts[1]), "r:")
 		}
 		if len(parts) > 2 {
-			contentRe = strings.TrimSpace(strings.TrimPrefix(parts[2], "r:"))
+			contentRe = strings.TrimPrefix(strings.TrimSpace(parts[2]), "r:")
 		}
 
 		entries, err := os.ReadDir(dir)
