@@ -294,6 +294,8 @@ func etwEventCallbackBridge(recordPtr uintptr) uintptr {
 }
 
 // Cross-architecture safe readers — no struct casts
+//
+//go:nocheckptr
 func readU16(ptr uintptr, offset uintptr) uint16 {
 	if ptr == 0 {
 		return 0
@@ -301,6 +303,7 @@ func readU16(ptr uintptr, offset uintptr) uint16 {
 	return *(*uint16)(unsafe.Pointer(ptr + offset))
 }
 
+//go:nocheckptr
 func readU32(ptr uintptr, offset uintptr) uint32 {
 	if ptr == 0 {
 		return 0
@@ -308,6 +311,7 @@ func readU32(ptr uintptr, offset uintptr) uint32 {
 	return *(*uint32)(unsafe.Pointer(ptr + offset))
 }
 
+//go:nocheckptr
 func readPtr(ptr uintptr, offset uintptr) uintptr {
 	if ptr == 0 {
 		return 0
@@ -345,6 +349,7 @@ func handleETWProcessCreateRaw(userData uintptr, userLen uint32, processID uint3
 	sendETWEvent(evt)
 }
 
+//go:nocheckptr
 func handleETWProcessEndRaw(userData uintptr, userLen uint32, processID uint32) {
 	pid := readU32(userData, 0)
 	if pid == 0 || pid == 4 {

@@ -15,22 +15,19 @@ import (
 )
 
 const (
-	fanClassContent    = 4
-	fanClassPreContent = 8
-	fanClassNotify     = 0
-	fanOpen            = 0x00000020
-	fanAccess          = 0x00000001
-	fanModify          = 0x00000002
-	fanCloseWrite      = 0x00000008
-	fanCloseNoWrite    = 0x00000010
-	fanEpochOnClose    = 0x00000040
-	fanReportFID       = 0x00000200
-	fanMarkAdd         = 0x00000001
-	fanMarkMount       = 0x00000010
-	fanMarkFilesystem  = 0x00000100
-	fanOpath           = 0o010000000
-	fanNoai            = 0x00001000
-	fanOpenExec        = 0x00001000
+	fanClassNotify    = 0
+	fanOpen           = 0x00000020
+	fanAccess         = 0x00000001
+	fanModify         = 0x00000002
+	fanCloseWrite     = 0x00000008
+	fanCloseNoWrite   = 0x00000010
+	fanReportFID      = 0x00000200
+	fanEpochOnClose   = 0x00000040
+	fanMarkAdd        = 0x00000001
+	fanMarkMount      = 0x00000010
+	fanMarkFilesystem = 0x00000100
+	fanNoai           = 0x00001000
+	fanOpenExec       = 0x00001000
 )
 
 type FanotifyMonitor struct {
@@ -56,7 +53,7 @@ func (m *FanotifyMonitor) Start() error {
 		return nil
 	}
 
-	fd, err := unix.FanotifyInit(unix.FAN_CLASS_NOTIFY|unix.FAN_REPORT_DFID_NAME|fanNoai, os.O_RDONLY)
+	fd, err := unix.FanotifyInit(uint(unix.FAN_CLASS_NOTIF|unix.FAN_REPORT_DFID_NAME|fanNoai), uint(os.O_RDONLY))
 	if err != nil {
 		log.Printf("[fanotify] init: %v (requires CAP_SYS_ADMIN)", err)
 		return err
@@ -203,21 +200,4 @@ func (m *FanotifyMonitor) emitEvent(mask int64, path string, pid int) {
 	}
 }
 
-func itoa(i int) string {
-	if i == 0 {
-		return "0"
-	}
-	s := ""
-	n := i
-	if n < 0 {
-		n = -n
-	}
-	for n > 0 {
-		s = string(rune('0'+n%10)) + s
-		n /= 10
-	}
-	if i < 0 {
-		s = "-" + s
-	}
-	return s
-}
+
