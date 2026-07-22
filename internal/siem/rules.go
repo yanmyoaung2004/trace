@@ -57,10 +57,15 @@ type RuleEngine struct {
 }
 
 func NewRuleEngine() *RuleEngine {
-	return &RuleEngine{
+	re := &RuleEngine{
 		correlation: make(map[string][]time.Time),
 		suppression: make(map[string]time.Time),
 	}
+	re.LoadDefault()
+	if err := re.LoadBuiltinYAML(); err != nil {
+		fmt.Printf("[siem] warning: builtin YAML rules: %v\n", err)
+	}
+	return re
 }
 
 type YAMLRule struct {
