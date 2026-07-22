@@ -5,33 +5,45 @@ package monitor
 import (
 	"fmt"
 	"log"
+	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
 
 var (
-	kernel32              = windows.NewLazySystemDLL("kernel32.dll")
-	procOpenProcess       = kernel32.NewProc("OpenProcess")
-	procVirtualQueryEx    = kernel32.NewProc("VirtualQueryEx")
-	procReadProcessMemory = kernel32.NewProc("ReadProcessMemory")
-	procCloseHandle       = kernel32.NewProc("CloseHandle")
+	memKernel32 = windows.NewLazySystemDLL("kernel32.dll")
+	memNtdll    = windows.NewLazySystemDLL("ntdll.dll")
+
+	memOpenProcess       = memKernel32.NewProc("OpenProcess")
+	memVirtualQueryEx    = memKernel32.NewProc("VirtualQueryEx")
+	memReadProcessMemory = memKernel32.NewProc("ReadProcessMemory")
+	memCloseHandle       = memKernel32.NewProc("CloseHandle")
+	memNtQueryInfoProcess = memNtdll.NewProc("NtQueryInformationProcess")
 )
 
 const (
-	processQueryInformation = 0x0400
-	processVMRead          = 0x0010
+	memProcessQueryInfo = 0x0400
+	memProcessVMRead    = 0x0010
+	memProcessQueryLimited = 0x1000
 
-	memCommit    = 0x1000
-	memReserve   = 0x2000
-	pageReadonly = 0x02
-	pageReadWrite = 0x04
-	pageExecuteRead = 0x20
-	pageExecuteReadWrite = 0x40
+	memCommit         = 0x1000
+	memPageReadonly   = 0x02
+	memPageReadWrite  = 0x04
+	memPageExecuteRead = 0x20
+	memPageExecReadWrite = 0x40
+	memPageGuard       = 0x100
+	memPageNoAccess    = 0x01
+
+	processProtectionInfo = 0x3D
+	protectLevelWinTrusted = 1
+	protectLevelWinSystem  = 2
+	protectLevelWinTCB     = 3
 )
 
-type memoryBasicInformation struct {
+type memBasicInfo struct {
 	BaseAddress       uintptr
 	AllocationBase    uintptr
 	AllocationProtect uint32
@@ -41,111 +53,78 @@ type memoryBasicInformation struct {
 	Type              uint32
 }
 
-func openProcess(pid uint32) (syscall.Handle, error) {
-	ret, _, err := procOpenProcess.Call(
-		processQueryInformation|processVMRead,
-		0,
-		uintptr(pid),
-	)
-	if ret == 0 {
-		return 0, fmt.Errorf("OpenProcess: %v", err)
+type processProtection struct {
+	Level uint8
+	_     [3]byte
+	Type  uint8
+	_     [3]byte
+	_     [8]byte
+}
+
+type WindowsMemScanner struct {
+	yara   *YaraMatcher
+	mu     sync.Mutex
+	pplWarned map[int]bool
+}
+
+func NewWindowsMemScanner() *WindowsMemScanner {
+	return &WindowsMemScanner{
+		yara:     NewYaraMatcher(),
+		pplWarned: make(map[int]bool),
 	}
-	return syscall.Handle(ret), nil
 }
 
-func virtualQueryEx(h syscall.Handle, addr uintptr) (*memoryBasicInformation, error) {
-	info := &memoryBasicInformation{}
-	ret, _, _ := procVirtualQueryEx.Call(
-		uintptr(h),
-		addr,
-		uintptr(unsafe.Pointer(info)),
-		unsafe.Sizeof(*info),
-	)
-	if ret == 0 {
-		return nil, fmt.Errorf("VirtualQueryEx at 0x%x", addr)
+func (w *WindowsMemScanner) ScanProcess(pid int) ([]*MemoryFinding, error) {
+	if w.isPPL(pid) {
+		w.mu.Lock()
+		if !w.pplWarned[pid] {
+			w.pplWarned[pid] = true
+			w.mu.Unlock()
+			log.Printf("[mem-scan] PID %d is PPL-protected, skipping", pid)
+		} else {
+			w.mu.Unlock()
+		}
+		return nil, nil
 	}
-	return info, nil
-}
 
-func readProcessMemory(h syscall.Handle, addr uintptr, size uintptr) ([]byte, error) {
-	buf := make([]byte, size)
-	var read uintptr
-	ret, _, _ := procReadProcessMemory.Call(
-		uintptr(h),
-		addr,
-		uintptr(unsafe.Pointer(&buf[0])),
-		size,
-		uintptr(unsafe.Pointer(&read)),
-	)
-	if ret == 0 {
-		return nil, fmt.Errorf("ReadProcessMemory at 0x%x (size %d)", addr, size)
-	}
-	return buf[:read], nil
-}
-
-type WindowsMemoryScanner struct {
-	yara *YaraMatcher
-}
-
-func NewWindowsMemoryScanner() *WindowsMemoryScanner {
-	return &WindowsMemoryScanner{yara: NewYaraMatcher()}
-}
-
-func (w *WindowsMemoryScanner) ScanProcess(pid int) ([]*MemoryFinding, error) {
-	h, err := openProcess(uint32(pid))
+	h, err := w.openProcess(pid)
 	if err != nil {
-		return nil, fmt.Errorf("open process %d: %w", pid, err)
+		return nil, err
 	}
-	defer procCloseHandle.Call(uintptr(h))
+	defer memCloseHandle.Call(uintptr(h))
 
 	var findings []*MemoryFinding
 	addr := uintptr(0)
 
 	for {
-		info, err := virtualQueryEx(h, addr)
-		if err != nil {
+		var info memBasicInfo
+		ret, _, _ := memVirtualQueryEx.Call(
+			uintptr(h), addr,
+			uintptr(unsafe.Pointer(&info)),
+			unsafe.Sizeof(info),
+		)
+		if ret == 0 {
+			break
+		}
+		if info.RegionSize == 0 {
 			break
 		}
 
-		if info.State == memCommit && info.RegionSize > 0 {
-			readable := info.Protect&pageReadonly != 0 ||
-				info.Protect&pageReadWrite != 0 ||
-				info.Protect&pageExecuteRead != 0 ||
-				info.Protect&pageExecuteReadWrite != 0
-
-			executable := info.Protect&pageExecuteRead != 0 ||
-				info.Protect&pageExecuteReadWrite != 0
-
-			if readable && info.RegionSize <= 10*1024*1024 {
-				data, err := readProcessMemory(h, addr, info.RegionSize)
-				if err == nil && len(data) > 0 {
-					matches := w.yara.MatchBytes(data)
-					for _, match := range matches {
-						findings = append(findings, &MemoryFinding{
-							PID:     pid,
-							Region:  fmt.Sprintf("0x%x-0x%x", addr, addr+info.RegionSize),
-							Size:    uint64(info.RegionSize),
-							Rule:    match.Name,
-							Details: match.Description,
-						})
-					}
-				}
+		if info.State == memCommit && info.RegionSize > 0 && info.RegionSize <= 10*1024*1024 {
+			if info.Protect&memPageGuard != 0 || info.Protect&memPageNoAccess != 0 {
+				addr += info.RegionSize
+				continue
 			}
 
-			if executable && info.RegionSize <= 10*1024*1024 {
-				data, err := readProcessMemory(h, addr, info.RegionSize)
-				if err == nil && len(data) > 0 {
-					matches := w.yara.MatchBytes(data)
-					for _, match := range matches {
-						findings = append(findings, &MemoryFinding{
-							PID: pid,
-							Region: fmt.Sprintf("0x%x-0x%x [EXEC]", addr, addr+info.RegionSize),
-							Size:    uint64(info.RegionSize),
-							Rule:    match.Name,
-							Details: match.Description + " [executable region]",
-						})
-					}
-				}
+			readable := info.Protect&memPageReadonly != 0 ||
+				info.Protect&memPageReadWrite != 0 ||
+				info.Protect&memPageExecuteRead != 0 ||
+				info.Protect&memPageExecReadWrite != 0
+			executable := info.Protect&memPageExecuteRead != 0 ||
+				info.Protect&memPageExecReadWrite != 0
+
+			if readable || executable {
+				findings = w.scanRegion(h, pid, addr, info, readable, executable, findings)
 			}
 		}
 
@@ -158,6 +137,87 @@ func (w *WindowsMemoryScanner) ScanProcess(pid int) ([]*MemoryFinding, error) {
 	return findings, nil
 }
 
+func (w *WindowsMemScanner) scanRegion(h syscall.Handle, pid int, addr uintptr, info memBasicInfo, readable, executable bool, findings []*MemoryFinding) []*MemoryFinding {
+	done := make(chan struct{}, 1)
+	var data []byte
+	var readErr error
+
+	go func() {
+		buf := make([]byte, info.RegionSize)
+		var read uintptr
+		ret, _, _ := memReadProcessMemory.Call(
+			uintptr(h), addr,
+			uintptr(unsafe.Pointer(&buf[0])),
+			info.RegionSize,
+			uintptr(unsafe.Pointer(&read)),
+		)
+		if ret != 0 && read > 0 {
+			data = buf[:read]
+		} else {
+			readErr = fmt.Errorf("read failed")
+		}
+		done <- struct{}{}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		log.Printf("[mem-scan] timeout reading 0x%x (size %d) on PID %d", addr, info.RegionSize, pid)
+		return findings
+	}
+
+	if readErr != nil || len(data) == 0 {
+		return findings
+	}
+
+	matches := w.yara.MatchBytes(data)
+	for _, match := range matches {
+		tag := ""
+		if executable {
+			tag = " [EXEC]"
+		}
+		findings = append(findings, &MemoryFinding{
+			PID:     pid,
+			Region:  fmt.Sprintf("0x%x-0x%x%s", addr, addr+info.RegionSize, tag),
+			Size:    uint64(info.RegionSize),
+			Rule:    match.Name,
+			Details: match.Description,
+		})
+	}
+	return findings
+}
+
+func (w *WindowsMemScanner) openProcess(pid int) (syscall.Handle, error) {
+	ret, _, _ := memOpenProcess.Call(
+		memProcessQueryInfo|memProcessVMRead|memProcessQueryLimited,
+		0, uintptr(pid),
+	)
+	if ret == 0 {
+		return 0, fmt.Errorf("OpenProcess(%d) failed", pid)
+	}
+	return syscall.Handle(ret), nil
+}
+
+func (w *WindowsMemScanner) isPPL(pid int) bool {
+	h, err := w.openProcess(pid)
+	if err != nil {
+		return false
+	}
+	defer memCloseHandle.Call(uintptr(h))
+
+	var prot processProtection
+	var retLen uint32
+	ret, _, _ := memNtQueryInfoProcess.Call(
+		uintptr(h), processProtectionInfo,
+		uintptr(unsafe.Pointer(&prot)), unsafe.Sizeof(prot),
+		uintptr(unsafe.Pointer(&retLen)),
+	)
+	if ret != 0 {
+		return false
+	}
+	return prot.Level >= protectLevelWinTrusted
+}
+
 func init() {
-	log.Printf("[mem-scanner] Windows memory scanner initialized")
+	log.Printf("[mem-scanner] Windows memory scanner active")
 }

@@ -40,6 +40,8 @@ type Agent struct {
 	eventQueue *queue.EventQueue
 
 	yara       *monitor.YaraMatcher
+	scanCache  *monitor.ScanCache
+	scanWorkers chan struct{}
 	procTree   *monitor.ProcessTree
 	correlator *monitor.Correlator
 	dedup      *monitor.Deduplicator
@@ -90,8 +92,8 @@ func New(cfg *Config) *Agent {
 		done:     make(chan struct{}),
 		exec:     exec,
 		yara:     monitor.NewYaraMatcher(),
-		procTree: monitor.NewProcessTree(),
-		dedup:    monitor.NewDeduplicator(),
+		procTree: monitor.NewProcessTree(filepath.Join(cfg.DataDir, "tree")),
+		dedup:    monitor.NewDeduplicator(filepath.Join(cfg.DataDir, "dedup")),
 	}
 
 	if cfg.AgentID != "" {
@@ -171,6 +173,8 @@ func (a *Agent) Start(ctx context.Context) error {
 
 	a.correlator = monitor.NewCorrelator(a.eventCh)
 	a.correlator.Start()
+	a.scanCache = monitor.NewScanCache()
+	a.scanWorkers = make(chan struct{}, 8)
 
 	go a.analysisLoop(ctx)
 
@@ -202,6 +206,12 @@ func (a *Agent) Stop(ctx context.Context) error {
 	}
 	if a.netMon != nil {
 		a.netMon.Stop()
+	}
+	if a.procTree != nil {
+		a.procTree.Save()
+	}
+	if a.dedup != nil {
+		a.dedup.Close()
 	}
 	if a.eventQueue != nil {
 		a.eventQueue.Close()
@@ -400,39 +410,39 @@ func (a *Agent) flushBatch(ctx context.Context, batch []*monitor.Event) {
 func (a *Agent) analysisLoop(ctx context.Context) {
 	ancestryTick := time.NewTicker(60 * time.Second)
 	dedupStatsTick := time.NewTicker(5 * time.Minute)
+	scanStatsTick := time.NewTicker(10 * time.Minute)
 	defer ancestryTick.Stop()
 	defer dedupStatsTick.Stop()
+	defer scanStatsTick.Stop()
 
 	for {
 		select {
 		case <-a.done:
 			return
 		case evt := <-a.eventCh:
-			// Deduplicate
 			if a.dedup.IsDuplicate(evt) {
 				continue
 			}
 
-			// YARA scan on process create events
-			if evt.Type == monitor.EventProcessCreate && evt.Process != nil {
-				go a.scanProcessYARA(evt)
-			}
-
-			// YARA scan on file create events
-			if evt.Type == monitor.EventFileCreate && evt.File != nil {
-				go a.scanFileYARA(evt)
-			}
-
-			// Update process ancestry tree
 			a.procTree.Insert(evt)
-
-			// Run local correlation
 			a.correlator.Ingestion(evt)
+
+			if a.yara != nil {
+				if evt.Type == monitor.EventProcessCreate && evt.Process != nil {
+					a.queueYARAScan(func() { a.scanProcessYARA(evt) })
+				}
+				if evt.Type == monitor.EventFileCreate && evt.File != nil && evt.File.Size <= 10*1024*1024 {
+					a.queueYARAScan(func() { a.scanFileYARA(evt) })
+				}
+				if evt.Type == monitor.EventFileModify && evt.File != nil && evt.File.Size <= 10*1024*1024 {
+					a.queueYARAScan(func() { a.scanFileYARA(evt) })
+				}
+			}
 
 		case <-ancestryTick.C:
 			alerts := a.procTree.DetectSuspiciousAncestry()
-			for _, alert := range alerts {
-				log.Printf("[analysis] %s", alert)
+			for _, alertMsg := range alerts {
+				log.Printf("[analysis] %s", alertMsg)
 				a.eventCh <- &monitor.Event{
 					ID:        uuid.New().String(),
 					Timestamp: time.Now(),
@@ -440,18 +450,48 @@ func (a *Agent) analysisLoop(ctx context.Context) {
 					Severity:  monitor.SeverityWarning,
 					Annotations: map[string]string{
 						"correlation": "suspicious_ancestry",
-						"details":     alert,
+						"details":     alertMsg,
 					},
 				}
 			}
 
 		case <-dedupStatsTick.C:
 			hits, misses := a.dedup.Stats()
-			if hits > 0 {
-				log.Printf("[analysis] dedup stats: %d hits, %d misses (%.1f%% saved)",
-					hits, misses, float64(hits)/float64(hits+misses)*100)
+			total := hits + misses
+			if total > 0 {
+				log.Printf("[analysis] dedup: %d hits / %d total (%.1f%% saved)", hits, total, float64(hits)/float64(total)*100)
+			}
+
+		case <-scanStatsTick.C:
+			hits, misses := a.scanCache.Stats()
+			total := hits + misses
+			if total > 0 {
+				log.Printf("[analysis] scan cache: %d hits / %d total (%.1f%%)", hits, total, float64(hits)/float64(total)*100)
 			}
 		}
+	}
+}
+
+func (a *Agent) queueYARAScan(fn func()) {
+	select {
+	case a.scanWorkers <- struct{}{}:
+		go func() {
+			defer func() { <-a.scanWorkers }()
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			done := make(chan struct{}, 1)
+			go func() {
+				fn()
+				done <- struct{}{}
+			}()
+			select {
+			case <-done:
+			case <-ctx.Done():
+				log.Printf("[yara] scan timed out after 30s")
+			}
+		}()
+	default:
+		log.Printf("[yara] scan workers saturated (8/8), dropping scan")
 	}
 }
 
@@ -459,24 +499,18 @@ func (a *Agent) scanProcessYARA(evt *monitor.Event) {
 	if a.yara == nil || evt.Process == nil {
 		return
 	}
-
 	matches, err := a.yara.MatchProcess(evt.Process.PID)
 	if err != nil {
 		return
 	}
-
 	for _, m := range matches {
 		log.Printf("[yara] %s matched on PID %d (%s): %s", m.Name, evt.Process.PID, evt.Process.Name, m.Description)
 		alertEvt := &monitor.Event{
-			ID:        uuid.New().String(),
-			Timestamp: time.Now(),
-			Type:      monitor.EventAlert,
-			Severity:  m.Severity,
-			Process:   evt.Process,
+			ID:   uuid.New().String(), Timestamp: time.Now(),
+			Type: monitor.EventAlert, Severity: m.Severity,
+			Process: evt.Process,
 			Annotations: map[string]string{
-				"yara_rule":  m.Name,
-				"yara_desc":  m.Description,
-				"source":     "yara_scan",
+				"yara_rule": m.Name, "yara_desc": m.Description, "source": "yara_scan",
 			},
 		}
 		select {
@@ -491,27 +525,43 @@ func (a *Agent) scanFileYARA(evt *monitor.Event) {
 		return
 	}
 
-	if evt.File.Size > 10*1024*1024 {
-		return
-	}
+	path := evt.File.Path
 
-	matches, err := a.yara.MatchFile(evt.File.Path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return
 	}
 
+	if cached, ok := a.scanCache.Get(path, data); ok {
+		for _, m := range cached {
+			alertEvt := &monitor.Event{
+				ID: uuid.New().String(), Timestamp: time.Now(),
+				Type: monitor.EventAlert, Severity: m.Severity,
+				File: evt.File,
+				Annotations: map[string]string{
+					"yara_rule": m.Name, "yara_desc": m.Description, "source": "yara_scan_cached",
+				},
+			}
+			select {
+			case a.eventCh <- alertEvt:
+			default:
+			}
+		}
+		return
+	}
+
+	matches := a.yara.MatchBytes(data)
+
+	a.scanCache.Set(path, data, matches)
+
 	for _, m := range matches {
-		log.Printf("[yara] %s matched on file %s: %s", m.Name, evt.File.Path, m.Description)
+		log.Printf("[yara] %s matched on %s: %s", m.Name, path, m.Description)
 		alertEvt := &monitor.Event{
-			ID:        uuid.New().String(),
-			Timestamp: time.Now(),
-			Type:      monitor.EventAlert,
-			Severity:  m.Severity,
-			File:      evt.File,
+			ID: uuid.New().String(), Timestamp: time.Now(),
+			Type: monitor.EventAlert, Severity: m.Severity,
+			File: evt.File,
 			Annotations: map[string]string{
-				"yara_rule": m.Name,
-				"yara_desc": m.Description,
-				"source":    "yara_scan",
+				"yara_rule": m.Name, "yara_desc": m.Description, "source": "yara_scan",
 			},
 		}
 		select {

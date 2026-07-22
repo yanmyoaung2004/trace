@@ -2,26 +2,79 @@ package monitor
 
 import (
 	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
 	"fmt"
+	"log"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 type Deduplicator struct {
 	mu        sync.Mutex
-	keys      map[string]time.Time
+	mem       map[string]time.Time
+	db        *sql.DB
 	ttl       time.Duration
-	maxSize   int
+	maxMem    int
 	hitCount  int64
 	missCount int64
 }
 
-func NewDeduplicator() *Deduplicator {
-	return &Deduplicator{
-		keys:    make(map[string]time.Time),
+func NewDeduplicator(dataDir string) *Deduplicator {
+	d := &Deduplicator{
+		mem:     make(map[string]time.Time),
 		ttl:     30 * time.Second,
-		maxSize: 5000,
+		maxMem:  10000,
 	}
+	if dataDir != "" {
+		if err := d.openDB(dataDir); err != nil {
+			log.Printf("[dedup] sqlite unavailable: %v (using memory only)", err)
+		}
+	}
+	d.loadMem()
+	return d
+}
+
+func (d *Deduplicator) openDB(dataDir string) error {
+	os.MkdirAll(dataDir, 0700)
+	path := filepath.Join(dataDir, "dedup.db")
+	db, err := sql.Open("sqlite", path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(3000)")
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS dedup_keys (
+		key_hash TEXT PRIMARY KEY,
+		seen_at TEXT NOT NULL
+	)`)
+	if err != nil {
+		db.Close()
+		return err
+	}
+	d.db = db
+	return nil
+}
+
+func (d *Deduplicator) loadMem() {
+	if d.db == nil {
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	rows, err := d.db.Query("SELECT key_hash FROM dedup_key WHERE seen_at > datetime('now', '-30 seconds')")
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var hash string
+		rows.Scan(&hash)
+		d.mem[hash] = time.Now()
+	}
+	log.Printf("[dedup] loaded %d keys from sqlite", len(d.mem))
 }
 
 func (d *Deduplicator) IsDuplicate(evt *Event) bool {
@@ -29,18 +82,22 @@ func (d *Deduplicator) IsDuplicate(evt *Event) bool {
 	defer d.mu.Unlock()
 
 	key := d.eventKey(evt)
-	now := time.Now()
+	hash := sha256Hex(key)
 
-	if _, exists := d.keys[key]; exists {
+	if _, exists := d.mem[hash]; exists {
 		d.hitCount++
 		return true
 	}
 
-	d.keys[key] = now
+	d.mem[hash] = time.Now()
 	d.missCount++
 
-	if len(d.keys) > d.maxSize {
-		d.evictLocked(now)
+	if d.db != nil {
+		d.db.Exec("INSERT OR REPLACE INTO dedup_keys (key_hash, seen_at) VALUES (?, datetime('now'))", hash)
+	}
+
+	if len(d.mem) > d.maxMem {
+		d.evictLocked()
 	}
 
 	return false
@@ -51,22 +108,21 @@ func (d *Deduplicator) eventKey(evt *Event) string {
 	case evt.Process != nil && evt.Process.PID > 0:
 		return fmt.Sprintf("proc:%d:%s", evt.Process.PID, evt.Type)
 	case evt.File != nil && evt.File.Path != "":
-		h := sha256.Sum256([]byte(evt.File.Path + string(evt.Type)))
-		return fmt.Sprintf("file:%x", h[:8])
+		return fmt.Sprintf("file:%s:%s", evt.File.Path, evt.Type)
 	case evt.Network != nil:
-		return fmt.Sprintf("net:%s:%d:%s", evt.Network.LocalIP, evt.Network.LocalPort, evt.Type)
+		return fmt.Sprintf("net:%s:%d:%s:%s", evt.Network.RemoteIP, evt.Network.RemotePort, evt.Network.Protocol, evt.Type)
 	default:
 		return fmt.Sprintf("evt:%d", evt.Timestamp.UnixNano())
 	}
 }
 
-func (d *Deduplicator) evictLocked(now time.Time) {
-	cutoff := now.Add(-d.ttl)
-	for k, v := range d.keys {
+func (d *Deduplicator) evictLocked() {
+	cutoff := time.Now().Add(-d.ttl)
+	for k, v := range d.mem {
 		if v.Before(cutoff) {
-			delete(d.keys, k)
+			delete(d.mem, k)
 		}
-		if len(d.keys) <= d.maxSize/2 {
+		if len(d.mem) <= d.maxMem*3/4 {
 			break
 		}
 	}
@@ -78,10 +134,13 @@ func (d *Deduplicator) Stats() (int64, int64) {
 	return d.hitCount, d.missCount
 }
 
-func (d *Deduplicator) Reset() {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.keys = make(map[string]time.Time)
-	d.hitCount = 0
-	d.missCount = 0
+func (d *Deduplicator) Close() {
+	if d.db != nil {
+		d.db.Close()
+	}
+}
+
+func sha256Hex(s string) string {
+	h := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(h[:])
 }

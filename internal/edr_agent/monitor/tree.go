@@ -1,32 +1,50 @@
 package monitor
 
 import (
+	"container/list"
+	"encoding/json"
 	"fmt"
+	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 type ProcNode struct {
-	PID      int
-	PPID     int
-	Name     string
-	CmdLine  string
-	Children []*ProcNode
-	Depth    int
+	PID      int         `json:"pid"`
+	PPID     int         `json:"ppid"`
+	Name     string      `json:"name"`
+	CmdLine  string      `json:"cmdline,omitempty"`
+	Children []*ProcNode `json:"children,omitempty"`
+	Depth    int         `json:"depth"`
+	StartAt  time.Time   `json:"start_at"`
+	EndAt    *time.Time  `json:"end_at,omitempty"`
 }
 
 type ProcessTree struct {
-	mu     sync.Mutex
-	roots  []*ProcNode
-	byPID  map[int]*ProcNode
-	maxAge int
+	mu       sync.RWMutex
+	byPID    map[int]*list.Element
+	lruList  *list.List
+	maxNodes int
+	dataDir  string
 }
 
-func NewProcessTree() *ProcessTree {
-	return &ProcessTree{
-		byPID:  make(map[int]*ProcNode),
-		maxAge: 1000,
+type lruEntry struct {
+	pid  int
+	node *ProcNode
+}
+
+func NewProcessTree(dataDir string) *ProcessTree {
+	t := &ProcessTree{
+		byPID:    make(map[int]*list.Element),
+		lruList:  list.New(),
+		maxNodes: 100000,
+		dataDir:  dataDir,
 	}
+	t.load()
+	return t
 }
 
 func (t *ProcessTree) Insert(evt *Event) {
@@ -37,52 +55,81 @@ func (t *ProcessTree) Insert(evt *Event) {
 	}
 	pid := evt.Process.PID
 	ppid := evt.Process.PPID
+
 	switch evt.Type {
 	case EventProcessCreate:
-		node := &ProcNode{
-			PID:     pid,
-			PPID:    ppid,
-			Name:    evt.Process.Name,
-			CmdLine: evt.Process.CmdLine,
+		if _, exists := t.byPID[pid]; exists {
+			t.touchLocked(pid)
+			return
 		}
-		t.byPID[pid] = node
-		if parent, ok := t.byPID[ppid]; ok {
+		node := &ProcNode{
+			PID: pid, PPID: ppid,
+			Name: evt.Process.Name, CmdLine: evt.Process.CmdLine,
+			Depth: 0, StartAt: time.Now(),
+		}
+		if parentElem, ok := t.byPID[ppid]; ok {
+			parent := parentElem.Value.(*lruEntry).node
 			parent.Children = append(parent.Children, node)
 			node.Depth = parent.Depth + 1
-		} else {
-			node.Depth = 0
-			t.roots = append(t.roots, node)
 		}
+		elem := t.lruList.PushFront(&lruEntry{pid: pid, node: node})
+		t.byPID[pid] = elem
+		t.evictLocked()
+
 	case EventProcessTerminate:
-		delete(t.byPID, pid)
+		if elem, ok := t.byPID[pid]; ok {
+			entry := elem.Value.(*lruEntry)
+			now := time.Now()
+			entry.node.EndAt = &now
+		}
 	}
-	t.pruneLocked()
 }
 
-func (t *ProcessTree) pruneLocked() {
-	if len(t.byPID) > t.maxAge {
-		for pid, node := range t.byPID {
-			if node.Depth > 10 {
-				delete(t.byPID, pid)
-			}
+func (t *ProcessTree) touchLocked(pid int) {
+	if elem, ok := t.byPID[pid]; ok {
+		t.lruList.MoveToFront(elem)
+	}
+}
+
+func (t *ProcessTree) evictLocked() {
+	for t.lruList.Len() > t.maxNodes {
+		elem := t.lruList.Back()
+		if elem == nil {
+			break
 		}
+		entry := elem.Value.(*lruEntry)
+		// Keep if still running and depth < 3
+		if entry.node.EndAt == nil && entry.node.Depth < 3 {
+			t.lruList.MoveToFront(elem)
+			if t.lruList.Len() <= t.maxNodes {
+				break
+			}
+			elem = t.lruList.Back()
+			if elem == nil {
+				break
+			}
+			entry = elem.Value.(*lruEntry)
+		}
+		delete(t.byPID, entry.pid)
+		t.lruList.Remove(elem)
 	}
 }
 
 func (t *ProcessTree) GetAncestors(pid int) []*ProcNode {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	var ancestors []*ProcNode
-	current, ok := t.byPID[pid]
+	elem, ok := t.byPID[pid]
 	if !ok {
 		return nil
 	}
 	visited := map[int]bool{}
+	current := elem.Value.(*lruEntry).node
 	for current != nil && !visited[current.PID] {
 		visited[current.PID] = true
 		ancestors = append(ancestors, current)
-		if parent, ok := t.byPID[current.PPID]; ok {
-			current = parent
+		if parentElem, ok := t.byPID[current.PPID]; ok {
+			current = parentElem.Value.(*lruEntry).node
 		} else {
 			break
 		}
@@ -91,8 +138,8 @@ func (t *ProcessTree) GetAncestors(pid int) []*ProcNode {
 }
 
 func (t *ProcessTree) DetectSuspiciousAncestry() []string {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	var alerts []string
 	suspiciousParents := map[string][]string{
 		"winword.exe":  {"powershell.exe", "cmd.exe", "wscript.exe", "cscript.exe", "rundll32.exe"},
@@ -102,16 +149,18 @@ func (t *ProcessTree) DetectSuspiciousAncestry() []string {
 		"firefox.exe":  {"cmd.exe", "powershell.exe"},
 		"explorer.exe": {"powershell.exe", "cmd.exe", "wscript.exe"},
 	}
-	for _, node := range t.byPID {
-		ppid := node.PPID
-		if parent, ok := t.byPID[ppid]; ok {
-			parentName := strings.ToLower(parent.Name)
-			childName := strings.ToLower(node.Name)
-			if badChildren, hasParent := suspiciousParents[parentName]; hasParent {
+	for _, elem := range t.byPID {
+		entry := elem.Value.(*lruEntry)
+		node := entry.node
+		if parentElem, ok := t.byPID[node.PPID]; ok {
+			parent := parentElem.Value.(*lruEntry).node
+			pName := strings.ToLower(parent.Name)
+			cName := strings.ToLower(node.Name)
+			if badChildren, has := suspiciousParents[pName]; has {
 				for _, bad := range badChildren {
-					if childName == bad {
+					if cName == bad {
 						alerts = append(alerts, fmt.Sprintf(
-							"suspicious ancestry: %s (PID %d) spawned %s (PID %d)",
+							"suspicious ancestry: %s(PID:%d) spawned %s(PID:%d)",
 							parent.Name, parent.PID, node.Name, node.PID))
 					}
 				}
@@ -121,14 +170,84 @@ func (t *ProcessTree) DetectSuspiciousAncestry() []string {
 	return alerts
 }
 
-func (t *ProcessTree) Format() string {
+func (t *ProcessTree) Save() error {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if t.dataDir == "" {
+		return nil
+	}
+	nodes := make([]*ProcNode, 0, len(t.byPID))
+	for _, elem := range t.byPID {
+		nodes = append(nodes, elem.Value.(*lruEntry).node)
+		if len(nodes) >= 10000 {
+			break
+		}
+	}
+	data, err := json.Marshal(nodes)
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(t.dataDir, "process_tree.json")
+	os.MkdirAll(t.dataDir, 0700)
+	os.WriteFile(path, data, 0600)
+	log.Printf("[tree] saved %d nodes", len(nodes))
+	return nil
+}
+
+func (t *ProcessTree) load() {
+	if t.dataDir == "" {
+		return
+	}
+	path := filepath.Join(t.dataDir, "process_tree.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var nodes []*ProcNode
+	if err := json.Unmarshal(data, &nodes); err != nil {
+		return
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	for _, node := range nodes {
+		if _, exists := t.byPID[node.PID]; exists {
+			continue
+		}
+		elem := t.lruList.PushFront(&lruEntry{pid: node.PID, node: node})
+		t.byPID[node.PID] = elem
+	}
+	// Rebuild parent-child relationships
+	for _, node := range nodes {
+		if parentElem, ok := t.byPID[node.PPID]; ok {
+			parent := parentElem.Value.(*lruEntry).node
+			already := false
+			for _, c := range parent.Children {
+				if c.PID == node.PID {
+					already = true
+					break
+				}
+			}
+			if !already {
+				parent.Children = append(parent.Children, node)
+				node.Depth = parent.Depth + 1
+			}
+		}
+	}
+	log.Printf("[tree] loaded %d nodes from disk", len(nodes))
+}
+
+func (t *ProcessTree) Format() string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	var b strings.Builder
 	var walk func(node *ProcNode, prefix string)
 	walk = func(node *ProcNode, prefix string) {
-		b.WriteString(fmt.Sprintf("%s├── %s (PID %d, PPID %d, depth %d)\n",
-			prefix, node.Name, node.PID, node.PPID, node.Depth))
+		status := "running"
+		if node.EndAt != nil {
+			status = "dead"
+		}
+		b.WriteString(fmt.Sprintf("%s├── %s(PID:%d,PPID:%d,depth:%d,%s)\n",
+			prefix, node.Name, node.PID, node.PPID, node.Depth, status))
 		for i, child := range node.Children {
 			childPrefix := prefix + "│   "
 			if i == len(node.Children)-1 {
@@ -137,8 +256,11 @@ func (t *ProcessTree) Format() string {
 			walk(child, childPrefix)
 		}
 	}
-	for _, root := range t.roots {
-		walk(root, "")
+	for _, elem := range t.byPID {
+		entry := elem.Value.(*lruEntry)
+		if entry.node.PPID == 0 || entry.node.PPID == entry.node.PID {
+			walk(entry.node, "")
+		}
 	}
 	return b.String()
 }
