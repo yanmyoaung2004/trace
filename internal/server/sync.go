@@ -70,6 +70,7 @@ func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/edr/actions/pending", h.handleEDRActionsPending)
 	mux.HandleFunc("/api/v1/edr/actions/result", h.handleEDRActionResult)
 	mux.HandleFunc("/api/v1/edr/actions/dispatch", protected(h.handleEDRDispatch))
+	mux.HandleFunc("/api/v1/edr/alerts/dismiss", protected(h.handleEDRAlertDismiss))
 	mux.HandleFunc("/api/v1/edr/agents", readOnly(h.handleEDRAgentsList))
 	mux.HandleFunc("/api/v1/edr/agents/", readOnly(h.handleEDRAgentByID))
 
@@ -434,6 +435,66 @@ func (h *SyncHandler) handleEDRActionsPending(w http.ResponseWriter, r *http.Req
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"actions": actions})
+}
+
+func (h *SyncHandler) handleEDRAlertDismiss(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	var req struct {
+		AlertID string `json:"alert_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.AlertID == "" {
+		writeError(w, http.StatusBadRequest, "alert_id required")
+		return
+	}
+
+	// Look up the alert to find rule_name and process_name
+	var ruleName, processName string
+	h.manager.db.QueryRowContext(r.Context(),
+		`SELECT COALESCE(json_extract(data, '$.yara_rule'), json_extract(data, '$.correlation'), event_type),
+				COALESCE(json_extract(data, '$.process_name'), 'unknown')
+		 FROM edr_events WHERE id = ?`, req.AlertID).Scan(&ruleName, &processName)
+	if ruleName == "" {
+		ruleName = "manual_" + req.AlertID[:8]
+	}
+	if processName == "" {
+		processName = "unknown"
+	}
+
+	// Upsert the counter
+	result, err := h.manager.db.ExecContext(r.Context(),
+		`INSERT INTO edr_fp_counters (rule_name, process_name, dismissals, throttled, last_seen)
+		 VALUES (?, ?, 1, 0, datetime('now'))
+		 ON CONFLICT(rule_name, process_name) DO UPDATE SET
+		   dismissals = dismissals + 1,
+		   throttled = CASE WHEN dismissals + 1 >= 10 THEN 1 ELSE 0 END,
+		   last_seen = datetime('now')`,
+		ruleName, processName)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "dismiss failed")
+		return
+	}
+
+	var dismissals int
+	var throttled bool
+	row := h.manager.db.QueryRowContext(r.Context(),
+		`SELECT dismissals, throttled FROM edr_fp_counters WHERE rule_name = ? AND process_name = ?`,
+		ruleName, processName)
+	row.Scan(&dismissals, &throttled)
+
+	_ = result
+	log.Printf("[edr] alert %s dismissed: rule=%s process=%s (count=%d, throttled=%v)",
+		req.AlertID, ruleName, processName, dismissals, throttled)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":       "dismissed",
+		"rule_name":    ruleName,
+		"process_name": processName,
+		"dismissals":   dismissals,
+		"throttled":    throttled,
+	})
 }
 
 func (h *SyncHandler) handleEDRActionResult(w http.ResponseWriter, r *http.Request) {

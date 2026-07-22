@@ -138,6 +138,14 @@ func (m *ServerManager) Migrate() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_edr_actions_agent ON edr_actions(agent_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_edr_actions_status ON edr_actions(status)`,
+		`CREATE TABLE IF NOT EXISTS edr_fp_counters (
+			rule_name TEXT NOT NULL,
+			process_name TEXT NOT NULL,
+			dismissals INTEGER NOT NULL DEFAULT 1,
+			throttled INTEGER NOT NULL DEFAULT 0,
+			last_seen TEXT NOT NULL DEFAULT (datetime('now')),
+			PRIMARY KEY (rule_name, process_name)
+		)`,
 	}
 
 	for _, q := range queries {

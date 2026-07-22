@@ -28,6 +28,7 @@ Subcommands:
   view          View agent details and status
   events        View recent events from an agent
   dispatch      Send a response action to an agent (kill, quarantine, block, etc.)
+  dismiss       Mark an alert as false positive (trains the FP learning model)
   revoke        Remove an agent from the server`,
 	}
 
@@ -35,6 +36,7 @@ Subcommands:
 	cmd.AddCommand(newEDRViewCmd())
 	cmd.AddCommand(newEDREventsCmd())
 	cmd.AddCommand(newEDRDispatchCmd())
+	cmd.AddCommand(newEDRDismissCmd())
 	cmd.AddCommand(newEDRRevokeCmd())
 
 	cmd.PersistentFlags().String("server", "", "Trace server URL (default: http://localhost:8080)")
@@ -374,6 +376,51 @@ Actions:
 				fmt.Printf("  Target: %s\n", target)
 			}
 			fmt.Printf("\n  Use 'trace edr events %s' to see results.\n", agentID)
+			return nil
+		},
+	}
+}
+
+func newEDRDismissCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "dismiss <alert-id>",
+		Short: "Mark an alert as false positive (trains FP learning)",
+		Long: `Mark an alert as a false positive. The FP learning module tracks
+dismissals per rule+process pair. After 10 dismissals of the same
+pair, the rule is auto-throttled (suppressed for 5 minutes).
+
+Find alert IDs via 'trace edr events <agent-id>'.
+Only the alert ID is needed — the server looks up the rule and process.`,
+		Args: cobra.ExactArgs(1),
+		Example: `  trace edr dismiss a1b2c3d4-e5f6-7890-abcd-ef1234567890`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := getEDRClient(cmd.Parent())
+			if err != nil {
+				return err
+			}
+			resp, err := client.do("POST", "/api/v1/edr/alerts/dismiss", strings.NewReader(
+				fmt.Sprintf(`{"alert_id":"%s"}`, args[0])))
+			if err != nil {
+				return fmt.Errorf("dismiss failed: %w", err)
+			}
+			var result struct {
+				Status      string `json:"status"`
+				RuleName    string `json:"rule_name,omitempty"`
+				ProcessName string `json:"process_name,omitempty"`
+				Dismissals  int    `json:"dismissals,omitempty"`
+				Throttled   bool   `json:"throttled"`
+			}
+			json.Unmarshal(resp, &result)
+			fmt.Printf("\n  Alert %s: %s\n", args[0], result.Status)
+			if result.RuleName != "" {
+				fmt.Printf("  Rule:      %s\n", result.RuleName)
+				fmt.Printf("  Process:   %s\n", result.ProcessName)
+				fmt.Printf("  Dismissals: %d\n", result.Dismissals)
+				if result.Throttled {
+					fmt.Printf("  ⚠  Rule auto-throttled after %d dismissals\n", result.Dismissals)
+				}
+			}
+			fmt.Println()
 			return nil
 		},
 	}
