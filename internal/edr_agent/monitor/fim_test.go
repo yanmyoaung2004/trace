@@ -3,6 +3,7 @@ package monitor
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -159,25 +160,39 @@ func TestFIMSkipLargeFile(t *testing.T) {
 		DataDir:      dir,
 	}
 	f := NewFIMMonitor(ch, cfg)
+
+	// Create 10 files: 9 small (under 1MB) and 1 large (10MB)
+	smallPath := filepath.Join(watchDir, "small.txt")
+	os.WriteFile(smallPath, []byte("small file"), 0644)
+	largePath := filepath.Join(watchDir, "large.bin")
+	largeData := make([]byte, 10*1024*1024)
+	os.WriteFile(largePath, largeData, 0644)
+
 	f.Start(nil)
 	defer f.Stop()
 
-	// Create a file > MaxSizeMB (1MB = 1048576 bytes)
-	data := make([]byte, 10*1024*1024)
-	path := filepath.Join(watchDir, "large.bin")
-	os.WriteFile(path, data, 0644)
+	time.Sleep(200 * time.Millisecond)
 
-	// Wait for goroutine scan then run manual scan
-	time.Sleep(100 * time.Millisecond)
-	f.scan()
-
-	// Should be no events — the large file should be skipped
-	select {
-	case evt := <-ch:
-		if evt.Annotations["change_type"] == "fim_added" {
-			t.Fatalf("large file (%d bytes) should have been skipped (max %d MB)", len(data), cfg.MaxSizeMB)
+	// Should only have events for the small file
+	seenSmall, seenLarge := false, false
+	for {
+		select {
+		case evt := <-ch:
+			if strings.HasSuffix(evt.File.Path, "small.txt") {
+				seenSmall = true
+			}
+			if strings.HasSuffix(evt.File.Path, "large.bin") {
+				seenLarge = true
+			}
+		default:
+			if !seenSmall {
+				t.Fatal("expected event for small file")
+			}
+			if seenLarge {
+				t.Fatal("large file should have been skipped")
+			}
+			return
 		}
-	default:
 	}
 }
 

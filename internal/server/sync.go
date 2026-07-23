@@ -41,15 +41,16 @@ func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 				}
 			}
 			if apiKey != "" {
-				if userID, role, orgID, err := h.manager.AuthenticateOrg(r.Context(), apiKey); err == nil && userID != "" {
-					ctx := context.WithValue(r.Context(), ctxKeyRole, role)
-					if orgID != "" {
-						ctx = context.WithValue(ctx, ctxKeyOrg, orgID)
-					}
-					r = r.WithContext(ctx)
-					handler(w, r)
-					return
+		if userID, role, orgID, err := h.manager.AuthenticateOrg(r.Context(), apiKey); err == nil && userID != "" {
+				ctx := context.WithValue(r.Context(), ctxKeyRole, role)
+				ctx = context.WithValue(ctx, ctxKeyUserID, userID)
+				if orgID != "" {
+					ctx = context.WithValue(ctx, ctxKeyOrg, orgID)
 				}
+				r = r.WithContext(ctx)
+				handler(w, r)
+				return
+			}
 			}
 			writeError(w, http.StatusUnauthorized, "unauthorized — provide api_key query param or Authorization: Bearer <key>")
 		}
@@ -114,6 +115,7 @@ func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/edr/agents", readOnly(h.handleEDRAgentsList))
 	mux.HandleFunc("/api/v1/edr/agents/", readOnly(h.handleEDRAgentByID))
 	mux.HandleFunc("/api/v1/edr/vulns", agentProtected(h.handleEDRVulns))
+	mux.HandleFunc("/api/v1/compliance/snapshot", protected(h.handleComplianceSnapshot))
 	mux.HandleFunc("/api/v1/admin/orgs", adminOnly(h.handleOrgs))
 	mux.HandleFunc("/api/v1/admin/users", adminOnly(h.handleAdminUsers))
 	mux.HandleFunc("/api/v1/admin/users/", adminOnly(h.handleAdminUserByEmail))
@@ -125,11 +127,12 @@ func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 
 type contextKey string
 
-const (
-	ctxKeyRole    contextKey = "role"
-	ctxKeyOrg     contextKey = "org_id"
-	ctxKeyAgentID contextKey = "agent_id"
-)
+	const (
+		ctxKeyRole    contextKey = "role"
+		ctxKeyOrg     contextKey = "org_id"
+		ctxKeyAgentID contextKey = "agent_id"
+		ctxKeyUserID  contextKey = "user_id"
+	)
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -936,6 +939,31 @@ func (h *SyncHandler) handleAdminUserByEmail(w http.ResponseWriter, r *http.Requ
 	}
 
 	writeError(w, http.StatusNotFound, "not found")
+}
+
+func (h *SyncHandler) handleComplianceSnapshot(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	var req struct {
+		Hostname   string  `json:"hostname"`
+		Framework  string  `json:"framework"`
+		Score      float64 `json:"score"`
+		Total      int     `json:"total"`
+		Passed     int     `json:"passed"`
+		Failed     int     `json:"failed"`
+		NotCovered int     `json:"not_covered"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if err := h.manager.RecordComplianceSnapshot(r.Context(), req.Hostname, req.Framework, req.Score, req.Total, req.Passed, req.Failed, req.NotCovered, nil); err != nil {
+		writeError(w, http.StatusInternalServerError, "record failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "recorded"})
 }
 
 func (h *SyncHandler) handleEDRVulns(w http.ResponseWriter, r *http.Request) {

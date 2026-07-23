@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"os"
 
 	"github.com/yanmyoaung2004/trace/internal/compliance"
 	"github.com/yanmyoaung2004/trace/internal/plugins/sca"
@@ -76,6 +80,30 @@ Examples:
 				fmt.Printf("Report saved to %s\n", output)
 			} else {
 				fmt.Println(report.RenderText())
+			}
+
+			// Push snapshot to server if available
+			hostname, _ := os.Hostname()
+			snapshot := map[string]any{
+				"hostname":     hostname,
+				"framework":    report.Framework,
+				"score":        report.Score,
+				"total":        report.Total,
+				"passed":       report.Passed,
+				"failed":       report.Failed,
+				"not_covered":  report.NotCovered,
+			}
+			body, _ := json.Marshal(snapshot)
+			serverURL := os.Getenv("TRACE_SERVER_URL")
+			apiKey := os.Getenv("TRACE_API_KEY")
+			if serverURL != "" && apiKey != "" {
+				req, _ := http.NewRequest("POST", serverURL+"/api/v1/compliance/snapshot", bytes.NewReader(body))
+				req.Header.Set("Authorization", "Bearer "+apiKey)
+				req.Header.Set("Content-Type", "application/json")
+				resp, err := http.DefaultClient.Do(req)
+				if err == nil {
+					resp.Body.Close()
+				}
 			}
 			return nil
 		},

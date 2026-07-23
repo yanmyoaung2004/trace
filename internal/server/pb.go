@@ -126,7 +126,7 @@ func (m *ServerManager) Migrate() error {
 		`CREATE INDEX IF NOT EXISTS idx_edr_events_type ON edr_events(event_type)`,
 		`CREATE INDEX IF NOT EXISTS idx_edr_events_severity ON edr_events(severity)`,
 		`CREATE INDEX IF NOT EXISTS idx_edr_events_time ON edr_events(timestamp)`,
-		`CREATE TABLE IF NOT EXISTS edr_actions (
+`CREATE TABLE IF NOT EXISTS edr_actions (
 			id TEXT PRIMARY KEY,
 			agent_id TEXT NOT NULL REFERENCES edr_agents(id),
 			action_type TEXT NOT NULL,
@@ -137,7 +137,8 @@ func (m *ServerManager) Migrate() error {
 			error TEXT,
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
 			completed_at TEXT,
-			timeout_seconds INTEGER NOT NULL DEFAULT 30
+			timeout_seconds INTEGER NOT NULL DEFAULT 30,
+			org_id TEXT DEFAULT ''
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_edr_actions_agent ON edr_actions(agent_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_edr_actions_status ON edr_actions(status)`,
@@ -146,6 +147,7 @@ func (m *ServerManager) Migrate() error {
 			process_name TEXT NOT NULL,
 			dismissals INTEGER NOT NULL DEFAULT 1,
 			throttled INTEGER NOT NULL DEFAULT 0,
+			org_id TEXT DEFAULT '',
 			last_seen TEXT NOT NULL DEFAULT (datetime('now')),
 			PRIMARY KEY (rule_name, process_name)
 		)`,
@@ -183,6 +185,11 @@ func (m *ServerManager) Migrate() error {
 	m.db.Exec("ALTER TABLE server_users ADD COLUMN org_id TEXT DEFAULT ''")
 	m.db.Exec("ALTER TABLE edr_agents ADD COLUMN org_id TEXT DEFAULT ''")
 	m.db.Exec("ALTER TABLE edr_events ADD COLUMN org_id TEXT DEFAULT ''")
+	m.db.Exec("ALTER TABLE server_nodes ADD COLUMN org_id TEXT DEFAULT ''")
+	m.db.Exec("ALTER TABLE server_investigations ADD COLUMN org_id TEXT DEFAULT ''")
+	m.db.Exec("ALTER TABLE server_correlations ADD COLUMN org_id TEXT DEFAULT ''")
+	m.db.Exec("ALTER TABLE edr_actions ADD COLUMN org_id TEXT DEFAULT ''")
+	m.db.Exec("ALTER TABLE edr_fp_counters ADD COLUMN org_id TEXT DEFAULT ''")
 
 	return nil
 }
