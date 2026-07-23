@@ -39,6 +39,7 @@ Subcommands:
 	cmd.AddCommand(newEDRDispatchCmd())
 	cmd.AddCommand(newEDRDismissCmd())
 	cmd.AddCommand(newEDRRevokeCmd())
+	cmd.AddCommand(newEDRVulnCmd())
 
 	cmd.PersistentFlags().String("server", "", "Trace server URL (default: http://localhost:8080)")
 	cmd.PersistentFlags().String("api-key", "", "API key for server authentication")
@@ -92,16 +93,71 @@ func (c *edrAPIClient) do(method, path string, body io.Reader) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("server error (HTTP %d): %s", resp.StatusCode, string(data))
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	return data, nil
+	return io.ReadAll(resp.Body)
+}
+
+func newEDRVulnCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "vuln",
+		Short: "Query agent vulnerabilities",
+		Long:  `List and manage vulnerabilities detected by the agent's vulnerability scanner.`,
+	}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "list [agent-id]",
+		Short: "List vulnerabilities for an agent",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := getEDRClient(cmd.Parent().Parent())
+			if err != nil {
+				return err
+			}
+			minSev, _ := cmd.Flags().GetInt("min-severity")
+			url := fmt.Sprintf("/api/v1/edr/vulns?agent_id=%s", args[0])
+			if minSev > 0 {
+				url += fmt.Sprintf("&min_severity=%d", minSev)
+			}
+			data, err := client.do("GET", url, nil)
+			if err != nil {
+				return err
+			}
+			var resp struct {
+				Vulns []struct {
+					ID        string `json:"id"`
+					CVEID     string `json:"cve_id"`
+					Package   string `json:"package"`
+					CVSS      string `json:"cvss"`
+					Severity  string `json:"severity"`
+					FixedIn   string `json:"fixed_in"`
+					Timestamp string `json:"timestamp"`
+				} `json:"vulns"`
+			}
+			if err := json.Unmarshal(data, &resp); err != nil {
+				return fmt.Errorf("parse: %w", err)
+			}
+			if len(resp.Vulns) == 0 {
+				fmt.Println("No vulnerabilities found.")
+				return nil
+			}
+			fmt.Println()
+			for _, v := range resp.Vulns {
+				sev := v.Severity
+				disp := sev
+				if sev == "critical" || sev == "high" {
+					disp = strings.ToUpper(sev)
+				}
+				fmt.Printf("  %s  [%s]  %s  CVSS: %s  Fixed in: %s\n",
+					v.CVEID, disp, v.Package, v.CVSS, v.FixedIn)
+			}
+			return nil
+		},
+	})
+	cmd.Flags().Int("min-severity", 0, "Minimum severity level")
+	return cmd
 }
 
 func (c *edrAPIClient) listAgents() ([]edrAgentSummary, error) {

@@ -208,7 +208,11 @@ func (a *Agent) Start(ctx context.Context) error {
 		}
 	}
 	if a.config.VulnScanEnabled {
-		a.vulnScanner = monitor.NewVulnScanner(a.eventCh, a.config.DataDir)
+		a.vulnScanner = monitor.NewVulnScanner(a.eventCh, monitor.VulnConfig{
+			DataDir:   a.config.DataDir,
+			MinCVSS:   a.config.VulnMinCVSS,
+			ScanHours: a.config.VulnScanHours,
+		})
 		if err := a.vulnScanner.Start(ctx); err != nil {
 			log.Printf("[trace-agent] vuln scanner: %v (disabled)", err)
 		}

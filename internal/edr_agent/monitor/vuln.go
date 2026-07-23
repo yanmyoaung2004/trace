@@ -47,12 +47,26 @@ type VulnScanner struct {
 	mu        sync.Mutex
 }
 
-func NewVulnScanner(eventCh chan<- *Event, dataDir string) *VulnScanner {
+type VulnConfig struct {
+	DataDir   string
+	MinCVSS   float64
+	ScanHours int
+}
+
+func NewVulnScanner(eventCh chan<- *Event, cfg VulnConfig) *VulnScanner {
+	interval := 6 * time.Hour
+	if cfg.ScanHours > 0 {
+		interval = time.Duration(cfg.ScanHours) * time.Hour
+	}
+	minCVSS := 4.0
+	if cfg.MinCVSS > 0 {
+		minCVSS = cfg.MinCVSS
+	}
 	return &VulnScanner{
 		eventCh:  eventCh,
-		dataDir:  dataDir,
-		interval: 6 * time.Hour,
-		minCVSS:  4.0,
+		dataDir:  cfg.DataDir,
+		interval: interval,
+		minCVSS:  minCVSS,
 		done:     make(chan struct{}),
 	}
 }

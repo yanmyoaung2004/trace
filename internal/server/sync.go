@@ -102,6 +102,7 @@ func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/edr/alerts/dismiss", protected(h.handleEDRAlertDismiss))
 	mux.HandleFunc("/api/v1/edr/agents", readOnly(h.handleEDRAgentsList))
 	mux.HandleFunc("/api/v1/edr/agents/", readOnly(h.handleEDRAgentByID))
+	mux.HandleFunc("/api/v1/edr/vulns", agentProtected(h.handleEDRVulns))
 	mux.HandleFunc("/api/v1/admin/orgs", protected(h.handleOrgs))
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -853,6 +854,64 @@ func (h *SyncHandler) handleOrgs(w http.ResponseWriter, r *http.Request) {
 		orgs = append(orgs, o)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"orgs": orgs})
+}
+
+func (h *SyncHandler) handleEDRVulns(w http.ResponseWriter, r *http.Request) {
+	agentID := r.Context().Value(ctxKeyAgentID).(string)
+
+	// Query recent vuln events for this agent
+	minSevStr := r.URL.Query().Get("min_severity")
+	minSev := 0
+	if s, err := strconv.Atoi(minSevStr); err == nil && s > 0 {
+		minSev = s
+	}
+
+	rows, err := h.manager.db.QueryContext(r.Context(),
+		`SELECT id, event_type, severity, data, timestamp FROM edr_events
+		 WHERE agent_id = ? AND event_type = 'alert'
+		 AND json_extract(data, '$.annotations.source') = 'vuln_scan'
+		 AND severity >= ?
+		 ORDER BY timestamp DESC LIMIT 100`, agentID, minSev)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	defer rows.Close()
+
+	type vuln struct {
+		ID        string `json:"id"`
+		CVEID     string `json:"cve_id"`
+		Package   string `json:"package"`
+		CVSS      string `json:"cvss"`
+		Severity  string `json:"severity"`
+		FixedIn   string `json:"fixed_in"`
+		Timestamp string `json:"timestamp"`
+	}
+
+	vulns := make([]vuln, 0)
+	for rows.Next() {
+		var id, etype, data, ts string
+		var sev int
+		if err := rows.Scan(&id, &etype, &sev, &data, &ts); err != nil {
+			continue
+		}
+		var full struct {
+			Annotations map[string]string `json:"annotations"`
+		}
+		if err := json.Unmarshal([]byte(data), &full); err != nil {
+			continue
+		}
+		vulns = append(vulns, vuln{
+			ID:        id,
+			CVEID:     full.Annotations["cve_id"],
+			Package:   full.Annotations["package"],
+			CVSS:      full.Annotations["cvss"],
+			Severity:  full.Annotations["severity"],
+			FixedIn:   full.Annotations["fixed_in"],
+			Timestamp: ts,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"vulns": vulns})
 }
 
 func init() {
