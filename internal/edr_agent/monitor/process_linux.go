@@ -24,6 +24,7 @@ const (
 
 	procEventFork = 0x00000002
 	procEventExec = 0x00000004
+	procEventExit = 0x80000000
 )
 
 type cnMsg struct {
@@ -48,6 +49,20 @@ type forkEvent struct {
 	_          [4]byte
 	ChildPID   uint32
 	_          [4]byte
+}
+
+type execEvent struct {
+	ParentPID  uint32
+	_          [4]byte
+	ChildPID   uint32
+	_          [4]byte
+}
+
+type exitEvent struct {
+	PID      uint32
+	_        [4]byte
+	ExitCode uint32
+	_        [4]byte
 }
 
 type LinuxProcMonitor struct {
@@ -139,6 +154,9 @@ func (pm *LinuxProcMonitor) Stop() {
 
 func (pm *LinuxProcMonitor) readLoop() {
 	buf := make([]byte, 65536)
+	retry := 1 * time.Second
+	maxRetry := 30 * time.Second
+
 	for {
 		select {
 		case <-pm.done:
@@ -148,15 +166,67 @@ func (pm *LinuxProcMonitor) readLoop() {
 
 		n, err := unix.Read(pm.conn, buf)
 		if err != nil {
-			if err != unix.EINTR {
-				log.Printf("[proc-mon] read error: %v", err)
+			if err == unix.EINTR {
+				continue
+			}
+			log.Printf("[proc-mon] read error: %v (reconnecting in %v)", err, retry)
+
+			// Reconnect with exponential backoff
+			pm.mu.Lock()
+			unix.Close(pm.conn)
+			pm.conn = -1
+			pm.mu.Unlock()
+
+			select {
+			case <-pm.done:
 				return
+			case <-time.After(retry):
+			}
+
+			if pm.reconnect() {
+				log.Printf("[proc-mon] reconnected to netlink")
+				retry = 1 * time.Second
+			} else {
+				retry *= 2
+				if retry > maxRetry {
+					retry = maxRetry
+				}
 			}
 			continue
 		}
 
 		pm.process(buf[:n])
 	}
+}
+
+func (pm *LinuxProcMonitor) reconnect() bool {
+	fd, err := unix.Socket(unix.AF_NETLINK, unix.SOCK_DGRAM, unix.NETLINK_CONNECTOR)
+	if err != nil {
+		return false
+	}
+
+	addr := &unix.SockaddrNetlink{
+		Family: unix.AF_NETLINK,
+		Groups: cnIdxProc,
+		Pid:    uint32(os.Getpid()),
+	}
+
+	if err := unix.Bind(fd, addr); err != nil {
+		unix.Close(fd)
+		return false
+	}
+
+	if err := pm.sendListen(fd); err != nil {
+		unix.Close(fd)
+		return false
+	}
+
+	pm.mu.Lock()
+	pm.conn = fd
+	pm.seq = 0
+	pm.mu.Unlock()
+
+	return true
 }
 
 func (pm *LinuxProcMonitor) process(data []byte) {
@@ -197,6 +267,10 @@ func (pm *LinuxProcMonitor) parseCN(data []byte) {
 	switch hdr.EventType {
 	case procEventFork:
 		pm.handleFork(evtData)
+	case procEventExec:
+		pm.handleExec(evtData)
+	case procEventExit:
+		pm.handleExit(evtData)
 	}
 }
 
@@ -222,6 +296,63 @@ func (pm *LinuxProcMonitor) handleFork(data []byte) {
 	}
 	if evt.Severity >= SeverityWarning {
 		evt.Annotations = map[string]string{"source": "netlink"}
+	}
+	select {
+	case pm.eventCh <- evt:
+	default:
+	}
+}
+
+func (pm *LinuxProcMonitor) handleExec(data []byte) {
+	if len(data) < int(unsafe.Sizeof(execEvent{})) {
+		return
+	}
+	var e execEvent
+	binary.Read(bytes.NewReader(data), binary.LittleEndian, &e)
+
+	name, cmdline := readLinuxProc(int(e.ChildPID))
+	evt := &Event{
+		ID:        uuid.New().String(),
+		Timestamp: time.Now(),
+		Type:      EventAlert,
+		Severity:  SeverityWarning,
+		Process: &ProcessInfo{
+			PID:     int(e.ChildPID),
+			PPID:    int(e.ParentPID),
+			Name:    name,
+			CmdLine: cmdline,
+		},
+		Annotations: map[string]string{
+			"source": "netlink",
+			"event":  "exec",
+			"detail": "process executed new binary",
+		},
+	}
+	select {
+	case pm.eventCh <- evt:
+	default:
+	}
+}
+
+func (pm *LinuxProcMonitor) handleExit(data []byte) {
+	if len(data) < int(unsafe.Sizeof(exitEvent{})) {
+		return
+	}
+	var e exitEvent
+
+	evt := &Event{
+		ID:        uuid.New().String(),
+		Timestamp: time.Now(),
+		Type:      EventProcessTerminate,
+		Severity:  SeverityInfo,
+		Process: &ProcessInfo{
+			PID: int(e.PID),
+		},
+		Annotations: map[string]string{
+			"source":    "netlink",
+			"event":     "exit",
+			"exit_code": fmt.Sprintf("%d", e.ExitCode),
+		},
 	}
 	select {
 	case pm.eventCh <- evt:

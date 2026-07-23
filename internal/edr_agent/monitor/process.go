@@ -41,6 +41,17 @@ func NewProcessMonitor(eventCh chan<- *Event) *ProcessMonitor {
 	}
 }
 
+// jitter returns a random duration up to ±25% of the base interval
+func jitter(base time.Duration) time.Duration {
+	n := int64(base)
+	// Random jitter ±25%
+	j := n / 4
+	if n-j < 1 {
+		return base
+	}
+	return time.Duration(n - j + int64(time.Now().UnixNano())%(j*2+1))
+}
+
 func (pm *ProcessMonitor) Start(ctx context.Context) error {
 	switch runtime.GOOS {
 	case "windows":
@@ -78,7 +89,7 @@ func (pm *ProcessMonitor) startDarwin(ctx context.Context) error {
 
 func (pm *ProcessMonitor) pollingLoop(ctx context.Context) {
 	snapshotSent := false
-	tick := time.NewTicker(pm.interval)
+	tick := time.NewTicker(jitter(pm.interval))
 	defer tick.Stop()
 
 	for {
