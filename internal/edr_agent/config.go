@@ -29,9 +29,16 @@ type Config struct {
 	MonitorFile     bool `json:"monitor_file"`
 	MonitorNetwork  bool `json:"monitor_network"`
 	MonitorRegistry bool `json:"monitor_registry"`
+	MonitorFIM      bool `json:"monitor_fim"`
+	MonitorETWChannels bool `json:"monitor_etw_channels"`
 
 	WatchPaths    []string `json:"watch_paths"`
 	ExcludePaths  []string `json:"exclude_paths"`
+
+	FIMWatchPaths      []string      `json:"fim_watch_paths"`
+	FIMExcludePatterns []string      `json:"fim_exclude_patterns"`
+	FIMMaxSizeMB       int           `json:"fim_max_size_mb"`
+	FIMScanInterval    time.Duration `json:"fim_scan_interval"`
 
 	ResourceLimitCPU    float64 `json:"resource_limit_cpu"`
 	ResourceLimitMemory int64   `json:"resource_limit_memory_mb"`
@@ -59,7 +66,12 @@ func DefaultConfig() *Config {
 		MonitorFile:       true,
 		MonitorNetwork:    true,
 		MonitorRegistry:   runtime.GOOS == "windows",
+		MonitorFIM:        true,
+		MonitorETWChannels: runtime.GOOS == "windows",
 		WatchPaths:        defaultWatchPaths(),
+		FIMWatchPaths:     defaultFIMPaths(),
+		FIMMaxSizeMB:      50,
+		FIMScanInterval:   60 * time.Second,
 		ResourceLimitCPU:  0.5,
 		ResourceLimitMemory: 256,
 		MaxEventsPerSec:   500,
@@ -110,4 +122,20 @@ func defaultWatchPaths() []string {
 		return []string{"C:\\temp", "C:\\Users\\Public", "C:\\Windows\\Temp"}
 	}
 	return []string{"/tmp", "/var/tmp", "/etc"}
+}
+
+func defaultFIMPaths() []string {
+	if runtime.GOOS == "windows" {
+		return []string{
+			"C:\\Windows\\System32\\drivers\\etc\\hosts",
+			"C:\\Windows\\System32\\drivers\\etc\\services",
+			"C:\\Windows\\System32\\config",
+			"C:\\Program Files",
+		}
+	}
+	return []string{
+		"/etc/passwd", "/etc/shadow",
+		"/etc/ssh/sshd_config",
+		"/bin", "/sbin", "/usr/bin", "/usr/sbin",
+	}
 }

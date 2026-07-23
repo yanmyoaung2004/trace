@@ -37,6 +37,8 @@ type Agent struct {
 	winProcMon   *monitor.WindowsProcMonitor
 	fileMon    *monitor.FileMonitor
 	netMon     *monitor.NetworkMonitor
+	fimMon     *monitor.FIMMonitor
+	etwChannels *monitor.ETWChannelMonitor
 	exec       *response.Executor
 	eventQueue *queue.EventQueue
 
@@ -160,6 +162,25 @@ func (a *Agent) Start(ctx context.Context) error {
 			log.Printf("[trace-agent] network monitor: %v (disabled)", err)
 		}
 	}
+	if a.config.MonitorFIM {
+		fimCfg := &monitor.FIMConfig{
+			WatchPaths:      a.config.FIMWatchPaths,
+			ExcludePatterns: a.config.FIMExcludePatterns,
+			MaxSizeMB:       a.config.FIMMaxSizeMB,
+			ScanInterval:    a.config.FIMScanInterval,
+			DataDir:         a.config.DataDir,
+		}
+		a.fimMon = monitor.NewFIMMonitor(a.eventCh, fimCfg)
+		if err := a.fimMon.Start(ctx); err != nil {
+			log.Printf("[trace-agent] FIM monitor: %v (disabled)", err)
+		}
+	}
+	if runtime.GOOS == "windows" && a.config.MonitorETWChannels {
+		a.etwChannels = monitor.NewETWChannelMonitor(a.eventCh)
+		if err := a.etwChannels.Start(ctx); err != nil {
+			log.Printf("[trace-agent] ETW channels: %v (disabled)", err)
+		}
+	}
 
 	go a.loop(ctx)
 	go a.batcher(ctx, a.serverCh)
@@ -220,6 +241,12 @@ func (a *Agent) Stop(ctx context.Context) error {
 	}
 	if a.netMon != nil {
 		a.netMon.Stop()
+	}
+	if a.fimMon != nil {
+		a.fimMon.Stop()
+	}
+	if a.etwChannels != nil {
+		a.etwChannels.Stop()
 	}
 	if a.procTree != nil {
 		a.procTree.Close()
