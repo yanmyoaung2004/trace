@@ -48,13 +48,16 @@ type ReportEngine struct {
 	Evidences   []Evidence
 	DataDir     string
 	scaResults  map[string]map[string]string
+	Hostname    string
 }
 
 func NewReportEngine(scaAgent agent.Agent) *ReportEngine {
 	home, _ := os.UserHomeDir()
+	hostname, _ := os.Hostname()
 	return &ReportEngine{
 		SCAAgent: scaAgent,
 		DataDir:  filepath.Join(home, ".trace", "compliance"),
+		Hostname: hostname,
 	}
 }
 

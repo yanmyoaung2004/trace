@@ -189,23 +189,48 @@ func (a *Agent) postWebhook(ctx context.Context, url string, payload any) (agent
 		return agent.Output{"status": "error", "error": err.Error()}, nil
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
-	if err != nil {
-		return agent.Output{"status": "error", "error": err.Error()}, nil
-	}
-	req.Header.Set("Content-Type", "application/json")
+	maxRetries := 3
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
+		if err != nil {
+			return agent.Output{"status": "error", "error": err.Error()}, nil
+		}
+		req.Header.Set("Content-Type", "application/json")
 
-	resp, err := a.httpClient.Do(req)
-	if err != nil {
-		return agent.Output{"status": "error", "error": err.Error()}, nil
-	}
-	defer resp.Body.Close()
+		resp, err := a.httpClient.Do(req)
+		if err != nil {
+			if attempt < maxRetries-1 {
+				time.Sleep(time.Duration(attempt+1) * 200 * time.Millisecond)
+				continue
+			}
+			return agent.Output{"status": "error", "error": err.Error()}, nil
+		}
+		defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 {
-		return agent.Output{"status": "error", "error": fmt.Sprintf("HTTP %d", resp.StatusCode)}, nil
+		if resp.StatusCode == 429 {
+			if attempt < maxRetries-1 {
+				time.Sleep(time.Duration(attempt+1) * time.Second)
+				continue
+			}
+			return agent.Output{"status": "error", "error": "rate limited after retries"}, nil
+		}
+
+		if resp.StatusCode >= 500 {
+			if attempt < maxRetries-1 {
+				time.Sleep(time.Duration(attempt+1) * 500 * time.Millisecond)
+				continue
+			}
+			return agent.Output{"status": "error", "error": fmt.Sprintf("HTTP %d after retries", resp.StatusCode)}, nil
+		}
+
+		if resp.StatusCode >= 400 {
+			return agent.Output{"status": "error", "error": fmt.Sprintf("HTTP %d", resp.StatusCode)}, nil
+		}
+
+		return agent.Output{"status": "sent", "provider": url, "http_status": resp.StatusCode}, nil
 	}
 
-	return agent.Output{"status": "sent", "provider": url, "http_status": resp.StatusCode}, nil
+	return agent.Output{"status": "error", "error": "max retries exceeded"}, nil
 }
 
 func (a *Agent) sendTelegram(ctx context.Context, input agent.Input) (agent.Output, error) {
