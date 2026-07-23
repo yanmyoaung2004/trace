@@ -634,8 +634,26 @@ func (a *Agent) executeAction(ctx context.Context, action *transport.PendingActi
 		return
 	}
 
-	a.stats.ActionsExecuted++
-	a.client.ReportActionResult(ctx, a.agentID, action.ID, "completed", "", result)
+	// Check result status — executor may return nil error but failed result
+	status := "completed"
+	errMsg := ""
+	if result != nil {
+		if s, ok := result["status"].(string); ok && s == "failed" {
+			status = "failed"
+			if e, ok := result["error"].(string); ok {
+				errMsg = e
+			}
+		}
+	}
+
+	if status == "failed" {
+		a.stats.ActionsFailed++
+		log.Printf("[trace-agent] action %s %s: %s", action.ID, status, errMsg)
+	} else {
+		a.stats.ActionsExecuted++
+		log.Printf("[trace-agent] action %s %s", action.ID, status)
+	}
+	a.client.ReportActionResult(ctx, a.agentID, action.ID, status, errMsg, result)
 }
 
 func (a *Agent) getCPUUsage() float64 {
