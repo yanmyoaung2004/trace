@@ -48,6 +48,7 @@ type RegisterRequest struct {
 	Version       string `json:"version"`
 	KernelVersion string `json:"kernel_version,omitempty"`
 	CPUCount      int    `json:"cpu_count"`
+	CPUName       string `json:"cpu_name,omitempty"`
 	MemoryMB      int64  `json:"memory_mb"`
 	AgentVersion  string `json:"agent_version"`
 	Monitors      string `json:"monitors"`

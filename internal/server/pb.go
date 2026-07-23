@@ -103,6 +103,7 @@ func (m *ServerManager) Migrate() error {
 			cpu_count INTEGER DEFAULT 0,
 			memory_mb INTEGER DEFAULT 0,
 			kernel_version TEXT,
+			cpu_name TEXT DEFAULT '',
 			monitors TEXT,
 			api_key_hash TEXT,
 			last_heartbeat TEXT,
@@ -153,6 +154,10 @@ func (m *ServerManager) Migrate() error {
 			return fmt.Errorf("server migrate: %w", err)
 		}
 	}
+
+	// Migration: add cpu_name if missing (ignore error if column already exists)
+	m.db.Exec("ALTER TABLE edr_agents ADD COLUMN cpu_name TEXT DEFAULT ''")
+
 	return nil
 }
 

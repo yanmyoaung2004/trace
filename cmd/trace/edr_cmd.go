@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -117,8 +118,15 @@ func (c *edrAPIClient) listAgents() ([]edrAgentSummary, error) {
 	return resp.Agents, nil
 }
 
-func (c *edrAPIClient) getAgentEvents(agentID string, limit int) ([]json.RawMessage, error) {
-	data, err := c.do("GET", fmt.Sprintf("/api/v1/edr/events?agent_id=%s&limit=%d", agentID, limit), nil)
+func (c *edrAPIClient) getAgentEvents(agentID string, limit int, eventType string, minSev int) ([]json.RawMessage, error) {
+	url := fmt.Sprintf("/api/v1/edr/events?agent_id=%s&limit=%d", agentID, limit)
+	if eventType != "" {
+		url += "&type=" + eventType
+	}
+	if minSev > 0 {
+		url += "&min_severity=" + strconv.Itoa(minSev)
+	}
+	data, err := c.do("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -172,6 +180,7 @@ type edrAgentSummary struct {
 	IP            string `json:"ip"`
 	LastHeartbeat string `json:"last_heartbeat"`
 	CPUCount      int    `json:"cpu_count"`
+	CPUName       string `json:"cpu_name"`
 	MemoryMB      int64  `json:"memory_mb"`
 	CreatedAt     string `json:"created_at"`
 }
@@ -248,15 +257,19 @@ func printAgentDetail(a *edrAgentSummary) {
 	fmt.Printf("  Version:      %s\n", a.Version)
 	fmt.Printf("  Status:       %s\n", a.Status)
 	fmt.Printf("  IP Address:   %s\n", a.IP)
-	fmt.Printf("  CPU Count:    %d\n", a.CPUCount)
-	fmt.Printf("  Memory:       %d MB\n", a.MemoryMB)
+	fmt.Printf("  CPU:          %d cores", a.CPUCount)
+	if a.CPUName != "" {
+		fmt.Printf(" (%s)", a.CPUName)
+	}
+	fmt.Println()
+	fmt.Printf("  Memory:       %d GB\n", a.MemoryMB/1024)
 	fmt.Printf("  Last Seen:    %s\n", a.LastHeartbeat)
 	fmt.Printf("  Registered:   %s\n", a.CreatedAt)
 	fmt.Println()
 }
 
 func newEDREventsCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "events <agent-id>",
 		Short: "View recent events from an agent",
 		Args:  cobra.ExactArgs(1),
@@ -266,7 +279,14 @@ func newEDREventsCmd() *cobra.Command {
 				return err
 			}
 
-			events, err := client.getAgentEvents(args[0], 20)
+			limit, _ := cmd.Flags().GetInt("limit")
+			if limit <= 0 {
+				limit = 20
+			}
+			eventType, _ := cmd.Flags().GetString("type")
+			minSev, _ := cmd.Flags().GetInt("min-severity")
+
+			events, err := client.getAgentEvents(args[0], limit, eventType, minSev)
 			if err != nil {
 				return err
 			}
@@ -301,15 +321,19 @@ func newEDREventsCmd() *cobra.Command {
 				}
 				fmt.Printf("  %s  [%s]  %s\n", ts, sev, evt.Type)
 
-				if i >= 50 {
-					fmt.Println("  ... (truncated)")
-					break
-				}
+			if i >= 50 {
+				fmt.Println("  ... (truncated)")
+				break
 			}
-			fmt.Println()
-			return nil
-		},
-	}
+		}
+		return nil
+	},
+}
+
+cmd.Flags().Int("limit", 20, "Max events to show")
+cmd.Flags().String("type", "", "Filter by event type (process, file, network, memory, alert, dns)")
+cmd.Flags().Int("min-severity", 0, "Minimum severity level (1-10)")
+	return cmd
 }
 
 func newEDRDispatchCmd() *cobra.Command {

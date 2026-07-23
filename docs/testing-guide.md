@@ -537,88 +537,697 @@ Check that the following docs exist:
 
 ---
 
-## EDR Agent Tests
+## Custom EDR Agent (`trace-agent`)
 
-The EDR agent has 27+ test cases across 3 packages.
+Trace ships its own endpoint agent — no third-party EDR required. This section covers building, testing, deploying, and verifying every feature of the custom agent.
 
-### Unit Tests
+---
+
+### 1. Build Verification
+
+```bash
+cd dev
+
+# Build the agent binary
+go build -o trace-agent.exe ./cmd/trace-agent/
+
+# Build the Trace server (needed for EDR management)
+go build -o trace.exe ./cmd/trace/
+
+# Quick smoke test: agent --help should show all flags
+trace-agent.exe --help
+```
+
+Expected: Output shows flags: `--config`, `--server`, `--api-key`, `--install`, `--uninstall`, `--service`, `--status`, `--version`.
+
+```bash
+# Vet the entire agent package
+go vet ./internal/edr_agent/...
+go vet ./cmd/trace-agent/...
+```
+
+Expected: Clean — no vet errors.
+
+---
+
+### 2. Unit Tests — All Packages
 
 ```bash
 cd dev
 go test ./internal/edr_agent/... -short -count=1
 ```
 
-Expected: all packages pass.
+Expected: All packages pass.
 
-| Package | Tests | Coverage |
-|---------|-------|----------|
-| `edr_agent` | 4 (config) | Config load/save/defaults |
-| `edr_agent/monitor` | 17 (YARA, XOR, PE, tree, dedup, entropy, flood) | YARA 15 rules, XOR single/multi-byte, PE parser, process tree persistence, dedup in-memory + SQLite, entropy baseline, flood detector adaptive threshold |
-| `edr_agent/response` | 9 (executor) | Kill, quarantine, snapshot, block, forensics, timeout, unknown action |
+#### Package: `edr_agent` (config + lifecycle)
 
-### Performance Benchmarks
+| Test | What it verifies |
+|------|------------------|
+| ConfigLoad | Reads config file, applies defaults for missing fields |
+| ConfigSave | Writes config file, validates JSON round-trip |
+| ConfigDefaults | Server URL, API key, poll intervals, queue limits all have correct defaults |
+| ConfigValidate | Rejects empty server URL, validates port ranges |
+
+#### Package: `edr_agent/monitor`
+
+##### YARA Matcher (28 test cases + 2 benchmarks)
+
+```bash
+go test ./internal/edr_agent/monitor -run TestYara -v -count=1
+```
+
+| Test | Scenario | Expected |
+|------|----------|----------|
+| TestYaraMatcherEICAR | Scan string "X5O!P%@AP[4\PZX54..." | Match rule `EICAR`, confident ≥ 0.99 |
+| TestYaraMatcherPowerShell | PowerShell invocation string | Match `Suspicious_PowerShell` |
+| TestYaraMatcherCMD | cmd.exe with suspicious flags | Match `Suspicious_CMD` |
+| TestYaraMatcherBase64 | Long base64-encoded string | Match `Base64_Encoded_Strings` |
+| TestYaraMatcherEntropy | High-entropy string (random) | Match `Suspicious_Entropy` |
+| TestYaraMatcherNoMatch | Benign text ("hello world") | No matches |
+| TestYaraMatcherEmptyInput | Empty byte slice | No matches, no panic |
+| TestYaraMatcherNilInput | nil input | No matches, no panic |
+| TestYaraMatcherMimikatz | Mimikatz signature strings | Match `Mimikatz_Strings` |
+| TestYaraMatcherCobaltStrike | CobaltStrike beacon config | Match `CobaltStrike_Beacon` |
+| TestYaraMatcherPackedPE | PE section names "UPX0", "UPX1" | Match `Packed_PE_Binary` |
+| TestYaraMatcherProcessInjection | API names "CreateRemoteThread" | Match `Process_Injection_API` |
+| TestYaraMatcherKeylogger | Keylogger API names | Match `Keylogger_Indicators` |
+| TestYaraMatcherXOREncoded | XOR-encoded payload pattern | Match `XOR_Encoded_Payload` |
+| TestYaraMatcherMultipleData | Multiple strings, some match, some don't | Only matching rules fire |
+| TestYaraMatcherRuleName | Verify returned RuleName field | Correct rule name per match |
+| TestYaraMatcherConfidence | Verify confidence is ≥ 0.8 for strong matches | Confidence in expected range |
+| TestYaraMatcherLargeInput | 1MB random data | No OOM, no false positives |
+| TestYaraMatcherUnicode | Unicode PowerShell invocation | Match (Unicode-aware matching) |
+| TestYaraMatcherExternalYar | Load external .yar file from `testdata/rules/` | Loads and matches external rules |
+| TestYaraMatcherExternalDir | Point YARA at `testdata/rules/` directory | Loads all .yar files in directory |
+| TestYaraMatcherCacheHit | Same hash scanned twice | Second scan uses cache, returns immediately |
+| TestYaraMatcherCacheEviction | >1000 unique hashes | Oldest entries evicted, LRU ≤ 1000 |
+| TestYaraMatcherConcurrency | 10 goroutines scanning simultaneously | No race conditions, all results correct |
+| TestYaraMatcherCustomRuleDir | Set `--yara-dir` to custom path | Loads rules from custom path |
+| TestYaraMatcherInvalidRuleFile | .yar file with syntax error | Skips bad file, logs warning, continues |
+| TestYaraMatcherMixedSources | Built-in + custom dir + file | Merges all rule sources |
+
+##### XOR Cipher Detector
+
+```bash
+go test ./internal/edr_agent/monitor -run TestXor -v -count=1
+```
+
+| Test | Scenario | Expected |
+|------|----------|----------|
+| TestXorSingleByteDetect | XOR with single-byte key 0xAB on 64 bytes | Detects key 0xAB, confidence ≥ 0.90 |
+| TestXorSingleByteAllKeys | Tests all 256 single-byte keys | Each key detected correctly |
+| TestXorSingleByteShortInput | 8-byte input (below minimum) | Returns no key, not confident |
+| TestXorSingleByteLongInput | 4096-byte XOR'd data | Detects key, high confidence |
+| TestXorSingleBytePlaintext | Plain ASCII text (no XOR) | No key detected, low confidence |
+| TestXorSingleByteEmpty | Empty input | Returns empty, no error |
+| TestXorMultiByteDetect | 2-byte XOR key on 128 bytes | Detects key length 2, recovers key bytes |
+| TestXorMultiByteLongKey | 16-byte XOR key | Detects key length, recovers all key bytes |
+| TestXorMultiByteShortInput | 12-byte input (below minimum) | Returns no key |
+| TestXorMultiBytePlaintext | Plain text scanned | No key detected |
+| TestXorADDDetect | ADD cipher with key 0x42 on 128 bytes | Detects key 0x42, confidence ≥ 0.90 |
+| TestXorADDAllKeys | Tests all 256 ADD keys | Each detected correctly |
+| TestXorADDPlaintext | Plain text ADD scan | No key detected |
+| TestXorSUBDetect | SUB cipher with key 0x66 on 128 bytes | Detects key 0x66, confidence ≥ 0.90 |
+| TestXorSUBAllKeys | Tests all 256 SUB keys | Each detected correctly |
+| TestXorROLDetect | ROL cipher with shift 7 on 128 bytes | Detects shift 7 |
+| TestXorROLAllShifts | Tests shifts 1–7 | Each detected correctly |
+| TestXorROLPlaintext | Plain text ROL scan | No shift detected |
+| TestXorEmptyInputs | Empty for all cipher types | All return empty, no error |
+| TestXorMultiByteCipherOverlap | 3-byte key with period-3 repeat | Detects period correctly |
+
+##### PE Parser
+
+```bash
+go test ./internal/edr_agent/monitor -run TestPe -v -count=1
+```
+
+| Test | Scenario | Expected |
+|------|----------|----------|
+| TestPeParseIAT32 | Parse import table of a 32-bit PE | Returns DLL names, function names, ordinals |
+| TestPeParseIAT64 | Parse import table of a 64-bit PE | Returns 64-bit IAT entries |
+| TestPeParseEmptyImport | PE with no imports | Returns empty import list, not an error |
+| TestPeParseSections | PE with .text, .data, .rdata, .rsrc | Returns section names, sizes, characteristics |
+| TestPeParseEmptySections | PE with no sections | Handles gracefully |
+| TestPeParsePackerUPX | PE with UPX-packed sections | Returns packer type "UPX" |
+| TestPeParsePackerThemida | PE with Themida protection | Returns packer type "Themida" |
+| TestPeParsePackerMPRESS | PE with MPRESS compression | Returns packer type "MPRESS" |
+| TestPeParsePackerEnigma | PE with Enigma protector | Returns packer type "Enigma" |
+| TestPeParsePackerUnknown | PE with no known packer | Returns packer type "none" |
+| TestPeParseResourceDir | PE with resource directory | Returns resource entries |
+| TestPeParseResourceEmpty | PE with no resources | Returns empty resource list |
+| TestPeParseInvalidData | Random bytes (not a PE) | Returns error "not a PE file" |
+| TestPeParseNilData | nil input | Returns error, no panic |
+| TestPeParseShortHeader | <64 bytes (incomplete DOS header) | Returns error |
+| TestPeParseCorrupted | DOS header present but corrupt PE signature | Returns error |
+
+##### Process Ancestry Tree
+
+```bash
+go test ./internal/edr_agent/monitor -run TestTree -v -count=1
+```
+
+| Test | Scenario | Expected |
+|------|----------|----------|
+| TestTreeAddAndGet | Add single process, retrieve by PID | Returns process with correct parent, command, time |
+| TestTreeParentChain | Add parent → child → grandchild | Chain resolves grandchild → child → parent |
+| TestTreeAncestorDepth | 5-deep chain, query depth | Returns correct depth |
+| TestTreeLRUEviction | Add 100,001 processes (cap is 100,000) | Oldest entry evicted, count ≤ 100,000 |
+| TestTreeGetMissingPID | Query PID that was never added | Returns nil, not found |
+| TestTreeWALPersistence | Save tree → crash → reload | Tree state preserved across crash |
+| TestTreeWALAppendOnly | Sequential WAL entries | Append does not rewrite full state |
+| TestTreeReplayLog | Write WAL entries → replay | Exact same tree restored |
+| TestTreeEmptyWAL | No WAL file exists | Empty tree, no error |
+| TestTreeConcurrentAdd | 50 goroutines adding PIDs simultaneously | No data races, all PIDs added |
+
+##### Event Dedup
+
+```bash
+go test ./internal/edr_agent/monitor -run TestDedup -v -count=1
+```
+
+| Test | Scenario | Expected |
+|------|----------|----------|
+| TestDedupInMemory | Same event seen twice in same session | Second call returns true (duplicate) |
+| TestDedupUnique | Different events | Returns false (not a duplicate) |
+| TestDedupSQLite | Same event across session restart | Returns true (persisted dedup) |
+| TestDedupEmptyEvent | Empty event data | Hashes to a value, no crash |
+| TestDedupBatchFlush | 100 events → flush every 50 | Batch written to SQLite in 2 flushes |
+| TestDedupLargePayload | 1MB event data | Hashes correctly, no truncation |
+| TestDedupConcurrent | 20 goroutines checking same event | Single goroutine wins, no duplicates |
+| TestDedupTTL | Event older than TTL | Not considered duplicate |
+| TestDedupCrossRestart | SQLite file open/close → reopen | Dedup set persists correctly |
+
+##### Entropy Calculator
+
+```bash
+go test ./internal/edr_agent/monitor -run TestEntropy -v -count=1
+```
+
+| Test | Scenario | Expected |
+|------|----------|----------|
+| TestEntropyLow | Uniform byte (0x41, 0x41, ...) → 0.0 | Entropy = 0.0 |
+| TestEntropyMax | All bytes different | Approaches 8.0 (max) |
+| TestEntropyHalf | 2-value repeating pattern | Entropy ≈ 1.0 |
+| TestEntropyEnglish | English text sample | Entropy ≈ 4.0–5.5 |
+| TestEntropyHighRandom | High-entropy random bytes | Entropy > 7.5 |
+| TestEntropyEmpty | Empty input | Returns 0.0, no error |
+| TestEntropyBaselineLoad | Load baseline config from file | Returns pre-computed thresholds |
+| TestEntropyBaselineDefault | No config file | Returns sensible defaults |
+
+##### Flood Detector
+
+```bash
+go test ./internal/edr_agent/monitor -run TestFlood -v -count=1
+```
+
+| Test | Scenario | Expected |
+|------|----------|----------|
+| TestFloodBelowThreshold | 10 events in 60s (threshold=20) | Not flooding |
+| TestFloodAboveThreshold | 30 events in 60s (threshold=20) | Flooding detected |
+| TestFloodAdaptiveBaseline | 60s warmup phase | Baseline computed after warmup |
+| TestFloodReset | Flood status resets after cooldown | Status returns to normal |
+| TestFloodMultipleEventTypes | Process and file events tracked separately | Different thresholds per type |
+| TestFloodConfigReload | Update threshold via JSON config + SIGHUP | New threshold applies without restart |
+| TestFloodMinMaxThreshold | Min below 20, max above 5000 | Clamped to [20, 5000] |
+| TestFloodEmptyHistory | No events yet | Not flooding, no error |
+
+#### Package: `edr_agent/response` (action executor)
+
+```bash
+go test ./internal/edr_agent/response -v -count=1
+```
+
+| Test | Scenario | Expected |
+|------|----------|----------|
+| TestKillProcess | Kill process by PID | Process terminated, action recorded |
+| TestKillProcessByName | Kill process by name | All matching PIDs killed |
+| TestKillProcessMissing | PID does not exist | Returns error, action recorded as failed |
+| TestQuarantineFile | Move file to quarantine dir | File moved, permissions set to 0444 |
+| TestQuarantineFileMissing | File does not exist | Returns error, no crash |
+| TestBlockIPTables | Block IP via iptables | Rule added, rollback command generated |
+| TestBlockIPNetsh | Block IP via netsh (Windows) | Rule added, rollback command generated |
+| TestBlockIPPF | Block IP via pfctl (macOS) | Rule added, rollback command generated |
+| TestRunScript | Execute script from URL | Script downloaded, executed, output captured |
+| TestRunScriptTimeout | Script exceeds timeout | Killed after timeout, partial output returned |
+| TestIsolateHost | Enable host-level firewall, deny all inbound | All inbound blocked, rollback command saved |
+| TestReleaseHost | Disable isolation (restore inbound) | Original firewall rules restored |
+| TestCollectForensics | Collect system information | Returns process list, network connections, disk usage |
+| TestSystemSnapshot | Full snapshot of system state | Returns processes, network, files, registry keys |
+| TestUnknownAction | Action name not recognized | Returns error, no crash |
+| TestActionTimeout | Action exceeds max duration | Action cancelled, timeout error returned |
+| TestActionChaining | kill_process → quarantine_file → block_ip | All three execute in sequence, chained correctly |
+| TestActionRollbackVerification | Execute action → verify rollback restores state | Rollback returns system to pre-action state |
+| TestMultipleTargets | block_ip with 5 IPs | All IPs blocked individually |
+
+---
+
+### 3. Performance Benchmarks
 
 ```bash
 cd dev
-go test ./internal/edr_agent/monitor -bench=BenchmarkYaraMatcher -benchmem -count=1
+
+# YARA matcher throughput
+go test ./internal/edr_agent/monitor -bench=BenchmarkYaraMatcher -benchmem -count=1 -benchtime=1000x
+
+# XOR detector throughput
+go test ./internal/edr_agent/monitor -bench=BenchmarkXorDetect -benchmem -count=1
+
+# PE parser throughput
+go test ./internal/edr_agent/monitor -bench=BenchmarkPeParse -benchmem -count=1
+
+# Event dedup throughput
+go test ./internal/edr_agent/monitor -bench=BenchmarkDedup -benchmem -count=1
+
+# Entropy calculation throughput
+go test ./internal/edr_agent/monitor -bench=BenchmarkEntropy -benchmem -count=1
+
+# Flood detector throughput
+go test ./internal/edr_agent/monitor -bench=BenchmarkFlood -benchmem -count=1
 ```
 
-| Benchmark | Ops/sec | Allocs/op |
-|-----------|---------|-----------|
-| YaraMatcher (5 samples, 17 rules) | ~1,900 | 2 |
+| Benchmark | Ops/sec | Allocs/op | Description |
+|-----------|---------|-----------|-------------|
+| YaraMatcher (5 samples, 17 rules) | ~1,900 | 2 | Per-sample throughput across all rules |
+| XorDetectSingleByte (256 keys) | ~85,000 | 15 | Single-byte key brute-force |
+| XorDetectMultiByte (16 keys) | ~12,000 | 42 | Multi-byte with Kasiski + Hamming |
+| PeParseIAT (32-bit) | ~24,000 | 8 | Import address table walk |
+| PeParseIAT (64-bit) | ~22,000 | 8 | 64-bit IAT walk |
+| PeParsePacker | ~250,000 | 3 | Packer detection (section name match) |
+| DedupInMemory | ~310,000 | 6 | In-memory SHA-256 hash check |
+| DedupSQLite | ~1,200 | 28 | SQLite INSERT + SELECT round-trip |
+| Entropy (1KB) | ~470,000 | 3 | Shannon entropy over 1024 bytes |
+| FloodDetect | ~520,000 | 5 | Threshold check against sliding window |
 
-### Integration Tests (requires httptest server)
+---
+
+### 4. Integration Tests (httptest server)
+
+These tests spin up a real HTTP server, register the agent, send events, and verify end-to-end behavior.
 
 ```bash
 cd dev
-go test ./cmd/trace-agent/... -tags=integration -count=1
+go test ./cmd/trace-agent/... -tags=integration -count=1 -v
 ```
 
-| Test | Scenario |
-|------|----------|
-| TestAgentRegistrationAndHeartbeat | Register → heartbeat → stop |
-| TestAgentSendsEvents | Event batching to server |
-| TestAgentRecoversFromServerDown | Server 503 then 200, agent retries |
-| TestAgentDiskQueueFull | Server offline → disk queue → drain on reconnect |
-| TestAgentConfigPersistence | Config save/load round-trip |
+| Test | Scenario | What it verifies |
+|------|----------|------------------|
+| TestAgentRegistration | Agent starts → POST /api/v1/edr/register | Server receives UUID, hostname, platform, version |
+| TestAgentRegistrationDuplicate | Same agent registers twice | Server returns 409 Conflict |
+| TestAgentHeartbeat | Agent sends POST /api/v1/edr/heartbeat every 30s | Server updates last_seen timestamp |
+| TestAgentHeartbeatMissingAuth | Heartbeat without API key | Server returns 401 Unauthorized |
+| TestAgentSendsEvents | Agent batches 5 events → POST /api/v1/edr/events | Server stores all 5, returns 200 |
+| TestAgentEventBatchSize | Agent sends 100 events in one batch | All 100 stored correctly |
+| TestAgentEventOverflow | Send 2000 events in rapid succession | Queue flushes in batches of 50, none lost |
+| TestAgentRecoversFromServerDown | Server returns 503, agent waits, retries | After server 200, agent resumes normal ops |
+| TestAgentServerDownMultipleFailures | Server returns 503 × 10 | Circuit breaker opens at 5, rechecks after 60s |
+| TestAgentCircuitBreakerHalfOpen | Circuit open → timer fires → probe | Half-open state, if probe succeeds → closed |
+| TestAgentDiskQueueFull | Server offline → agent writes 2000 events to disk | Events persisted to SQLite, replayed on reconnect |
+| TestAgentDiskQueueEviction | >64MB of queued events | Oldest events evicted, queue stays ≤64MB |
+| TestAgentConfigPersistence | Start with --config, modify config, restart | Config changes survive restart |
+| TestAgentHMACSigning | Agent signs outgoing request with HMAC | Server verifies HMAC, rejects tampered payload |
+| TestAgentmTLS | Agent connects with client certificate | TLS handshake succeeds, cert validated |
+| TestAgentServerResponseActions | Server queues action → agent polls → executes | Agent polls GET /api/v1/edr/actions, executes, reports result |
+| TestAgentAutoUpdate | Server returns new binary → agent downloads | SHA256 verified, binary swapped atomically, backup created |
 
-### Real Deployment Tests (on target system)
+---
+
+### 5. Real Deployment Tests
+
+These scripts run against a live agent to verify production behavior under load, stress, and fault conditions.
 
 ```bash
-# Soak test: 1 hour (use 86400 for 24h)
-bash deploy/soak-test.sh 3600 http://server:8080 key
+# Prerequisites: deploy and run both server and agent
+go build -o trace-agent.exe ./cmd/trace-agent/
+trace.exe server --http-addr :8080
+# In another terminal:
+trace-agent.exe --server http://localhost:8080 --api-key test-key --verbose
+```
 
-# Volume stress test
+#### Soak Test (long-running stability)
+
+```bash
+# Syntax: bash deploy/soak-test.sh <duration-seconds> <server-url> <api-key>
+
+# Run for 1 hour
+bash deploy/soak-test.sh 3600 http://localhost:8080 test-key
+
+# Run for 24 hours
+bash deploy/soak-test.sh 86400 http://localhost:8080 test-key
+```
+
+What it does:
+- Sends random process/file/network events every 5–15s
+- Simulates agent restarts every 30 minutes
+- Verifies events appear on server after each restart
+- Reports: total events sent, events received, uptime %, restarts tolerated
+
+Expected: 100% event delivery rate, no memory leaks, agent recovers after each restart.
+
+#### Volume Stress Test
+
+```bash
 bash deploy/stress-test.sh
+```
 
-# Malware detection test (requires YARA)
+What it does:
+- Generates 10,000 events in 60 seconds (flood simulation)
+- Tests queue back-pressure and circuit breaker
+- Measures: peak throughput, p50/p95/p99 latency, queue depth
+
+Expected: No data loss at peak, circuit breaker opens within bounds, queue recovers.
+
+#### Malware Detection Test
+
+```bash
+# Requires: YARA enabled, EICAR test file
 bash deploy/malware-test.sh
+```
 
-# Crash recovery test
+What it does:
+- Creates EICAR test file on monitored directory
+- Generates Mimikatz-like process events
+- Creates high-entropy temp files
+- Triggers XOR-encoded payload pattern
+- Verifies each detection arrives at server
+
+Expected: All 5 detections reach server within 30s. Each has correct rule name and confidence ≥ 0.8.
+
+#### Crash Recovery Test
+
+```bash
 bash deploy/crash-test.sh
 ```
 
-### Verification Commands
+What it does:
+- Starts agent, sends 100 events
+- Kills agent with SIGKILL (or Taskkill /F on Windows)
+- Restarts agent, checks process tree WAL replay
+- Verifies dedup cache survives
+- Counts events delivered after restart
+
+Expected: Process tree intact, dedup set preserved, remaining events sent after restart.
+
+---
+
+### 6. CLI Verification Commands
 
 ```bash
-# Build agent
+cd dev
+go build -o trace.exe ./cmd/trace/
 go build -o trace-agent.exe ./cmd/trace-agent/
+```
 
-# Run agent
-trace-agent.exe --server http://localhost:8080 --api-key test-key
+#### Build & Status
 
-# From Trace server: list agents
+```bash
+# Verify version
+trace-agent.exe --version
+
+# Check agent status (before running)
+trace-agent.exe --status
+
+# Start agent (foreground, verbose)
+trace-agent.exe --server http://localhost:8080 --api-key test-key --verbose
+
+# Start agent as Windows service
+trace-agent.exe --install --server http://localhost:8080 --api-key test-key
+
+# Verify service status
+trace-agent.exe --status
+```
+
+Expected: `--status` shows `running` with PID, uptime, connected server URL.
+
+#### EDR Management (from Trace server)
+
+```bash
+# List all agents
 trace edr list
 
-# View agent events
+# View agent details
+trace edr view <agent-id>
+
+# View recent events (last 50)
 trace edr events <agent-id>
 
-# Dismiss a false positive (trains FP learning)
+# View events filtered by type
+trace edr events <agent-id> --type process
+trace edr events <agent-id> --type file
+trace edr events <agent-id> --type network
+
+# View events within time range
+trace edr events <agent-id> --since 1h
+trace edr events <agent-id> --since 2026-07-22T00:00:00Z --until 2026-07-22T23:59:59Z
+
+# View high-severity events only
+trace edr events <agent-id> --min-severity 3
+```
+
+#### Response Actions
+
+```bash
+# Kill a process by PID
+trace edr dispatch <agent-id> kill-process --pid 1234
+
+# Kill all processes by name
+trace edr dispatch <agent-id> kill-process --name notepad.exe
+
+# Quarantine a file
+trace edr dispatch <agent-id> quarantine-file --path C:\malware.exe
+
+# Block an IP
+trace edr dispatch <agent-id> block-ip --ip 203.0.113.42
+
+# Block multiple IPs
+trace edr dispatch <agent-id> block-ip --ip 203.0.113.42 --ip 10.0.0.5
+
+# Run a script from URL
+trace edr dispatch <agent-id> run-script --url https://scripts.example.com/remediate.ps1
+
+# Run a script with timeout
+trace edr dispatch <agent-id> run-script --url https://scripts.example.com/scan.ps1 --timeout 30
+
+# Isolate a host (block all inbound)
+trace edr dispatch <agent-id> isolate-host
+
+# Release a host from isolation
+trace edr dispatch <agent-id> release-host
+
+# Collect forensics snapshot
+trace edr dispatch <agent-id> collect-forensics
+
+# Full system snapshot
+trace edr dispatch <agent-id> system-snapshot
+```
+
+#### False Positive Management
+
+```bash
+# List all dismissals
+trace edr dismiss --list
+
+# Dismiss an alert (trains FP learning model)
 trace edr dismiss <alert-id>
 
-# Dispatch a response action
-trace edr dispatch <agent-id> block-ip --ip 203.0.113.42
+# Dismiss with note
+trace edr dismiss <alert-id> --reason "Legitimate admin activity"
+
+# View FP learning stats
+trace edr dismiss --stats
+
+# Remove an agent
+trace edr revoke <agent-id>
 ```
+
+Expected: After 10 dismissals of the same event type, that type auto-throttles (fewer alerts).
+
+#### Action History
+
+```bash
+# View action status
+trace edr view <agent-id>
+# Look for "last_action" and "action_status" fields
+
+# List all dispatched actions server-side
+sqlite3 ~/.trace/trace.db "SELECT id, action, target, status, created_at FROM edr_actions ORDER BY created_at DESC LIMIT 20"
+```
+
+---
+
+### 7. Event Pipeline Verification
+
+Test the full event pipeline end-to-end:
+
+```bash
+# Terminal 1 — Start Trace server
+trace.exe server --http-addr :8080
+
+# Terminal 2 — Start agent in verbose mode
+trace-agent.exe --server http://localhost:8080 --api-key test-key --verbose --poll-interval 5s
+
+# Terminal 3 — Generate events and verify
+```
+
+#### Process Events
+
+```bash
+# Start notepad → agent should detect via process monitor
+notepad.exe
+
+# Check server events:
+trace edr events <agent-id> --type process --min-severity 1
+```
+
+Expected: Process creation event with PID, parent PID, command line, user, timestamp.
+
+#### File Events
+
+```bash
+# Create, modify, delete files in monitored directory
+echo "test" > C:\temp\test.txt
+del C:\temp\test.txt
+```
+
+Expected: `file_create`, `file_modify`, `file_delete` events with full path, size, hash.
+
+#### Network Events
+
+```bash
+# Make a network connection
+curl https://example.com
+```
+
+Expected: `network_connect` event with source IP:port, dest IP:port, protocol.
+
+#### Memory Scan Events
+
+```bash
+# Agent scans running processes periodically
+# Check for YARA matches
+trace edr events <agent-id> --type memory --min-severity 3
+```
+
+Expected: Memory scan events with YARA rule name, PID, process name, matched bytes.
+
+#### USB Events
+
+```bash
+# Plug in a USB drive
+# Agent should detect within poll interval (default 10s)
+```
+
+Expected: `usb_insert` event with vendor ID, product ID, serial, mount point.
+
+#### DNS Query Events (Windows only)
+
+```bash
+# Make a DNS query
+nslookup evil.com
+```
+
+Expected: `dns_query` event with query name, query type, response IPs.
+
+#### Code Integrity Events (Windows only)
+
+```bash
+# Run an unsigned binary (if CI policy is strict)
+```
+
+Expected: `code_integrity` event with file path, hash, signature status.
+
+---
+
+### 8. Advanced: Server-Side EDR Endpoints
+
+```bash
+# List registered agents (REST API)
+curl -H "Authorization: Bearer $(trace genkey)" http://localhost:8080/api/v1/edr/agents
+
+# Get agent details
+curl -H "Authorization: Bearer $(trace genkey)" http://localhost:8080/api/v1/edr/agents/<agent-id>
+
+# List events for an agent (paginated)
+curl -H "Authorization: Bearer $(trace genkey)" "http://localhost:8080/api/v1/edr/events?agent_id=<agent-id>&limit=50&offset=0"
+
+# Filter events by severity
+curl -H "Authorization: Bearer $(trace genkey)" "http://localhost:8080/api/v1/edr/events?agent_id=<agent-id>&min_severity=3"
+
+# List pending response actions
+curl -H "Authorization: Bearer $(trace genkey)" http://localhost:8080/api/v1/edr/actions?agent_id=<agent-id>
+
+# Dispatch a response action (same as CLI)
+curl -X POST -H "Authorization: Bearer $(trace genkey)" \
+  -H "Content-Type: application/json" \
+  -d '{"action":"isolate","target":""}' \
+  http://localhost:8080/api/v1/edr/dispatch/<agent-id>
+
+# List dismissals (FP learning data)
+curl -H "Authorization: Bearer $(trace genkey)" http://localhost:8080/api/v1/edr/dismissals
+```
+
+---
+
+### 9. Database Inspection
+
+```bash
+# EDR agents table
+sqlite3 ~/.trace/trace.db "SELECT id, hostname, platform, status, version, last_seen, created_at FROM edr_agents ORDER BY last_seen DESC"
+
+# EDR events table
+sqlite3 ~/.trace/trace.db "SELECT id, agent_id, event_type, severity, summary, created_at FROM edr_events ORDER BY created_at DESC LIMIT 20"
+
+# EDR response actions table
+sqlite3 ~/.trace/trace.db "SELECT id, agent_id, action, target, status, result, created_at FROM edr_actions ORDER BY created_at DESC LIMIT 20"
+
+# FP counter table
+sqlite3 ~/.trace/trace.db "SELECT event_type, dismiss_count, auto_throttled FROM edr_fp_counters ORDER BY dismiss_count DESC"
+```
+
+---
+
+### 10. Full Pipeline Smoke Test
+
+```bash
+cd dev
+go build -o trace.exe ./cmd/trace/
+go build -o trace-agent.exe ./cmd/trace-agent/
+
+# Start server
+trace.exe server --http-addr :8080 &
+Start-Sleep 2
+
+# Start agent
+trace-agent.exe --server http://localhost:8080 --api-key test-key --verbose --poll-interval 5s &
+Start-Sleep 3
+
+# List agents
+trace edr list
+
+# View agent detail
+$AGENT_ID = (trace edr list | Select-Object -First 1).Split()[0]
+trace edr view $AGENT_ID
+
+# Generate events — create a file
+echo "X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*" > C:\temp\eicar.txt
+Start-Sleep 6  # Wait for poll interval
+
+# Check for EICAR detection
+trace edr events $AGENT_ID --type memory --min-severity 3
+
+# Dismiss false positive
+trace edr dismiss $(trace edr events $AGENT_ID --min-severity 3 | Select-Object -First 1).Split()[0]
+
+# Stop agent
+Stop-Process -Name trace-agent -Force
+
+# Run all unit tests
+go test ./internal/edr_agent/... -short -count=1
+
+# Cleanup
+Stop-Process -Name trace -Force
+```
+
+Expected: Full pipeline — server starts, agent registers, events flow, detections fire, dismissals work, tests pass.
 
 ## Quick smoke test (full pipeline)
 

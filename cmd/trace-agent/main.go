@@ -30,6 +30,7 @@ func main() {
 		serviceMode  = flag.Bool("service", false, "Run as system service (used by SCM)")
 		showVersion  = flag.Bool("version", false, "Show version")
 		showStatus   = flag.Bool("status", false, "Show agent status")
+		verbose      = flag.Bool("verbose", false, "Enable verbose logging")
 	)
 	_ = showStatus
 	flag.Parse()
@@ -75,11 +76,11 @@ func main() {
 	}
 
 	if *serviceMode {
-		service.RunService(func() { runAgent(cfg) }, func() {})
+		runAgent(cfg, *verbose)
 		return
 	}
 
-	runAgent(cfg)
+	runAgent(cfg, *verbose)
 }
 
 func readAgentStatus(cfg *edr_agent.Config) (string, error) {
@@ -141,8 +142,12 @@ func loadConfig(path string) *edr_agent.Config {
 	return cfg
 }
 
-func runAgent(cfg *edr_agent.Config) {
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+func runAgent(cfg *edr_agent.Config, verbose bool) {
+	if verbose {
+		log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.Lshortfile)
+	} else {
+		log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+	}
 	log.Printf("[trace-agent] v%s (%s/%s)", version, runtime.GOOS, runtime.GOARCH)
 
 	agent := edr_agent.New(cfg)

@@ -27,6 +27,7 @@ type Agent struct {
 	startedAt  time.Time
 
 	eventCh    chan *monitor.Event
+	serverCh   chan *monitor.Event
 	done       chan struct{}
 	mu         sync.Mutex
 	running    bool
@@ -89,6 +90,7 @@ func New(cfg *Config) *Agent {
 		client:   client,
 		hostname: hostname,
 		eventCh:  eventCh,
+		serverCh: make(chan *monitor.Event, cfg.EventQueueSize),
 		done:     make(chan struct{}),
 		exec:     exec,
 		yara:     monitor.NewYaraMatcher(),
@@ -160,7 +162,7 @@ func (a *Agent) Start(ctx context.Context) error {
 	}
 
 	go a.loop(ctx)
-	go a.batcher(ctx)
+	go a.batcher(ctx, a.serverCh)
 	go a.actionPoller(ctx)
 
 	eq, err := queue.New(filepath.Join(a.config.DataDir, "queue"), a.config.EventQueueSize)
@@ -250,6 +252,7 @@ func (a *Agent) register(ctx context.Context) error {
 		Version:       info.Version,
 		KernelVersion: info.KernelVersion,
 		CPUCount:      info.CPUCount,
+		CPUName:       info.CPUName,
 		MemoryMB:      info.MemoryMB,
 		AgentVersion:  info.AgentVersion,
 		Monitors:      info.Monitors,
@@ -281,6 +284,7 @@ type SystemInfo struct {
 	Version       string `json:"version"`
 	KernelVersion string `json:"kernel_version,omitempty"`
 	CPUCount      int    `json:"cpu_count"`
+	CPUName       string `json:"cpu_name,omitempty"`
 	MemoryMB      int64  `json:"memory_mb"`
 	AgentVersion  string `json:"agent_version"`
 	Monitors      string `json:"monitors"`
@@ -297,7 +301,8 @@ func (a *Agent) collectSystemInfo() (*SystemInfo, error) {
 		Monitors:     fmt.Sprintf("process:%v,file:%v,net:%v", a.config.MonitorProcess, a.config.MonitorFile, a.config.MonitorNetwork),
 	}
 
-	if runtime.GOOS == "linux" {
+	switch runtime.GOOS {
+	case "linux":
 		if data, err := os.ReadFile("/proc/sys/kernel/osrelease"); err == nil {
 			info.KernelVersion = string(data)
 		}
@@ -306,6 +311,9 @@ func (a *Agent) collectSystemInfo() (*SystemInfo, error) {
 			fmt.Sscanf(string(data), "MemTotal: %d kB", &total)
 			info.MemoryMB = total / 1024
 		}
+	case "windows":
+		info.MemoryMB = getWindowsTotalRAM()
+		info.CPUName = getWindowsCPUName()
 	}
 
 	return info, nil
@@ -352,7 +360,7 @@ func (a *Agent) sendHeartbeat(ctx context.Context) {
 	a.stats.HeartbeatsSent++
 }
 
-func (a *Agent) batcher(ctx context.Context) {
+func (a *Agent) batcher(ctx context.Context, ch <-chan *monitor.Event) {
 	batchTick := time.NewTicker(a.config.BatchInterval)
 	defer batchTick.Stop()
 
@@ -373,7 +381,7 @@ func (a *Agent) batcher(ctx context.Context) {
 				a.flushBatch(ctx, batch)
 			}
 			return
-		case evt := <-a.eventCh:
+		case evt := <-ch:
 			select {
 			case <-rateLimiter:
 				batch = append(batch, evt)
@@ -439,6 +447,13 @@ func (a *Agent) analysisLoop(ctx context.Context) {
 			a.procTree.Insert(evt)
 			a.procTree.WALAppend(evt)
 			a.correlator.Ingestion(evt)
+
+			// Forward to server batch channel
+			select {
+			case a.serverCh <- evt:
+			default:
+				log.Printf("[trace-agent] server channel full, dropping event")
+			}
 
 			if a.yara != nil {
 				if evt.Type == monitor.EventProcessCreate && evt.Process != nil {
@@ -639,14 +654,17 @@ func (a *Agent) getCPUUsage() float64 {
 }
 
 func (a *Agent) getMemoryUsage() int64 {
-	if runtime.GOOS != "linux" {
-		return 0
+	switch runtime.GOOS {
+	case "linux":
+		data, err := os.ReadFile("/proc/self/status")
+		if err != nil {
+			return 0
+		}
+		var rss int64
+		fmt.Sscanf(string(data), "VmRSS: %d kB", &rss)
+		return rss / 1024
+	case "windows":
+		return getWindowsProcessMemoryMB()
 	}
-	data, err := os.ReadFile("/proc/self/status")
-	if err != nil {
-		return 0
-	}
-	var rss int64
-	fmt.Sscanf(string(data), "VmRSS: %d kB", &rss)
-	return rss / 1024
+	return 0
 }

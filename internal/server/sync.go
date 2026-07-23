@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -272,6 +273,7 @@ func (h *SyncHandler) handleEDRRegister(w http.ResponseWriter, r *http.Request) 
 		Version       string `json:"version"`
 		KernelVersion string `json:"kernel_version,omitempty"`
 		CPUCount      int    `json:"cpu_count"`
+		CPUName       string `json:"cpu_name"`
 		MemoryMB      int64  `json:"memory_mb"`
 		AgentVersion  string `json:"agent_version"`
 		Monitors      string `json:"monitors"`
@@ -287,12 +289,15 @@ func (h *SyncHandler) handleEDRRegister(w http.ResponseWriter, r *http.Request) 
 
 	id := uuid.New().String()
 	now := time.Now().UTC().Format(time.RFC3339)
-	ip := strings.Split(r.RemoteAddr, ":")[0]
+	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if ip == "" {
+		ip = r.RemoteAddr
+	}
 
 	_, err := h.manager.db.ExecContext(r.Context(),
-		`INSERT INTO edr_agents (id, hostname, platform, arch, version, agent_version, status, ip_address, cpu_count, memory_mb, kernel_version, monitors, last_heartbeat, last_ip, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, req.Hostname, req.Platform, req.Arch, req.Version, req.AgentVersion, ip, req.CPUCount, req.MemoryMB, req.KernelVersion, req.Monitors, now, ip, now, now)
+		`INSERT INTO edr_agents (id, hostname, platform, arch, version, agent_version, status, ip_address, cpu_count, cpu_name, memory_mb, kernel_version, monitors, last_heartbeat, last_ip, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, req.Hostname, req.Platform, req.Arch, req.Version, req.AgentVersion, ip, req.CPUCount, req.CPUName, req.MemoryMB, req.KernelVersion, req.Monitors, now, ip, now, now)
 	if err != nil {
 		log.Printf("[edr] register error: %v", err)
 		writeError(w, http.StatusInternalServerError, "registration failed")
@@ -329,7 +334,10 @@ func (h *SyncHandler) handleEDRHeartbeat(w http.ResponseWriter, r *http.Request)
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	ip := strings.Split(r.RemoteAddr, ":")[0]
+	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if ip == "" {
+		ip = r.RemoteAddr
+	}
 
 	_, err := h.manager.db.ExecContext(r.Context(),
 		`UPDATE edr_agents SET status = ?, last_heartbeat = ?, last_ip = ?, updated_at = ? WHERE id = ?`,
@@ -527,9 +535,14 @@ func (h *SyncHandler) handleEDRActionResult(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *SyncHandler) handleEDRAgentsList(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.manager.db.QueryContext(r.Context(),
-		`SELECT id, hostname, platform, arch, agent_version, status, ip_address, last_heartbeat, cpu_count, memory_mb, created_at
-		 FROM edr_agents ORDER BY last_heartbeat DESC`)
+	onlyActive := r.URL.Query().Get("all") != "true"
+	query := `SELECT id, hostname, platform, arch, agent_version, status, ip_address, last_heartbeat, cpu_count, cpu_name, memory_mb, created_at
+		 FROM edr_agents`
+	if onlyActive {
+		query += ` WHERE status = 'active'`
+	}
+	query += ` ORDER BY last_heartbeat DESC`
+	rows, err := h.manager.db.QueryContext(r.Context(), query)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "query error")
 		return
@@ -546,6 +559,7 @@ func (h *SyncHandler) handleEDRAgentsList(w http.ResponseWriter, r *http.Request
 		IP            string `json:"ip"`
 		LastHeartbeat string `json:"last_heartbeat"`
 		CPUCount      int    `json:"cpu_count"`
+		CPUName       string `json:"cpu_name"`
 		MemoryMB      int64  `json:"memory_mb"`
 		CreatedAt     string `json:"created_at"`
 	}
@@ -553,7 +567,7 @@ func (h *SyncHandler) handleEDRAgentsList(w http.ResponseWriter, r *http.Request
 	agents := []*agent{}
 	for rows.Next() {
 		var a agent
-		if err := rows.Scan(&a.ID, &a.Hostname, &a.Platform, &a.Arch, &a.Version, &a.Status, &a.IP, &a.LastHeartbeat, &a.CPUCount, &a.MemoryMB, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Hostname, &a.Platform, &a.Arch, &a.Version, &a.Status, &a.IP, &a.LastHeartbeat, &a.CPUCount, &a.CPUName, &a.MemoryMB, &a.CreatedAt); err != nil {
 			continue
 		}
 		agents = append(agents, &a)
@@ -591,13 +605,14 @@ func (h *SyncHandler) handleEDRAgentByID(w http.ResponseWriter, r *http.Request)
 		IP        string `json:"ip"`
 		LastSeen  string `json:"last_heartbeat"`
 		CPUCount  int    `json:"cpu_count"`
+		CPUName   string `json:"cpu_name"`
 		MemoryMB  int64  `json:"memory_mb"`
 		CreatedAt string `json:"created_at"`
 	}
 	err := h.manager.db.QueryRowContext(r.Context(),
-		`SELECT id, hostname, platform, arch, agent_version, status, ip_address, last_heartbeat, cpu_count, memory_mb, created_at
+		`SELECT id, hostname, platform, arch, agent_version, status, ip_address, last_heartbeat, cpu_count, cpu_name, memory_mb, created_at
 		 FROM edr_agents WHERE id = ?`, id).Scan(
-		&a.ID, &a.Hostname, &a.Platform, &a.Arch, &a.Version, &a.Status, &a.IP, &a.LastSeen, &a.CPUCount, &a.MemoryMB, &a.CreatedAt)
+		&a.ID, &a.Hostname, &a.Platform, &a.Arch, &a.Version, &a.Status, &a.IP, &a.LastSeen, &a.CPUCount, &a.CPUName, &a.MemoryMB, &a.CreatedAt)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "agent not found")
 		return
@@ -612,15 +627,39 @@ func (h *SyncHandler) handleEDREventsQuery(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	limitStr := r.URL.Query().Get("limit")
 	limit := 50
-	if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 500 {
+	if l, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && l > 0 && l <= 500 {
 		limit = l
 	}
 
-	rows, err := h.manager.db.QueryContext(r.Context(),
-		`SELECT event_type, severity, timestamp, data FROM edr_events
-		 WHERE agent_id = ? ORDER BY timestamp DESC LIMIT ?`, agentID, limit)
+	eventType := r.URL.Query().Get("type")
+	minSev := 0
+	if s, err := strconv.Atoi(r.URL.Query().Get("min_severity")); err == nil && s > 0 {
+		minSev = s
+	}
+
+	var rows *sql.Rows
+	var err error
+	if eventType != "" && minSev > 0 {
+		rows, err = h.manager.db.QueryContext(r.Context(),
+			`SELECT event_type, severity, timestamp, data FROM edr_events
+			 WHERE agent_id = ? AND event_type LIKE ? AND severity >= ? ORDER BY timestamp DESC LIMIT ?`,
+			agentID, eventType+"%", minSev, limit)
+	} else if eventType != "" {
+		rows, err = h.manager.db.QueryContext(r.Context(),
+			`SELECT event_type, severity, timestamp, data FROM edr_events
+			 WHERE agent_id = ? AND event_type LIKE ? ORDER BY timestamp DESC LIMIT ?`,
+			agentID, eventType+"%", limit)
+	} else if minSev > 0 {
+		rows, err = h.manager.db.QueryContext(r.Context(),
+			`SELECT event_type, severity, timestamp, data FROM edr_events
+			 WHERE agent_id = ? AND severity >= ? ORDER BY timestamp DESC LIMIT ?`,
+			agentID, minSev, limit)
+	} else {
+		rows, err = h.manager.db.QueryContext(r.Context(),
+			`SELECT event_type, severity, timestamp, data FROM edr_events
+			 WHERE agent_id = ? ORDER BY timestamp DESC LIMIT ?`, agentID, limit)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "query error")
 		return

@@ -59,7 +59,7 @@ func DefaultConfig() *Config {
 		MonitorFile:       true,
 		MonitorNetwork:    true,
 		MonitorRegistry:   runtime.GOOS == "windows",
-		WatchPaths:        []string{"/tmp", "/var/tmp", "/etc"},
+		WatchPaths:        defaultWatchPaths(),
 		ResourceLimitCPU:  0.5,
 		ResourceLimitMemory: 256,
 		MaxEventsPerSec:   500,
@@ -103,4 +103,11 @@ func (c *Config) Save(path string) error {
 		return fmt.Errorf("write config: %w", err)
 	}
 	return nil
+}
+
+func defaultWatchPaths() []string {
+	if runtime.GOOS == "windows" {
+		return []string{"C:\\temp", "C:\\Users\\Public", "C:\\Windows\\Temp"}
+	}
+	return []string{"/tmp", "/var/tmp", "/etc"}
 }
