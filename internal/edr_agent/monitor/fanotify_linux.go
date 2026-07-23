@@ -3,6 +3,7 @@
 package monitor
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -168,30 +169,52 @@ func (m *FanotifyMonitor) emitEvent(mask int64, path string, pid int) {
 
 	switch {
 	case mask&unix.FAN_OPEN != 0:
-		etype = EventFileCreate
-		if isSuspiciousPath(path) {
-			sev = SeverityWarning
-		}
+		// File opened for reading — not creation
+		etype = EventAlert
+		sev = SeverityInfo
 	case mask&unix.FAN_ACCESS != 0:
-		etype = EventNetListen
+		// File accessed (read) — not network
+		etype = EventAlert
+		sev = SeverityInfo
 	case mask&unix.FAN_MODIFY != 0:
 		etype = EventFileModify
 	case mask&unix.FAN_CLOSE_WRITE != 0:
+		// File was written and closed — treat as modification
 		etype = EventFileModify
+	case mask&unix.FAN_OPEN_EXEC != 0:
+		// Binary execution detected
+		etype = EventAlert
+		sev = SeverityAlert
 	default:
 		return
 	}
 
-	evt := &Event{
-		ID:        uuid.New().String(),
-		Timestamp: time.Now(),
-		Type:      etype,
-		Severity:  sev,
-		File:      &FileInfo{Path: path},
-		Process:   &ProcessInfo{PID: pid},
+	annotations := map[string]string{
+		"source": "fanotify",
 	}
-	if sev >= SeverityWarning {
-		evt.Annotations = map[string]string{"source": "fanotify", "reason": "file_open"}
+
+	switch etype {
+	case EventAlert:
+		annotations["mask"] = fmt.Sprintf("0x%x", mask)
+		if mask&unix.FAN_OPEN_EXEC != 0 {
+			annotations["reason"] = "binary_execution"
+		} else if mask&unix.FAN_OPEN != 0 {
+			annotations["reason"] = "file_open"
+		} else if mask&unix.FAN_ACCESS != 0 {
+			annotations["reason"] = "file_access"
+		}
+	case EventFileModify:
+		annotations["reason"] = "file_modified"
+	}
+
+	evt := &Event{
+		ID:          uuid.New().String(),
+		Timestamp:   time.Now(),
+		Type:        etype,
+		Severity:    sev,
+		File:        &FileInfo{Path: path},
+		Process:     &ProcessInfo{PID: pid},
+		Annotations: annotations,
 	}
 
 	select {

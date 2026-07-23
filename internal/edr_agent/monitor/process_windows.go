@@ -179,8 +179,12 @@ func (pm *WindowsProcMonitor) pollEvents(after string) []*procEventJSON {
 	}
 
 	// Fallback: use PowerShell if wevtutil parsing returned nothing
+	// (wevtutil output is locale-dependent; Get-WinEvent properties are not)
 	if len(events) == 0 {
 		events = pm.pollEventsPowerShell(after)
+		if events == nil {
+			log.Printf("[proc-mon] wevtutil + PowerShell both failed (locale issue?)")
+		}
 	}
 
 	return events

@@ -51,6 +51,8 @@ func (m *InotifyFileMonitor) Start(ctx context.Context) error {
 		return nil
 	}
 
+	checkInotifyLimits()
+
 	fd, err := unix.InotifyInit()
 	if err != nil {
 		log.Printf("[file-mon] inotify_init: %v", err)
