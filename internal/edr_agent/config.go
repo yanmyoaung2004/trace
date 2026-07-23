@@ -40,6 +40,10 @@ type Config struct {
 	FIMMaxSizeMB       int           `json:"fim_max_size_mb"`
 	FIMScanInterval    time.Duration `json:"fim_scan_interval"`
 
+	VulnScanEnabled bool    `json:"vuln_scan_enabled"`
+	VulnMinCVSS     float64 `json:"vuln_min_cvss"`
+	VulnScanHours   int     `json:"vuln_scan_hours"`
+
 	ResourceLimitCPU    float64 `json:"resource_limit_cpu"`
 	ResourceLimitMemory int64   `json:"resource_limit_memory_mb"`
 	MaxEventsPerSec     int     `json:"max_events_per_sec"`
@@ -72,6 +76,9 @@ func DefaultConfig() *Config {
 		FIMWatchPaths:     defaultFIMPaths(),
 		FIMMaxSizeMB:      50,
 		FIMScanInterval:   60 * time.Second,
+		VulnScanEnabled:   true,
+		VulnMinCVSS:       4.0,
+		VulnScanHours:     6,
 		ResourceLimitCPU:  0.5,
 		ResourceLimitMemory: 256,
 		MaxEventsPerSec:   500,

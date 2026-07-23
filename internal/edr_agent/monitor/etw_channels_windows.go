@@ -420,9 +420,4 @@ func parseTime(s string) time.Time {
 	return t.UTC()
 }
 
-func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max] + "..."
-}
+

@@ -39,6 +39,7 @@ type Agent struct {
 	netMon     *monitor.NetworkMonitor
 	fimMon     *monitor.FIMMonitor
 	etwChannels *monitor.ETWChannelMonitor
+	vulnScanner *monitor.VulnScanner
 	exec       *response.Executor
 	eventQueue *queue.EventQueue
 
@@ -181,6 +182,12 @@ func (a *Agent) Start(ctx context.Context) error {
 			log.Printf("[trace-agent] ETW channels: %v (disabled)", err)
 		}
 	}
+	if a.config.VulnScanEnabled {
+		a.vulnScanner = monitor.NewVulnScanner(a.eventCh, a.config.DataDir)
+		if err := a.vulnScanner.Start(ctx); err != nil {
+			log.Printf("[trace-agent] vuln scanner: %v (disabled)", err)
+		}
+	}
 
 	go a.loop(ctx)
 	go a.batcher(ctx, a.serverCh)
@@ -247,6 +254,9 @@ func (a *Agent) Stop(ctx context.Context) error {
 	}
 	if a.etwChannels != nil {
 		a.etwChannels.Stop()
+	}
+	if a.vulnScanner != nil {
+		a.vulnScanner.Stop()
 	}
 	if a.procTree != nil {
 		a.procTree.Close()

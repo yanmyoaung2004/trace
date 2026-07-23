@@ -27,10 +27,18 @@ type Config struct {
 	OTXAPIKey    string `json:"otx_api_key"`
 	WebSearchKey string `json:"web_search_key"`
 
-	SlackWebhookURL  string `json:"slack_webhook_url,omitempty"`
-	DiscordWebhookURL string `json:"discord_webhook_url,omitempty"`
-	TelegramBotToken  string `json:"telegram_bot_token,omitempty"`
-	TelegramChatID    string `json:"telegram_chat_id,omitempty"`
+	SlackWebhookURL     string `json:"slack_webhook_url,omitempty"`
+	DiscordWebhookURL    string `json:"discord_webhook_url,omitempty"`
+	TelegramBotToken     string `json:"telegram_bot_token,omitempty"`
+	TelegramChatID       string `json:"telegram_chat_id,omitempty"`
+	SMTPHost            string `json:"smtp_host,omitempty"`
+	SMTPPort            int    `json:"smtp_port,omitempty"`
+	SMTPUser            string `json:"smtp_user,omitempty"`
+	SMTPPassword        string `json:"smtp_password,omitempty"`
+	SMTPFrom            string `json:"smtp_from,omitempty"`
+	EmailTo             string `json:"email_to,omitempty"`
+	PagerDutyRoutingKey string `json:"pagerduty_routing_key,omitempty"`
+	WebhookURL          string `json:"webhook_url,omitempty"`
 }
 
 type TelemetryConfig struct {

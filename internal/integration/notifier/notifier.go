@@ -6,17 +6,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/smtp"
 	"time"
 
 	"github.com/yanmyoaung2004/trace/internal/agent"
 )
 
 type Agent struct {
-	httpClient       *http.Client
-	SlackWebhookURL  string
-	DiscordWebhookURL string
-	TelegramBotToken  string
-	TelegramChatID    string
+	httpClient          *http.Client
+	SlackWebhookURL     string
+	DiscordWebhookURL    string
+	TelegramBotToken     string
+	TelegramChatID       string
+	SMTPHost            string
+	SMTPPort            int
+	SMTPUser            string
+	SMTPPassword        string
+	SMTPFrom            string
+	EmailTo             string
+	PagerDutyRoutingKey string
+	WebhookURL          string
 }
 
 func New() *Agent {
@@ -25,14 +34,37 @@ func New() *Agent {
 	}
 }
 
-func NewWithConfig(slackURL, discordURL, tgBot, tgChatID string) *Agent {
+func NewWithConfig(cfg AgentConfig) *Agent {
 	return &Agent{
-		httpClient:        &http.Client{Timeout: 15 * time.Second},
-		SlackWebhookURL:   slackURL,
-		DiscordWebhookURL: discordURL,
-		TelegramBotToken:  tgBot,
-		TelegramChatID:    tgChatID,
+		httpClient:          &http.Client{Timeout: 15 * time.Second},
+		SlackWebhookURL:     cfg.SlackWebhookURL,
+		DiscordWebhookURL:    cfg.DiscordWebhookURL,
+		TelegramBotToken:     cfg.TelegramBotToken,
+		TelegramChatID:       cfg.TelegramChatID,
+		SMTPHost:            cfg.SMTPHost,
+		SMTPPort:            cfg.SMTPPort,
+		SMTPUser:            cfg.SMTPUser,
+		SMTPPassword:        cfg.SMTPPassword,
+		SMTPFrom:            cfg.SMTPFrom,
+		EmailTo:             cfg.EmailTo,
+		PagerDutyRoutingKey: cfg.PagerDutyRoutingKey,
+		WebhookURL:          cfg.WebhookURL,
 	}
+}
+
+type AgentConfig struct {
+	SlackWebhookURL     string `json:"slack_webhook_url"`
+	DiscordWebhookURL    string `json:"discord_webhook_url"`
+	TelegramBotToken     string `json:"telegram_bot_token"`
+	TelegramChatID       string `json:"telegram_chat_id"`
+	SMTPHost            string `json:"smtp_host"`
+	SMTPPort            int    `json:"smtp_port"`
+	SMTPUser            string `json:"smtp_user"`
+	SMTPPassword        string `json:"smtp_password"`
+	SMTPFrom            string `json:"smtp_from"`
+	EmailTo             string `json:"email_to"`
+	PagerDutyRoutingKey string `json:"pagerduty_routing_key"`
+	WebhookURL          string `json:"webhook_url"`
 }
 
 func (a *Agent) Name() string { return "notifier" }
@@ -42,13 +74,16 @@ func (a *Agent) Capabilities() []agent.Capability {
 		{Action: "slack", Inputs: []string{"webhook_url", "message", "title"}, Outputs: []string{"status"}},
 		{Action: "discord", Inputs: []string{"webhook_url", "message", "title"}, Outputs: []string{"status"}},
 		{Action: "telegram", Inputs: []string{"bot_token", "chat_id", "message"}, Outputs: []string{"status"}},
+		{Action: "email", Inputs: []string{"to", "subject", "body"}, Outputs: []string{"status"}},
+		{Action: "pagerduty", Inputs: []string{"routing_key", "summary", "severity"}, Outputs: []string{"status"}},
+		{Action: "webhook", Inputs: []string{"url", "method", "body"}, Outputs: []string{"status"}},
 	}
 }
 
 type slackPayload struct {
-	Text        string `json:"text"`
-	Username    string `json:"username,omitempty"`
-	IconEmoji   string `json:"icon_emoji,omitempty"`
+	Text      string `json:"text"`
+	Username  string `json:"username,omitempty"`
+	IconEmoji string `json:"icon_emoji,omitempty"`
 }
 
 type discordEmbed struct {
@@ -71,6 +106,12 @@ func (a *Agent) Execute(ctx context.Context, input agent.Input) (agent.Output, e
 		return a.sendDiscord(ctx, input)
 	case "telegram":
 		return a.sendTelegram(ctx, input)
+	case "email":
+		return a.sendEmail(ctx, input)
+	case "pagerduty":
+		return a.sendPagerDuty(ctx, input)
+	case "webhook":
+		return a.sendWebhook(ctx, input)
 	default:
 		return nil, fmt.Errorf("unknown action: %s", action)
 	}
@@ -188,6 +229,113 @@ func (a *Agent) sendTelegram(ctx context.Context, input agent.Input) (agent.Outp
 	}
 
 	return a.postWebhook(ctx, url, payload)
+}
+
+func (a *Agent) sendEmail(ctx context.Context, input agent.Input) (agent.Output, error) {
+	to, _ := input["to"].(string)
+	if to == "" {
+		to = a.EmailTo
+	}
+	subject, _ := input["subject"].(string)
+	body, _ := input["body"].(string)
+	host, _ := input["smtp_host"].(string)
+	if host == "" {
+		host = a.SMTPHost
+	}
+	port, _ := input["smtp_port"].(int)
+	if port == 0 {
+		port = a.SMTPPort
+	}
+	user, _ := input["smtp_user"].(string)
+	if user == "" {
+		user = a.SMTPUser
+	}
+	pass, _ := input["smtp_password"].(string)
+	if pass == "" {
+		pass = a.SMTPPassword
+	}
+	from, _ := input["from"].(string)
+	if from == "" {
+		from = a.SMTPFrom
+	}
+
+	if host == "" || port == 0 || to == "" {
+		return agent.Output{"status": "error", "error": "smtp_host, smtp_port, and to are required"}, nil
+	}
+
+	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html\r\n\r\n%s",
+		from, to, subject, body)
+
+	auth := smtp.PlainAuth("", user, pass, host)
+	addr := fmt.Sprintf("%s:%d", host, port)
+	if err := smtp.SendMail(addr, auth, from, []string{to}, []byte(msg)); err != nil {
+		return agent.Output{"status": "error", "error": err.Error()}, nil
+	}
+
+	return agent.Output{"status": "sent", "channel": "email", "to": to}, nil
+}
+
+func (a *Agent) sendPagerDuty(ctx context.Context, input agent.Input) (agent.Output, error) {
+	routingKey, _ := input["routing_key"].(string)
+	if routingKey == "" {
+		routingKey = a.PagerDutyRoutingKey
+	}
+	summary, _ := input["summary"].(string)
+	sev, _ := input["severity"].(string)
+	if sev == "" {
+		sev = "warning"
+	}
+	source, _ := input["source"].(string)
+	if source == "" {
+		source = "trace"
+	}
+
+	if routingKey == "" || summary == "" {
+		return agent.Output{"status": "error", "error": "routing_key and summary are required"}, nil
+	}
+
+	payload := map[string]any{
+		"routing_key":  routingKey,
+		"event_action": "trigger",
+		"dedup_key":    fmt.Sprintf("trace-%d", time.Now().Unix()),
+		"payload": map[string]any{
+			"summary":  summary,
+			"severity": sev,
+			"source":   source,
+		},
+	}
+
+	return a.postWebhook(ctx, "https://events.pagerduty.com/v2/enqueue", payload)
+}
+
+func (a *Agent) sendWebhook(ctx context.Context, input agent.Input) (agent.Output, error) {
+	url, _ := input["url"].(string)
+	if url == "" {
+		url = a.WebhookURL
+	}
+	method, _ := input["method"].(string)
+	if method == "" {
+		method = "POST"
+	}
+	body, _ := input["body"].(string)
+
+	if url == "" {
+		return agent.Output{"status": "error", "error": "url is required"}, nil
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader([]byte(body)))
+	if err != nil {
+		return agent.Output{"status": "error", "error": err.Error()}, nil
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return agent.Output{"status": "error", "error": err.Error()}, nil
+	}
+	defer resp.Body.Close()
+
+	return agent.Output{"status": "sent", "provider": "webhook", "http_status": resp.StatusCode}, nil
 }
 
 func isHTTPURL(s string) bool {
