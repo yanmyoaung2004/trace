@@ -433,11 +433,11 @@ func (m *ServerManager) SeedDefaultUser(ctx context.Context) (string, error) {
 	return "", nil
 }
 
-func (m *ServerManager) CreateUser(ctx context.Context, email, apiKey, role string) (string, error) {
+func (m *ServerManager) CreateUser(ctx context.Context, email, apiKey, role, orgID string) (string, error) {
 	id := uuid.New().String()
 	_, err := m.db.ExecContext(ctx,
-		`INSERT INTO server_users (id, email, password_hash, role, api_key) VALUES (?, ?, ?, ?, ?)`,
-		id, email, "", role, apiKey)
+		`INSERT INTO server_users (id, email, password_hash, role, api_key, org_id) VALUES (?, ?, ?, ?, ?, ?)`,
+		id, email, "", role, apiKey, orgID)
 	if err != nil {
 		return "", fmt.Errorf("create user: %w", err)
 	}

@@ -61,6 +61,17 @@ func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 		})
 	}
 
+	adminOnly := func(handler http.HandlerFunc) http.HandlerFunc {
+		return protected(func(w http.ResponseWriter, r *http.Request) {
+			role, _ := r.Context().Value(ctxKeyRole).(string)
+			if role != "admin" {
+				writeError(w, http.StatusForbidden, "admin access required")
+				return
+			}
+			handler(w, r)
+		})
+	}
+
 	agentProtected := func(handler http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			var agentKey string
@@ -103,7 +114,8 @@ func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/edr/agents", readOnly(h.handleEDRAgentsList))
 	mux.HandleFunc("/api/v1/edr/agents/", readOnly(h.handleEDRAgentByID))
 	mux.HandleFunc("/api/v1/edr/vulns", agentProtected(h.handleEDRVulns))
-	mux.HandleFunc("/api/v1/admin/orgs", protected(h.handleOrgs))
+	mux.HandleFunc("/api/v1/admin/orgs", adminOnly(h.handleOrgs))
+	mux.HandleFunc("/api/v1/admin/users", adminOnly(h.handleAdminUsers))
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -692,6 +704,10 @@ func (h *SyncHandler) handleEDREventsQuery(w http.ResponseWriter, r *http.Reques
 	selectCols := "id, event_type, severity, timestamp, data"
 	q := `SELECT ` + selectCols + ` FROM edr_events WHERE agent_id = ?`
 	args := []any{agentID}
+	if orgID := r.Context().Value(ctxKeyOrg); orgID != nil && orgID.(string) != "" {
+		q += ` AND org_id = ?`
+		args = append(args, orgID.(string))
+	}
 	if eventType != "" {
 		q += ` AND event_type LIKE ?`
 		args = append(args, eventType+"%")
@@ -854,6 +870,54 @@ func (h *SyncHandler) handleOrgs(w http.ResponseWriter, r *http.Request) {
 		orgs = append(orgs, o)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"orgs": orgs})
+}
+
+func (h *SyncHandler) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "POST" {
+		var req struct {
+			Email  string `json:"email"`
+			Role   string `json:"role"`
+			OrgID  string `json:"org_id,omitempty"`
+			APIKey string `json:"api_key"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Email == "" || req.Role == "" {
+			writeError(w, http.StatusBadRequest, "email and role required")
+			return
+		}
+		apiKey := req.APIKey
+		if apiKey == "" {
+			apiKey = uuid.New().String()[:24]
+		}
+		id, err := h.manager.CreateUser(r.Context(), req.Email, apiKey, req.Role, req.OrgID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "create failed")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"id": id, "api_key": apiKey, "role": req.Role, "org_id": req.OrgID})
+		return
+	}
+
+	rows, err := h.manager.db.QueryContext(r.Context(),
+		`SELECT id, email, role, COALESCE(org_id, '') FROM server_users ORDER BY email`)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	defer rows.Close()
+
+	type user struct {
+		ID    string `json:"id"`
+		Email string `json:"email"`
+		Role  string `json:"role"`
+		OrgID string `json:"org_id"`
+	}
+	var users []user
+	for rows.Next() {
+		var u user
+		rows.Scan(&u.ID, &u.Email, &u.Role, &u.OrgID)
+		users = append(users, u)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"users": users})
 }
 
 func (h *SyncHandler) handleEDRVulns(w http.ResponseWriter, r *http.Request) {
