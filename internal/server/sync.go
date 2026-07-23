@@ -116,6 +116,7 @@ func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/edr/vulns", agentProtected(h.handleEDRVulns))
 	mux.HandleFunc("/api/v1/admin/orgs", adminOnly(h.handleOrgs))
 	mux.HandleFunc("/api/v1/admin/users", adminOnly(h.handleAdminUsers))
+	mux.HandleFunc("/api/v1/admin/users/", adminOnly(h.handleAdminUserByEmail))
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -918,6 +919,23 @@ func (h *SyncHandler) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 		users = append(users, u)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+}
+
+func (h *SyncHandler) handleAdminUserByEmail(w http.ResponseWriter, r *http.Request) {
+	email := strings.TrimPrefix(r.URL.Path, "/api/v1/admin/users/")
+	email = strings.TrimSuffix(email, "/rotate-key")
+
+	if strings.HasSuffix(r.URL.Path, "/rotate-key") && r.Method == "POST" {
+		newKey, err := h.manager.RotateAPIKey(r.Context(), email)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "rotate failed")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"email": email, "api_key": newKey})
+		return
+	}
+
+	writeError(w, http.StatusNotFound, "not found")
 }
 
 func (h *SyncHandler) handleEDRVulns(w http.ResponseWriter, r *http.Request) {

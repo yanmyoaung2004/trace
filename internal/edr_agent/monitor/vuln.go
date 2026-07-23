@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -354,10 +356,10 @@ func matchPackage(name, pattern string) bool {
 
 func versionCompare(installed, op, fixed string) bool {
 	// Simple numeric/semver comparison
-	iv := parseVersion(installed)
-	fv := parseVersion(fixed)
+	iv, ivOk := parseVersion(installed)
+	fv, fvOk := parseVersion(fixed)
 
-	if len(iv) == 0 || len(fv) == 0 {
+	if !ivOk || !fvOk {
 		return false
 	}
 
@@ -383,6 +385,10 @@ func versionCompare(installed, op, fixed string) bool {
 			cmp = -1
 		} else if len(iv) > len(fv) {
 			cmp = 1
+		} else if hasPreRelease(installed) && !hasPreRelease(fixed) {
+			cmp = -1
+		} else if !hasPreRelease(installed) && hasPreRelease(fixed) {
+			cmp = 1
 		}
 	}
 
@@ -398,15 +404,24 @@ func versionCompare(installed, op, fixed string) bool {
 	case ">":
 		return cmp > 0
 	default:
-		return cmp <= 0
+		return false
 	}
 }
 
-func parseVersion(v string) []int {
+func hasPreRelease(v string) bool {
+	return strings.ContainsAny(v, "-~+")
+}
+
+func parseVersion(v string) ([]int, bool) {
 	v = strings.TrimLeft(v, "vV")
+
+	// Check for pre-release suffix (e.g., "2.0-beta", "1.0.0-alpha.1")
+	if idx := strings.IndexAny(v, "-~+"); idx > 0 {
+		v = v[:idx]
+	}
+
 	var parts []int
 	for _, p := range strings.Split(v, ".") {
-		// Handle suffixes like "1.2.3-p1"
 		cleaned := p
 		for i, c := range p {
 			if c < '0' || c > '9' {
@@ -416,12 +431,13 @@ func parseVersion(v string) []int {
 		}
 		n, err := strconv.Atoi(cleaned)
 		if err != nil {
-			break
+			return parts, len(parts) > 0
 		}
 		parts = append(parts, n)
 	}
-	return parts
+	return parts, len(parts) > 0
 }
+
 
 type cveSeedEntry struct {
 	CVEID       string  `json:"cve_id"`
@@ -473,6 +489,80 @@ func (v *VulnScanner) seedBuiltinCVEs() {
 		return
 	}
 	log.Printf("[vuln] seeded %d/%d CVEs", seeded, len(seeds))
+}
+
+// UpdateCVEDB fetches CVE data from a URL and upserts it into the database.
+// The URL should return a JSON array of cveSeedEntry objects.
+// Built-in seed data is used if the DB is empty.
+func (v *VulnScanner) UpdateCVEDB(ctx context.Context, url string) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return 0, fmt.Errorf("request: %w", err)
+	}
+	req.Header.Set("User-Agent", "Trace/0.1.1")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("fetch: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("HTTP %d from %s", resp.StatusCode, url)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, fmt.Errorf("read: %w", err)
+	}
+
+	var entries []cveSeedEntry
+	if err := json.Unmarshal(body, &entries); err != nil {
+		return 0, fmt.Errorf("parse: %w", err)
+	}
+
+	tx, err := v.db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO cve_db (cve_id, package_pattern, version_op, version, cvss, severity, description, remediation) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return 0, fmt.Errorf("prepare: %w", err)
+	}
+	defer stmt.Close()
+
+	imported := 0
+	for _, e := range entries {
+		if e.CVEID == "" || e.Package == "" {
+			continue
+		}
+		if e.Severity == "" {
+			switch {
+			case e.CVSS >= 9:
+				e.Severity = "critical"
+			case e.CVSS >= 7:
+				e.Severity = "high"
+			case e.CVSS >= 4:
+				e.Severity = "medium"
+			default:
+				e.Severity = "low"
+			}
+		}
+		if _, err := stmt.Exec(e.CVEID, e.Package, e.VersionOp, e.Version, e.CVSS, e.Severity, e.Description, e.Remediation); err != nil {
+			log.Printf("[vuln] import %s: %v", e.CVEID, err)
+			continue
+		}
+		imported++
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit: %w", err)
+	}
+	log.Printf("[vuln] imported %d CVEs from %s", imported, url)
+	return imported, nil
 }
 
 var builtinCVEData = `[

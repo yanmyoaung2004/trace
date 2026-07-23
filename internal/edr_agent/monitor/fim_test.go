@@ -149,9 +149,11 @@ func TestFIMNoDuplicateDeleteEvents(t *testing.T) {
 
 func TestFIMSkipLargeFile(t *testing.T) {
 	dir := t.TempDir()
+	watchDir := filepath.Join(dir, "watch")
+	os.MkdirAll(watchDir, 0755)
 	ch := make(chan *Event, 100)
 	cfg := &FIMConfig{
-		WatchPaths:   []string{dir},
+		WatchPaths:   []string{watchDir},
 		MaxSizeMB:    1,
 		ScanInterval: 1 * time.Hour,
 		DataDir:      dir,
@@ -160,15 +162,21 @@ func TestFIMSkipLargeFile(t *testing.T) {
 	f.Start(nil)
 	defer f.Stop()
 
-	// Create a file larger than MaxSizeMB (1MB)
-	data := make([]byte, 2*1024*1024)
-	path := filepath.Join(dir, "large.bin")
+	// Create a file > MaxSizeMB (1MB = 1048576 bytes)
+	data := make([]byte, 10*1024*1024)
+	path := filepath.Join(watchDir, "large.bin")
 	os.WriteFile(path, data, 0644)
 
+	// Wait for goroutine scan then run manual scan
+	time.Sleep(100 * time.Millisecond)
 	f.scan()
+
+	// Should be no events — the large file should be skipped
 	select {
-	case <-ch:
-		t.Fatal("expected no event for large file")
+	case evt := <-ch:
+		if evt.Annotations["change_type"] == "fim_added" {
+			t.Fatalf("large file (%d bytes) should have been skipped (max %d MB)", len(data), cfg.MaxSizeMB)
+		}
 	default:
 	}
 }

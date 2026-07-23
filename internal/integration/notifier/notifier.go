@@ -21,6 +21,8 @@ type Agent struct {
 	DiscordWebhookURL    string
 	TelegramBotToken     string
 	TelegramChatID       string
+	TelegramAPIBase     string   // for testing; default https://api.telegram.org
+	PagerDutyAPIBase    string   // for testing; default https://events.pagerduty.com
 	SMTPHost            string
 	SMTPPort            int
 	SMTPUser            string
@@ -248,7 +250,11 @@ func (a *Agent) sendTelegram(ctx context.Context, input agent.Input) (agent.Outp
 		return agent.Output{"status": "error", "error": "bot_token, chat_id, and message are required (set via config or --param)"}, nil
 	}
 
-	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
+	base := a.TelegramAPIBase
+	if base == "" {
+		base = "https://api.telegram.org"
+	}
+	url := fmt.Sprintf("%s/bot%s/sendMessage", base, botToken)
 	payload := map[string]any{
 		"chat_id":    chatID,
 		"text":       message,
@@ -368,7 +374,11 @@ func (a *Agent) sendPagerDuty(ctx context.Context, input agent.Input) (agent.Out
 		},
 	}
 
-	return a.postWebhook(ctx, "https://events.pagerduty.com/v2/enqueue", payload)
+	pdBase := a.PagerDutyAPIBase
+	if pdBase == "" {
+		pdBase = "https://events.pagerduty.com"
+	}
+	return a.postWebhook(ctx, pdBase+"/v2/enqueue", payload)
 }
 
 func (a *Agent) sendWebhook(ctx context.Context, input agent.Input) (agent.Output, error) {

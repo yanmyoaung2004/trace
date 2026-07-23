@@ -532,6 +532,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newUpdateCmd())
 	cmd.AddCommand(newVersionCmd())
 	cmd.AddCommand(newEDRCmd())
+	cmd.AddCommand(newAdminCmd())
 
 	return cmd
 }
