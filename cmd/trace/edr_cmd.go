@@ -299,6 +299,7 @@ func newEDREventsCmd() *cobra.Command {
 			fmt.Println()
 			for i, raw := range events {
 				var evt struct {
+					ID        string `json:"id"`
 					Type      string `json:"event_type"`
 					Severity  int    `json:"severity"`
 					Timestamp string `json:"timestamp"`
@@ -333,6 +334,10 @@ func newEDREventsCmd() *cobra.Command {
 					}
 				}
 				fmt.Println()
+				// Show event ID for dismiss
+				if evt.ID != "" {
+					fmt.Printf("         id: %s\n", evt.ID)
+				}
 
 			if i >= 50 {
 				fmt.Println("  ... (truncated)")

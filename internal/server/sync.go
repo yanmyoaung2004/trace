@@ -461,8 +461,8 @@ func (h *SyncHandler) handleEDRAlertDismiss(w http.ResponseWriter, r *http.Reque
 	// Look up the alert to find rule_name and process_name
 	var ruleName, processName string
 	h.manager.db.QueryRowContext(r.Context(),
-		`SELECT COALESCE(json_extract(data, '$.yara_rule'), json_extract(data, '$.correlation'), event_type),
-				COALESCE(json_extract(data, '$.process_name'), 'unknown')
+		`SELECT COALESCE(json_extract(data, '$.annotations.yara_rule'), json_extract(data, '$.annotations.correlation'), event_type),
+				COALESCE(json_extract(data, '$.process.name'), json_extract(data, '$.file.path'), 'unknown')
 		 FROM edr_events WHERE id = ?`, req.AlertID).Scan(&ruleName, &processName)
 	if ruleName == "" {
 		ruleName = "manual_" + req.AlertID[:8]
@@ -640,26 +640,21 @@ func (h *SyncHandler) handleEDREventsQuery(w http.ResponseWriter, r *http.Reques
 
 	var rows *sql.Rows
 	var err error
-	if eventType != "" && minSev > 0 {
-		rows, err = h.manager.db.QueryContext(r.Context(),
-			`SELECT event_type, severity, timestamp, data FROM edr_events
-			 WHERE agent_id = ? AND event_type LIKE ? AND severity >= ? ORDER BY timestamp DESC LIMIT ?`,
-			agentID, eventType+"%", minSev, limit)
-	} else if eventType != "" {
-		rows, err = h.manager.db.QueryContext(r.Context(),
-			`SELECT event_type, severity, timestamp, data FROM edr_events
-			 WHERE agent_id = ? AND event_type LIKE ? ORDER BY timestamp DESC LIMIT ?`,
-			agentID, eventType+"%", limit)
-	} else if minSev > 0 {
-		rows, err = h.manager.db.QueryContext(r.Context(),
-			`SELECT event_type, severity, timestamp, data FROM edr_events
-			 WHERE agent_id = ? AND severity >= ? ORDER BY timestamp DESC LIMIT ?`,
-			agentID, minSev, limit)
-	} else {
-		rows, err = h.manager.db.QueryContext(r.Context(),
-			`SELECT event_type, severity, timestamp, data FROM edr_events
-			 WHERE agent_id = ? ORDER BY timestamp DESC LIMIT ?`, agentID, limit)
+	selectCols := "id, event_type, severity, timestamp, data"
+	q := `SELECT ` + selectCols + ` FROM edr_events WHERE agent_id = ?`
+	args := []any{agentID}
+	if eventType != "" {
+		q += ` AND event_type LIKE ?`
+		args = append(args, eventType+"%")
 	}
+	if minSev > 0 {
+		q += ` AND severity >= ?`
+		args = append(args, minSev)
+	}
+	q += ` ORDER BY timestamp DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err = h.manager.db.QueryContext(r.Context(), q, args...)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "query error")
 		return
@@ -667,6 +662,7 @@ func (h *SyncHandler) handleEDREventsQuery(w http.ResponseWriter, r *http.Reques
 	defer rows.Close()
 
 	type evt struct {
+		ID        string `json:"id"`
 		EventType string `json:"event_type"`
 		Severity  int    `json:"severity"`
 		Timestamp string `json:"timestamp"`
@@ -676,7 +672,7 @@ func (h *SyncHandler) handleEDREventsQuery(w http.ResponseWriter, r *http.Reques
 	events := make([]evt, 0, limit)
 	for rows.Next() {
 		var e evt
-		rows.Scan(&e.EventType, &e.Severity, &e.Timestamp, &e.Data)
+		rows.Scan(&e.ID, &e.EventType, &e.Severity, &e.Timestamp, &e.Data)
 		events = append(events, e)
 	}
 
