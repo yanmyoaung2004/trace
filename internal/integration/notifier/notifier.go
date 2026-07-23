@@ -3,6 +3,9 @@ package notifier
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -242,7 +245,8 @@ func (a *Agent) sendEmail(ctx context.Context, input agent.Input) (agent.Output,
 	if host == "" {
 		host = a.SMTPHost
 	}
-	port, _ := input["smtp_port"].(int)
+	portF, _ := input["smtp_port"].(float64)
+	port := int(portF)
 	if port == 0 {
 		port = a.SMTPPort
 	}
@@ -266,10 +270,43 @@ func (a *Agent) sendEmail(ctx context.Context, input agent.Input) (agent.Output,
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html\r\n\r\n%s",
 		from, to, subject, body)
 
-	auth := smtp.PlainAuth("", user, pass, host)
 	addr := fmt.Sprintf("%s:%d", host, port)
-	if err := smtp.SendMail(addr, auth, from, []string{to}, []byte(msg)); err != nil {
-		return agent.Output{"status": "error", "error": err.Error()}, nil
+
+	// Port 465 = SMTPS (direct SSL), all others use STARTTLS
+	if port == 465 {
+		conn, err := tls.Dial("tcp", addr, &tls.Config{ServerName: host})
+		if err != nil {
+			return agent.Output{"status": "error", "error": err.Error()}, nil
+		}
+		client, err := smtp.NewClient(conn, host)
+		if err != nil {
+			conn.Close()
+			return agent.Output{"status": "error", "error": err.Error()}, nil
+		}
+		defer client.Close()
+		if user != "" {
+			auth := smtp.PlainAuth("", user, pass, host)
+			if err := client.Auth(auth); err != nil {
+				return agent.Output{"status": "error", "error": err.Error()}, nil
+			}
+		}
+		if err := client.Mail(from); err != nil {
+			return agent.Output{"status": "error", "error": err.Error()}, nil
+		}
+		if err := client.Rcpt(to); err != nil {
+			return agent.Output{"status": "error", "error": err.Error()}, nil
+		}
+		w, err := client.Data()
+		if err != nil {
+			return agent.Output{"status": "error", "error": err.Error()}, nil
+		}
+		w.Write([]byte(msg))
+		w.Close()
+	} else {
+		auth := smtp.PlainAuth("", user, pass, host)
+		if err := smtp.SendMail(addr, auth, from, []string{to}, []byte(msg)); err != nil {
+			return agent.Output{"status": "error", "error": err.Error()}, nil
+		}
 	}
 
 	return agent.Output{"status": "sent", "channel": "email", "to": to}, nil
@@ -294,10 +331,11 @@ func (a *Agent) sendPagerDuty(ctx context.Context, input agent.Input) (agent.Out
 		return agent.Output{"status": "error", "error": "routing_key and summary are required"}, nil
 	}
 
+	dedupHash := sha256.Sum256([]byte(summary + source))
 	payload := map[string]any{
 		"routing_key":  routingKey,
 		"event_action": "trigger",
-		"dedup_key":    fmt.Sprintf("trace-%d", time.Now().Unix()),
+		"dedup_key":    "trace-" + hex.EncodeToString(dedupHash[:16]),
 		"payload": map[string]any{
 			"summary":  summary,
 			"severity": sev,

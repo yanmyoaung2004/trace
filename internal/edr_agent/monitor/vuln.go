@@ -445,15 +445,20 @@ func (v *VulnScanner) seedBuiltinCVEs() {
 	}
 	defer stmt.Close()
 
+	seeded := 0
 	for _, s := range seeds {
-		stmt.Exec(s.CVEID, s.Package, s.VersionOp, s.Version, s.CVSS, s.Severity, s.Description, s.Remediation)
+		if _, err := stmt.Exec(s.CVEID, s.Package, s.VersionOp, s.Version, s.CVSS, s.Severity, s.Description, s.Remediation); err != nil {
+			log.Printf("[vuln] seed %s: %v", s.CVEID, err)
+			continue
+		}
+		seeded++
 	}
 
 	if err := tx.Commit(); err != nil {
 		log.Printf("[vuln] seed commit: %v", err)
 		return
 	}
-	log.Printf("[vuln] seeded %d CVEs", len(seeds))
+	log.Printf("[vuln] seeded %d/%d CVEs", seeded, len(seeds))
 }
 
 var builtinCVEData = `[

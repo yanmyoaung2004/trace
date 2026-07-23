@@ -34,22 +34,27 @@ type FIMConfig struct {
 	ExcludePatterns     []string      `json:"fim_exclude_patterns"`
 	MaxSizeMB           int           `json:"fim_max_size_mb"`
 	ScanInterval        time.Duration `json:"fim_scan_interval"`
+	CooldownCount       int           `json:"fim_cooldown_count"`
 	DataDir             string        `json:"-"`
 }
 
 type FIMMonitor struct {
-	eventCh   chan<- *Event
-	config    *FIMConfig
-	db        *sql.DB
-	done      chan struct{}
-	mu        sync.Mutex
+	eventCh  chan<- *Event
+	config   *FIMConfig
+	db       *sql.DB
+	done     chan struct{}
+	wg       sync.WaitGroup
+	mu       sync.Mutex
+	flapCount map[string]int
+	flapMu   sync.Mutex
 }
 
 func NewFIMMonitor(eventCh chan<- *Event, cfg *FIMConfig) *FIMMonitor {
 	return &FIMMonitor{
-		eventCh: eventCh,
-		config:  cfg,
-		done:    make(chan struct{}),
+		eventCh:   eventCh,
+		config:    cfg,
+		done:      make(chan struct{}),
+		flapCount: make(map[string]int),
 	}
 }
 
@@ -66,6 +71,7 @@ func (f *FIMMonitor) Start(ctx context.Context) error {
 	f.db = db
 
 	if _, err := db.Exec(`
+		PRAGMA journal_mode=WAL;
 		CREATE TABLE IF NOT EXISTS fim_baseline (
 			path TEXT PRIMARY KEY,
 			hash_sha256 TEXT NOT NULL,
@@ -81,22 +87,32 @@ func (f *FIMMonitor) Start(ctx context.Context) error {
 	}
 
 	log.Printf("[fim] started (paths=%d, interval=%v)", len(f.config.WatchPaths), f.config.ScanInterval)
+	f.wg.Add(1)
 	go f.pollingLoop(ctx)
 	return nil
 }
 
 func (f *FIMMonitor) Stop() {
 	close(f.done)
+	f.wg.Wait()
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.db != nil {
 		f.db.Close()
+		f.db = nil
 	}
 }
 
 func (f *FIMMonitor) pollingLoop(ctx context.Context) {
-	// Run first scan immediately
+	defer f.wg.Done()
 	f.scan()
 
-	tick := time.NewTicker(f.config.ScanInterval)
+	interval := f.config.ScanInterval
+	if interval <= 0 {
+		interval = 60 * time.Second
+	}
+
+	tick := time.NewTicker(interval)
 	defer tick.Stop()
 
 	for {
@@ -123,7 +139,7 @@ func (f *FIMMonitor) scan() {
 	maxSize := int64(f.config.MaxSizeMB) * 1024 * 1024
 
 	for _, root := range f.config.WatchPaths {
-		err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return nil
 			}
@@ -147,45 +163,61 @@ func (f *FIMMonitor) scan() {
 				LastSeen: time.Now().UTC().Format(time.RFC3339),
 			}
 
-			// Only hash if file is small enough (first 1MB for hash)
-			entry.HashSHA256 = f.hashFile(path, info.Size())
-
+			hash, err := f.hashFile(path)
+			if err != nil {
+				return nil
+			}
+			entry.HashSHA256 = hash
 			current[path] = entry
 
 			prev, exists := baseline[path]
 			if !exists {
-				// New file — add to baseline, emit create
 				entry.FirstSeen = entry.LastSeen
-				f.emitFIMEvent(path, entry, "fim_added")
+				if !f.isFlapping(path) {
+					f.emitFIMEvent(path, entry, "fim_added")
+				}
 			} else if prev.HashSHA256 != entry.HashSHA256 {
-				// Hash changed — integrity violation
-				f.emitFIMEvent(path, entry, "fim_modified")
+				if !f.isFlapping(path) {
+					f.emitFIMEvent(path, entry, "fim_modified")
+				}
 			} else if prev.Mode != entry.Mode {
-				// Permission change
 				f.emitFIMEvent(path, entry, "fim_perm_change")
 			}
 
 			return nil
 		})
-		if err != nil {
-			log.Printf("[fim] walk error %s: %v", root, err)
-		}
 	}
 
-	// Detect deleted files
 	for path, entry := range baseline {
 		if _, exists := current[path]; !exists {
 			f.emitFIMEvent(path, entry, "fim_deleted")
 		}
 	}
 
-	// Persist updated baseline
 	if err := f.saveBaseline(current); err != nil {
 		log.Printf("[fim] save baseline: %v", err)
 	}
 }
 
+func (f *FIMMonitor) isFlapping(path string) bool {
+	f.flapMu.Lock()
+	defer f.flapMu.Unlock()
+	f.flapCount[path]++
+	if f.flapCount[path] > 3 {
+		log.Printf("[fim] flapping suppressed: %s", path)
+		// Reset after 10 scan cycles
+		if f.flapCount[path] > 10 {
+			delete(f.flapCount, path)
+		}
+		return true
+	}
+	return false
+}
+
 func (f *FIMMonitor) loadBaseline() (map[string]FIMEntry, error) {
+	if f.db == nil {
+		return make(map[string]FIMEntry), nil
+	}
 	rows, err := f.db.Query(`SELECT path, hash_sha256, size, mode, owner, first_seen, last_seen FROM fim_baseline`)
 	if err != nil {
 		return nil, err
@@ -204,67 +236,56 @@ func (f *FIMMonitor) loadBaseline() (map[string]FIMEntry, error) {
 }
 
 func (f *FIMMonitor) saveBaseline(entries map[string]FIMEntry) error {
+	if f.db == nil {
+		return fmt.Errorf("db closed")
+	}
 	tx, err := f.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	// Delete baseline entries not in current scan
-	seen := make(map[string]bool, len(entries))
-	for path := range entries {
-		seen[path] = true
+	// Delete entries for files that no longer exist
+	if _, err := tx.Exec(`DELETE FROM fim_baseline`); err != nil {
+		return fmt.Errorf("delete baseline: %w", err)
 	}
 
-	// Upsert all current entries
-	upsert, err := tx.Prepare(`
-		INSERT INTO fim_baseline (path, hash_sha256, size, mode, owner, first_seen, last_seen)
-		VALUES (?, ?, ?, ?, ?,
-			CASE WHEN EXISTS (SELECT 1 FROM fim_baseline WHERE path = ?) THEN (SELECT first_seen FROM fim_baseline WHERE path = ?) ELSE datetime('now') END,
-			datetime('now'))
-		ON CONFLICT(path) DO UPDATE SET
-			hash_sha256 = excluded.hash_sha256,
-			size = excluded.size,
-			mode = excluded.mode,
-			last_seen = datetime('now')
-	`)
+	// Batch insert all current entries
+	stmt, err := tx.Prepare(`INSERT INTO fim_baseline (path, hash_sha256, size, mode, owner, first_seen, last_seen) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))`)
 	if err != nil {
 		return err
 	}
-	defer upsert.Close()
+	defer stmt.Close()
 
-	for path, e := range entries {
-		if _, err := upsert.Exec(e.Path, e.HashSHA256, e.Size, e.Mode, e.Owner, path, path); err != nil {
-			return fmt.Errorf("upsert %s: %w", path, err)
+	for _, e := range entries {
+		if _, err := stmt.Exec(e.Path, e.HashSHA256, e.Size, e.Mode, e.Owner); err != nil {
+			return fmt.Errorf("insert %s: %w", e.Path, err)
 		}
 	}
 
 	return tx.Commit()
 }
 
-func (f *FIMMonitor) hashFile(path string, size int64) string {
-	hash := sha256.New()
-
-	// For large files, hash only first 1MB
-	readSize := size
-	if readSize > 1*1024*1024 {
-		readSize = 1 * 1024 * 1024
-	}
-
+func (f *FIMMonitor) hashFile(path string) (string, error) {
 	fh, err := os.Open(path)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("open: %w", err)
 	}
 	defer fh.Close()
 
-	if _, err := io.CopyN(hash, fh, readSize); err != nil && err != io.EOF {
-		return ""
+	hash := sha256.New()
+	if _, err := io.CopyN(hash, fh, 1*1024*1024); err != nil && err != io.EOF {
+		return "", fmt.Errorf("read: %w", err)
 	}
-	return hex.EncodeToString(hash.Sum(nil))
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func (f *FIMMonitor) isExcluded(path string) bool {
 	lower := strings.ToLower(path)
+	// Always exclude our own SQLite files
+	if strings.HasSuffix(lower, ".db") || strings.HasSuffix(lower, ".db-wal") || strings.HasSuffix(lower, ".db-shm") {
+		return true
+	}
 	for _, ex := range f.config.ExcludePatterns {
 		if strings.Contains(lower, strings.ToLower(ex)) {
 			return true

@@ -284,6 +284,7 @@ func (h *SyncHandler) handleEDRRegister(w http.ResponseWriter, r *http.Request) 
 		MemoryMB      int64  `json:"memory_mb"`
 		AgentVersion  string `json:"agent_version"`
 		Monitors      string `json:"monitors"`
+		OrgID         string `json:"org_id,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
@@ -302,9 +303,9 @@ func (h *SyncHandler) handleEDRRegister(w http.ResponseWriter, r *http.Request) 
 	}
 
 	_, err := h.manager.db.ExecContext(r.Context(),
-		`INSERT INTO edr_agents (id, hostname, platform, arch, version, agent_version, status, ip_address, cpu_count, cpu_name, memory_mb, kernel_version, monitors, last_heartbeat, last_ip, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, req.Hostname, req.Platform, req.Arch, req.Version, req.AgentVersion, ip, req.CPUCount, req.CPUName, req.MemoryMB, req.KernelVersion, req.Monitors, now, ip, now, now)
+		`INSERT INTO edr_agents (id, hostname, platform, arch, version, agent_version, status, ip_address, cpu_count, cpu_name, memory_mb, kernel_version, monitors, org_id, last_heartbeat, last_ip, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, req.Hostname, req.Platform, req.Arch, req.Version, req.AgentVersion, ip, req.CPUCount, req.CPUName, req.MemoryMB, req.KernelVersion, req.Monitors, req.OrgID, now, ip, now, now)
 	if err != nil {
 		log.Printf("[edr] register error: %v", err)
 		writeError(w, http.StatusInternalServerError, "registration failed")

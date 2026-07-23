@@ -123,10 +123,24 @@ func (d *SuricataDecoder) Decode(raw []byte) (*Event, error) {
 
 	ts := time.Now().UTC()
 	if s.Timestamp != "" {
-		if t, err := time.Parse("2006-01-02T15:04:05.999999-0700", s.Timestamp); err == nil {
-			ts = t.UTC()
-		} else if t, err := time.Parse(time.RFC3339Nano, s.Timestamp); err == nil {
-			ts = t.UTC()
+		var t time.Time
+		var err error
+		formats := []string{
+			"2006-01-02T15:04:05.999999-0700",
+			"2006-01-02T15:04:05.999999Z07:00",
+			"2006-01-02T15:04:05.999999999-0700",
+			"2006-01-02T15:04:05.999999999Z07:00",
+			"2006-01-02T15:04:05-0700",
+			"2006-01-02T15:04:05Z07:00",
+			time.RFC3339Nano,
+			time.RFC3339,
+		}
+		for _, fmt := range formats {
+			t, err = time.Parse(fmt, s.Timestamp)
+			if err == nil {
+				ts = t.UTC()
+				break
+			}
 		}
 	}
 

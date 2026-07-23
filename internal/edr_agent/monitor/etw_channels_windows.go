@@ -15,18 +15,20 @@ import (
 )
 
 type ETWChannel struct {
-	LogName string
-	Query   string
+	LogName  string
+	Query    string
 	EventIDs []int
 }
 
 type ETWChannelMonitor struct {
-	eventCh   chan<- *Event
-	channels  []ETWChannel
-	interval  time.Duration
-	done      chan struct{}
-	processed map[string]time.Time
-	mu        sync.Mutex
+	eventCh    chan<- *Event
+	channels   []ETWChannel
+	interval   time.Duration
+	cmdTimeout time.Duration
+	done       chan struct{}
+	processed  map[string]time.Time
+	maxDedup   int
+	mu         sync.Mutex
 }
 
 var defaultChannels = []ETWChannel{
@@ -59,16 +61,18 @@ var defaultChannels = []ETWChannel{
 
 func NewETWChannelMonitor(eventCh chan<- *Event) *ETWChannelMonitor {
 	return &ETWChannelMonitor{
-		eventCh:   eventCh,
-		channels:  defaultChannels,
-		interval:  10 * time.Second,
-		done:      make(chan struct{}),
-		processed: make(map[string]time.Time),
+		eventCh:    eventCh,
+		channels:   defaultChannels,
+		interval:   10 * time.Second,
+		cmdTimeout: 30 * time.Second,
+		done:       make(chan struct{}),
+		processed:  make(map[string]time.Time),
+		maxDedup:   50000,
 	}
 }
 
 func (m *ETWChannelMonitor) Start(ctx context.Context) error {
-	go m.pollingLoop(ctx)
+	go m.pollingLoop()
 	return nil
 }
 
@@ -76,7 +80,7 @@ func (m *ETWChannelMonitor) Stop() {
 	close(m.done)
 }
 
-func (m *ETWChannelMonitor) pollingLoop(ctx context.Context) {
+func (m *ETWChannelMonitor) pollingLoop() {
 	tick := time.NewTicker(m.interval)
 	defer tick.Stop()
 
@@ -85,7 +89,22 @@ func (m *ETWChannelMonitor) pollingLoop(ctx context.Context) {
 		case <-m.done:
 			return
 		case <-tick.C:
+			m.evictStaleDedup()
 			m.pollAll()
+		}
+	}
+}
+
+func (m *ETWChannelMonitor) evictStaleDedup() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.processed) <= m.maxDedup {
+		return
+	}
+	cutoff := time.Now().Add(-5 * time.Minute)
+	for k, v := range m.processed {
+		if v.Before(cutoff) {
+			delete(m.processed, k)
 		}
 	}
 }
@@ -97,29 +116,30 @@ func (m *ETWChannelMonitor) pollAll() {
 }
 
 type winEvent struct {
-	ID       int                    `json:"id"`
-	Time     string                 `json:"time"`
-	Level    int                    `json:"level"`
-	Provider string                 `json:"provider"`
-	LogName  string                 `json:"logname"`
-	Message  string                 `json:"message"`
-	Properties []map[string]any     `json:"properties"`
+	ID         int                    `json:"id"`
+	Time       string                 `json:"time"`
+	Level      int                    `json:"level"`
+	Provider   string                 `json:"provider"`
+	LogName    string                 `json:"logname"`
+	Message    string                 `json:"message"`
+	Properties []any                  `json:"properties"`
 }
 
 func (m *ETWChannelMonitor) pollChannel(ch ETWChannel) {
-	cmd := exec.Command("powershell", "-NoProfile", "-Command",
-		fmt.Sprintf(`Get-WinEvent -LogName '%s' -FilterXPath '%s' -MaxEvents 5 -ErrorAction SilentlyContinue | ForEach-Object {
+	ctx, cancel := context.WithTimeout(context.Background(), m.cmdTimeout)
+	defer cancel()
+
+	psCmd := fmt.Sprintf(
+		`Get-WinEvent -LogName '%s' -FilterXPath '%s' -MaxEvents 20 -ErrorAction SilentlyContinue | ForEach-Object {
 			[PSCustomObject]@{
-				id = $_.Id
-				time = $_.TimeCreated.ToString('o')
-				level = $_.Level
-				provider = $_.ProviderName
-				logname = $_.LogName
-				message = $_.Message
+				id = $_.Id; time = $_.TimeCreated.ToString('o'); level = $_.Level;
+				provider = $_.ProviderName; logname = $_.LogName; message = $_.Message;
 				properties = @($_.Properties | ForEach-Object { $_.Value })
 			}
-		} | ConvertTo-Json -Compress -Depth 3`, ch.LogName, ch.Query))
+		} | ConvertTo-Json -Compress -Depth 2`,
+		ch.LogName, ch.Query)
 
+	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command", psCmd)
 	output, err := cmd.Output()
 	if err != nil {
 		return
@@ -136,7 +156,7 @@ func (m *ETWChannelMonitor) pollChannel(ch ETWChannel) {
 	}
 
 	for _, we := range events {
-		key := ch.LogName + "/" + we.Time
+		key := ch.LogName + "/" + we.Time + "/" + fmt.Sprintf("%d", we.ID)
 		m.mu.Lock()
 		if _, seen := m.processed[key]; seen {
 			m.mu.Unlock()
@@ -150,274 +170,95 @@ func (m *ETWChannelMonitor) pollChannel(ch ETWChannel) {
 }
 
 func (m *ETWChannelMonitor) mapAndEmit(ch ETWChannel, we winEvent) {
-	var evt *Event
+	props := we.Properties
 
 	switch we.ID {
 	case 4104, 4103:
-		// PowerShell script block logging
-		script := extractScriptBlock(we)
-		evt = &Event{
-			ID:        uuid.New().String(),
-			Timestamp: parseTime(we.Time),
-			Type:      EventAlert,
-			Severity:  SeverityWarning,
-			Annotations: map[string]string{
-				"source":      "powershell",
-				"event_id":    fmt.Sprintf("%d", we.ID),
-				"script":      truncate(script, 500),
-				"log_channel": ch.LogName,
-			},
-		}
-
-	case 1:
-		// Sysmon process creation
-		evt = &Event{
-			ID:        uuid.New().String(),
-			Timestamp: parseTime(we.Time),
-			Type:      EventProcessCreate,
-			Severity:  SeverityInfo,
-			Process:   extractSysmonProcess(we),
-			Annotations: map[string]string{
-				"source":      "sysmon",
-				"event_id":    "1",
-				"log_channel": ch.LogName,
-			},
-		}
-
-	case 2:
-		// Sysmon process changed (handle opened)
-		evt = &Event{
-			ID:        uuid.New().String(),
-			Timestamp: parseTime(we.Time),
-			Type:      EventAlert,
-			Severity:  SeverityWarning,
-			Annotations: map[string]string{
-				"source":      "sysmon",
-				"event_id":    "2",
-				"detail":      "process handle opened",
-				"log_channel": ch.LogName,
-			},
-		}
-
-	case 3:
-		// Sysmon network connection
-		evt = &Event{
-			ID:        uuid.New().String(),
-			Timestamp: parseTime(we.Time),
-			Type:      EventNetConnect,
-			Severity:  SeverityInfo,
-			Network:   extractSysmonNet(we),
-			Annotations: map[string]string{
-				"source":      "sysmon",
-				"event_id":    "3",
-				"log_channel": ch.LogName,
-			},
-		}
-
-	case 7:
-		// Sysmon image loaded (DLL)
-		evt = &Event{
-			ID:        uuid.New().String(),
-			Timestamp: parseTime(we.Time),
-			Type:      EventAlert,
-			Severity:  SeverityWarning,
-			Annotations: map[string]string{
-				"source":      "sysmon",
-				"event_id":    "7",
-				"detail":      "image loaded",
-				"log_channel": ch.LogName,
-			},
-		}
-
-	case 8:
-		// Sysmon remote thread creation
-		evt = &Event{
-			ID:        uuid.New().String(),
-			Timestamp: parseTime(we.Time),
-			Type:      EventAlert,
-			Severity:  SeverityAlert,
-			Annotations: map[string]string{
-				"source":      "sysmon",
-				"event_id":    "8",
-				"detail":      "remote thread created — possible code injection",
-				"log_channel": ch.LogName,
-			},
-		}
-
-	case 11:
-		// Sysmon file create
-		evt = &Event{
-			ID:        uuid.New().String(),
-			Timestamp: parseTime(we.Time),
-			Type:      EventFileCreate,
-			Severity:  SeverityInfo,
-			File:      extractSysmonFile(we),
-			Annotations: map[string]string{
-				"source":      "sysmon",
-				"event_id":    "11",
-				"log_channel": ch.LogName,
-			},
-		}
-
-	case 12, 13:
-		// Sysmon registry modification
-		evt = &Event{
-			ID:        uuid.New().String(),
-			Timestamp: parseTime(we.Time),
-			Type:      EventRegistryChange,
-			Severity:  SeverityWarning,
-			Annotations: map[string]string{
-				"source":      "sysmon",
-				"event_id":    fmt.Sprintf("%d", we.ID),
-				"detail":      "registry modification",
-				"log_channel": ch.LogName,
-			},
-		}
-
-	case 15:
-		// Sysmon named pipe creation
-		evt = &Event{
-			ID:        uuid.New().String(),
-			Timestamp: parseTime(we.Time),
-			Type:      EventAlert,
-			Severity:  SeverityWarning,
-			Annotations: map[string]string{
-				"source":      "sysmon",
-				"event_id":    "15",
-				"detail":      "named pipe created",
-				"log_channel": ch.LogName,
-			},
-		}
-
-	case 22:
-		// Sysmon DNS query
-		evt = &Event{
-			ID:        uuid.New().String(),
-			Timestamp: parseTime(we.Time),
-			Type:      EventAlert,
-			Severity:  SeverityInfo,
-			Annotations: map[string]string{
-				"source":      "sysmon",
-				"event_id":    "22",
-				"detail":      "DNS query",
-				"log_channel": ch.LogName,
-			},
-		}
-
-	case 106:
-		// Task Scheduler task created
-		evt = &Event{
-			ID:        uuid.New().String(),
-			Timestamp: parseTime(we.Time),
-			Type:      EventAlert,
-			Severity:  SeverityWarning,
-			Annotations: map[string]string{
-				"source":      "taskscheduler",
-				"event_id":    "106",
-				"detail":      "scheduled task created",
-				"log_channel": ch.LogName,
-			},
-		}
-
-	case 7045:
-		// Service installed
-		evt = &Event{
-			ID:        uuid.New().String(),
-			Timestamp: parseTime(we.Time),
-			Type:      EventAlert,
-			Severity:  SeverityAlert,
-			Annotations: map[string]string{
-				"source":      "service_control",
-				"event_id":    "7045",
-				"detail":      "service installed",
-				"log_channel": ch.LogName,
-			},
-		}
-
-	case 21, 24:
-		// RDP login/logout
-		evt = &Event{
-			ID:        uuid.New().String(),
-			Timestamp: parseTime(we.Time),
-			Type:      EventAlert,
-			Severity:  SeverityWarning,
-			Annotations: map[string]string{
-				"source":      "terminal_services",
-				"event_id":    fmt.Sprintf("%d", we.ID),
-				"detail":      "RDP session event",
-				"log_channel": ch.LogName,
-			},
-		}
-
-	default:
-		return
-	}
-
-	if evt != nil {
-		select {
-		case m.eventCh <- evt:
-		default:
-		}
-	}
-}
-
-func extractScriptBlock(we winEvent) string {
-	if len(we.Properties) > 0 {
-		if v, ok := we.Properties[0]["Value"]; ok {
-			if s, ok := v.(string); ok {
-				return s
+		script := ""
+		if len(props) > 0 {
+			if s, ok := props[0].(string); ok {
+				script = truncate(s, 500)
 			}
 		}
-	}
-	return we.Message
-}
+		m.emit(EventAlert, SeverityWarning, map[string]string{
+			"source": "powershell", "event_id": fmt.Sprintf("%d", we.ID),
+			"script": script, "log_channel": ch.LogName,
+		})
 
-func extractSysmonProcess(we winEvent) *ProcessInfo {
-	pi := &ProcessInfo{}
-	if len(we.Properties) >= 6 {
-		if s, ok := we.Properties[4]["Value"].(string); ok {
-			pi.Name = s
+	case 1:
+		pi := &ProcessInfo{}
+		if len(props) >= 6 {
+			if s, ok := props[4].(string); ok {
+				pi.Name = s
+			}
 		}
-	}
-	// Fallback: try to parse from message
-	if pi.Name == "" {
-		pi.Name = extractFromMessage(we.Message, "Image:")
-	}
-	return pi
-}
-
-func extractSysmonNet(we winEvent) *NetInfo {
-	return &NetInfo{
-		Direction: "outbound",
-		Protocol:  "tcp",
-	}
-}
-
-func extractSysmonFile(we winEvent) *FileInfo {
-	return &FileInfo{
-		Path: extractFromMessage(we.Message, "TargetFilename:"),
-	}
-}
-
-func extractFromMessage(msg, prefix string) string {
-	for _, line := range strings.Split(msg, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, prefix) {
-			return strings.TrimSpace(strings.TrimPrefix(line, prefix))
+		evt := &Event{
+			ID: uuid.New().String(), Timestamp: parseTime(we.Time),
+			Type: EventProcessCreate, Severity: SeverityInfo, Process: pi,
+			Annotations: map[string]string{"source": "sysmon", "event_id": "1", "log_channel": ch.LogName},
 		}
+		select { case m.eventCh <- evt: default: }
+
+	case 3:
+		evt := &Event{
+			ID: uuid.New().String(), Timestamp: parseTime(we.Time),
+			Type: EventNetConnect, Severity: SeverityInfo,
+			Network: &NetInfo{Direction: "outbound", Protocol: "tcp"},
+			Annotations: map[string]string{"source": "sysmon", "event_id": "3", "log_channel": ch.LogName},
+		}
+		select { case m.eventCh <- evt: default: }
+
+	case 8:
+		m.emit(EventAlert, SeverityAlert, map[string]string{
+			"source": "sysmon", "event_id": "8",
+			"detail": "remote thread created — possible code injection",
+			"log_channel": ch.LogName,
+		})
+
+	case 11:
+		m.emit(EventFileCreate, SeverityInfo, map[string]string{
+			"source": "sysmon", "event_id": "11", "log_channel": ch.LogName,
+		})
+
+	case 106:
+		m.emit(EventAlert, SeverityWarning, map[string]string{
+			"source": "taskscheduler", "event_id": "106",
+			"detail": "scheduled task created", "log_channel": ch.LogName,
+		})
+
+	case 7045:
+		m.emit(EventAlert, SeverityAlert, map[string]string{
+			"source": "service_control", "event_id": "7045",
+			"detail": "service installed", "log_channel": ch.LogName,
+		})
+
+	case 21, 24:
+		m.emit(EventAlert, SeverityWarning, map[string]string{
+			"source": "terminal_services", "event_id": fmt.Sprintf("%d", we.ID),
+			"detail": "RDP session event", "log_channel": ch.LogName,
+		})
 	}
-	return ""
+}
+
+func (m *ETWChannelMonitor) emit(etype EventType, sev Severity, annotations map[string]string) {
+	evt := &Event{
+		ID: uuid.New().String(), Timestamp: time.Now().UTC(),
+		Type: etype, Severity: sev, Annotations: annotations,
+	}
+	select {
+	case m.eventCh <- evt:
+	default:
+	}
 }
 
 func parseTime(s string) time.Time {
 	t, err := time.Parse(time.RFC3339Nano, s)
-	if err != nil {
-		t, err = time.Parse(time.RFC3339, s)
-		if err != nil {
-			return time.Now().UTC()
-		}
+	if err == nil {
+		return t.UTC()
 	}
-	return t.UTC()
+	t, err = time.Parse(time.RFC3339, s)
+	if err == nil {
+		return t.UTC()
+	}
+	return time.Now().UTC()
 }
-
-
