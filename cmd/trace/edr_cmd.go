@@ -356,18 +356,18 @@ func newEDRDispatchCmd() *cobra.Command {
 		Long: `Send a response action to an EDR agent.
 
 Actions:
-  kill-process    Kill a process by PID or name (target=pid or target=name)
-  quarantine      Quarantine a file (target=/path/to/file)
-  block-ip        Block an IP address (target=192.168.1.1)
-  run-script      Execute a script (target=script content)
-  isolate         Isolate host from network (target=hostname)
-  collect-forensics  Collect forensic snapshot (target=optional)
-  system-snapshot    Take system snapshot (target=optional)`,
+  kill_process        Kill a process by PID or name (target=pid or target=name)
+  quarantine_file     Quarantine a file (target=/path/to/file)
+  block_ip            Block an IP address (target=192.168.1.1)
+  run_script          Execute a script (target=script content)
+  isolate_host        Isolate host from network (target=hostname)
+  collect_forensics   Collect forensic snapshot (target=optional)
+  system_snapshot     Take system snapshot (target=optional)`,
 		Args: cobra.MinimumNArgs(2),
-		Example: `  trace edr dispatch abc123 kill-process --pid 4521
-  trace edr dispatch abc123 quarantine --path /tmp/malware.exe
-  trace edr dispatch abc123 block-ip --ip 203.0.113.42
-  trace edr dispatch abc123 isolate`,
+		Example: `  trace edr dispatch abc123 kill_process --pid 4521
+  trace edr dispatch abc123 quarantine_file --path C:\malware.exe
+  trace edr dispatch abc123 block_ip --ip 203.0.113.42
+  trace edr dispatch abc123 isolate_host`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := getEDRClient(cmd.Parent())
 			if err != nil {
