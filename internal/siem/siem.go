@@ -57,7 +57,7 @@ type Engine struct {
 func New(cfg SIEMConfig) *Engine {
 	e := &Engine{
 		cfg:           cfg,
-		decoders:      []Decoder{&K8sAuditDecoder{}, &AutoDecoder{}, &JSONDecoder{}, &ApacheDecoder{}, &SyslogDecoder{}, &EVTXDecoder{}, &WindowsEventDecoder{}, &WazuhDecoder{}},
+		decoders:      []Decoder{&K8sAuditDecoder{}, &SuricataDecoder{}, &AutoDecoder{}, &JSONDecoder{}, &ApacheDecoder{}, &SyslogDecoder{}, &EVTXDecoder{}, &WindowsEventDecoder{}, &WazuhDecoder{}},
 		ruleEngine:    NewRuleEngine(),
 		eventCh:       make(chan *Event, 10000),
 		alertCh:       make(chan *Alert, 1000),

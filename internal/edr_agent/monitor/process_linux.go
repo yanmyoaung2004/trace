@@ -77,7 +77,8 @@ func (pm *LinuxProcMonitor) Start(ctx context.Context) error {
 
 	fd, err := unix.Socket(unix.AF_NETLINK, unix.SOCK_DGRAM, unix.NETLINK_CONNECTOR)
 	if err != nil {
-		log.Printf("[proc-mon] netlink unavailable: %v", err)
+		log.Printf("[proc-mon] netlink unavailable: %v. Falling back to /proc polling.", err)
+		log.Printf("[proc-mon] to enable real-time process monitoring: setcap cap_net_admin=ep ./trace-agent or run as root")
 		return pm.startFallback()
 	}
 
