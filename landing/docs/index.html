@@ -330,7 +330,8 @@ Flags:
   --uninstall          Remove system service
   --service            Run as Windows service (SCM)
   --status             Show agent status
-  --version            Print version</code></pre>
+  --version            Print version
+  --verbose            Enable verbose/debug logging</code></pre>
 
     <h3>Monitoring</h3>
     <table>
@@ -363,12 +364,17 @@ Flags:
     </ul>
 
     <h3>Management (from Trace server)</h3>
-    <pre><code>trace edr list                     # List agents
-trace edr view <id>                # Agent details
-trace edr events <id>              # Recent events
-trace edr dispatch <id> <action>   # Send action
-trace edr dismiss <alert-id>       # Mark false positive
-trace edr revoke <id>              # Remove agent</code></pre>
+    <pre><code>trace edr list                                         # List active agents (--all for revoked)
+trace edr view &lt;id&gt;                                    # Details: CPU name, memory in GB, IP
+trace edr events &lt;id&gt; [--type TYPE] [--min-severity N] # Events with YARA rule name + event ID
+trace edr events &lt;id&gt; --type alert --limit 10          # Filter by type, severity, limit
+trace edr dispatch &lt;id&gt; block_ip --ip 203.0.113.42     # Block IP
+trace edr dispatch &lt;id&gt; kill_process --pid 4521        # Kill process
+trace edr dispatch &lt;id&gt; quarantine_file --path C:\mal.exe # Quarantine file
+trace edr dispatch &lt;id&gt; isolate_host                    # Isolate from network
+trace edr dispatch &lt;id&gt; system_snapshot                 # System snapshot
+trace edr dismiss &lt;alert-id&gt; [--reason "note"]         # Mark false positive
+trace edr revoke &lt;id&gt;                                  # Remove agent</code></pre>
 
     <h2 id="cli">CLI Reference</h2>
     <p>18 commands with shell completion and interactive prompt fallback.</p>

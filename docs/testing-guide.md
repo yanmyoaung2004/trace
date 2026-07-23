@@ -987,37 +987,37 @@ trace edr events <agent-id> --min-severity 3
 
 ```bash
 # Kill a process by PID
-trace edr dispatch <agent-id> kill-process --pid 1234
+trace edr dispatch <agent-id> kill_process --pid 1234
 
 # Kill all processes by name
-trace edr dispatch <agent-id> kill-process --name notepad.exe
+trace edr dispatch <agent-id> kill_process --name notepad.exe
 
 # Quarantine a file
-trace edr dispatch <agent-id> quarantine-file --path C:\malware.exe
+trace edr dispatch <agent-id> quarantine_file --path C:\malware.exe
 
 # Block an IP
-trace edr dispatch <agent-id> block-ip --ip 203.0.113.42
+trace edr dispatch <agent-id> block_ip --ip 203.0.113.42
 
 # Block multiple IPs
-trace edr dispatch <agent-id> block-ip --ip 203.0.113.42 --ip 10.0.0.5
+trace edr dispatch <agent-id> block_ip --ip 203.0.113.42 --ip 10.0.0.5
 
 # Run a script from URL
-trace edr dispatch <agent-id> run-script --url https://scripts.example.com/remediate.ps1
+trace edr dispatch <agent-id> run_script --script "curl -s https://scripts.example.com/remediate.ps1 | powershell -"
 
 # Run a script with timeout
-trace edr dispatch <agent-id> run-script --url https://scripts.example.com/scan.ps1 --timeout 30
+trace edr dispatch <agent-id> run_script --script "ping -n 30 127.0.0.1" --timeout 10
 
 # Isolate a host (block all inbound)
-trace edr dispatch <agent-id> isolate-host
+trace edr dispatch <agent-id> isolate_host
 
 # Release a host from isolation
-trace edr dispatch <agent-id> release-host
+trace edr dispatch <agent-id> release_host
 
 # Collect forensics snapshot
-trace edr dispatch <agent-id> collect-forensics
+trace edr dispatch <agent-id> collect_forensics
 
 # Full system snapshot
-trace edr dispatch <agent-id> system-snapshot
+trace edr dispatch <agent-id> system_snapshot
 ```
 
 #### False Positive Management
@@ -1158,7 +1158,7 @@ curl -H "Authorization: Bearer $(trace genkey)" http://localhost:8080/api/v1/edr
 # Dispatch a response action (same as CLI)
 curl -X POST -H "Authorization: Bearer $(trace genkey)" \
   -H "Content-Type: application/json" \
-  -d '{"action":"isolate","target":""}' \
+	-d '{"action":"isolate_host","target":""}' \
   http://localhost:8080/api/v1/edr/dispatch/<agent-id>
 
 # List dismissals (FP learning data)
@@ -1187,47 +1187,59 @@ sqlite3 ~/.trace/trace.db "SELECT event_type, dismiss_count, auto_throttled FROM
 
 ### 10. Full Pipeline Smoke Test
 
-```bash
+```powershell
 cd dev
-go build -o trace.exe ./cmd/trace/
-go build -o trace-agent.exe ./cmd/trace-agent/
+go build -o trace.exe .\cmd\trace\
+go build -o trace-agent.exe .\cmd\trace-agent\
 
-# Start server
-trace.exe server --http-addr :8080 &
-Start-Sleep 2
+# Start server (in a terminal)
+.\trace.exe server --http-addr :8080
 
-# Start agent
-trace-agent.exe --server http://localhost:8080 --api-key test-key --verbose --poll-interval 5s &
-Start-Sleep 3
+# In another terminal — start agent
+.\trace-agent.exe --server http://localhost:8080 --api-key test-key --verbose
 
-# List agents
-trace edr list
+# In another terminal — run tests
+$env:TRACE_API_KEY = "f19efa85-834f-4978-901d-"
 
-# View agent detail
-$AGENT_ID = (trace edr list | Select-Object -First 1).Split()[0]
-trace edr view $AGENT_ID
+# List active agents
+.\trace.exe edr list
 
-# Generate events — create a file
-echo "X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*" > C:\temp\eicar.txt
-Start-Sleep 6  # Wait for poll interval
+# Get agent ID (first active agent)
+$lines = .\trace.exe edr list
+foreach ($line in $lines) { if ($line -match '^  [0-9a-f-]{36}') { $AID = $matches[0].Trim(); break } }
 
-# Check for EICAR detection
-trace edr events $AGENT_ID --type memory --min-severity 3
+# View agent detail (shows CPU name, memory in GB, IP)
+.\trace.exe edr view $AID
 
-# Dismiss false positive
-trace edr dismiss $(trace edr events $AGENT_ID --min-severity 3 | Select-Object -First 1).Split()[0]
+# Generate file event
+mkdir C:\temp -Force
+echo "hello" > C:\temp\test.txt
+Start-Sleep 8
 
-# Stop agent
-Stop-Process -Name trace-agent -Force
+# Check file events
+.\trace.exe edr events $AID --type file --limit 5
+
+# Generate EICAR test (triggers YARA scan)
+"X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*" | Out-File -FilePath C:\temp\eicar.txt -Encoding ascii
+Start-Sleep 8
+
+# Check for YARA detection (shows rule name + event ID)
+.\trace.exe edr events $AID --type alert --limit 5
+
+# Dismiss a false positive
+.\trace.exe edr dismiss <event-id-from-above> --reason "Test FP"
+
+# Dispatch a response action (run agent as admin for firewall changes)
+.\trace.exe edr dispatch $AID block_ip --ip 203.0.113.42
+
+# Verify firewall rule
+netsh advfirewall firewall show rule name=trace-block-203-0-113-42
 
 # Run all unit tests
-go test ./internal/edr_agent/... -short -count=1
-
-# Cleanup
-Stop-Process -Name trace -Force
+go test .\internal\edr_agent\... -short -count=1
 ```
 
-Expected: Full pipeline — server starts, agent registers, events flow, detections fire, dismissals work, tests pass.
+Expected: Full pipeline — server starts, agent registers, events flow with YARA rule names visible, dismissals work, actions dispatch and execute, tests pass.
 
 ## Quick smoke test (full pipeline)
 

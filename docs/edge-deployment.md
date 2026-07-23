@@ -267,12 +267,16 @@ Trace now includes its own lightweight endpoint agent, replacing the need for th
 ### CLI (`trace edr`)
 
 ```
-trace edr list                     # List agents
-trace edr view <id>                # Agent details
-trace edr events <id>              # Recent events
-trace edr dispatch <id> <action>   # Send action
-trace edr dismiss <alert-id>       # Mark alert as false positive (FP learning)
-trace edr revoke <id>              # Remove agent
+trace edr list                                          # List active agents (--all for revoked)
+trace edr view <id>                                     # Agent details (CPU name, memory in GB, IP)
+trace edr events <id> [--type TYPE] [--min-severity N]  # Recent events with YARA rule name + ID
+trace edr dispatch <id> block_ip --ip 203.0.113.42      # Send action (block_ip, kill_process, etc.)
+trace edr dispatch <id> kill_process --pid 4521         # Kill by PID
+trace edr dispatch <id> quarantine_file --path C:\mal.exe # Quarantine file
+trace edr dispatch <id> isolate_host                     # Isolate from network
+trace edr dispatch <id> system_snapshot                  # Full system snapshot
+trace edr dismiss <alert-id> [--reason "note"]          # Mark alert as false positive (FP learning)
+trace edr revoke <id>                                   # Remove agent
 ```
 
 ## What This Enables

@@ -337,34 +337,34 @@ Global flags (apply before subcommand):
 Subcommands:
 | Command | Description |
 |---------|-------------|
-| `list` | List all registered EDR agents |
-| `view <agent-id>` | View agent details and status |
-| `events <agent-id>` | View recent events from an agent |
+| `list` | List active EDR agents (use --all to include revoked) |
+| `view <agent-id>` | View agent details and status — shows CPU name, memory in GB |
+| `events <agent-id>` | View recent events from an agent — supports --type, --min-severity, --limit |
 | `dispatch <agent-id> <action> [target]` | Send a response action to an agent |
-| `dismiss <alert-id>` | Mark an alert as false positive (trains FP learning) |
+| `dismiss <alert-id>` | Mark an alert as false positive (trains FP learning) — supports --reason |
 | `revoke <agent-id>` | Revoke and remove an agent |
 
 Dispatch actions:
 | Action | Target | Extra Flags |
 |--------|--------|-------------|
-| `kill-process` | PID or process name | `--pid N` or pass name as target |
-| `quarantine` | File path | `--path /path/to/file` |
-| `block-ip` | IP address | `--ip 192.168.1.1` |
-| `run-script` | Script content | `--script "cmd"` |
-| `isolate` | Hostname | No extra flags |
-| `collect-forensics` | (optional) | No extra flags |
-| `system-snapshot` | (optional) | No extra flags |
+| `kill_process` | PID or process name | `--pid N` or pass name as target |
+| `quarantine_file` | File path | `--path /path/to/file` |
+| `block_ip` | IP address | `--ip 192.168.1.1` |
+| `run_script` | Script content | `--script "cmd"` |
+| `isolate_host` | Hostname | No extra flags |
+| `collect_forensics` | (optional) | No extra flags |
+| `system_snapshot` | (optional) | No extra flags |
 
 Examples:
 ```powershell
 trace edr list
 trace edr view abc123
-trace edr events abc123
-trace edr dispatch abc123 kill-process --pid 4521
-trace edr dispatch abc123 quarantine --path /tmp/malware.exe
-trace edr dispatch abc123 block-ip --ip 203.0.113.42
-trace edr dispatch abc123 isolate
-trace edr dismiss a1b2c3d4-e5f6-7890-abcd-ef1234567890
+trace edr events abc123 --type alert --min-severity 3 --limit 10
+trace edr dispatch abc123 kill_process --pid 4521
+trace edr dispatch abc123 quarantine_file --path /tmp/malware.exe
+trace edr dispatch abc123 block_ip --ip 203.0.113.42
+trace edr dispatch abc123 isolate_host
+trace edr dismiss a1b2c3d4-e5f6-7890-abcd-ef1234567890 --reason "Legitimate admin activity"
 ```
 
 ## `trace-agent` (separate binary)
@@ -383,6 +383,7 @@ trace-agent [flags]
 | `--install` | — | Install as system service (Windows SCM or systemd) |
 | `--uninstall` | — | Remove system service |
 | `--service` | — | Run as Windows service (used by SCM) |
+| `--verbose` | — | Enable verbose/debug logging |
 | `--version` | — | Print version |
 
 ### Agent configuration (`~/.trace-agent/config.json`)

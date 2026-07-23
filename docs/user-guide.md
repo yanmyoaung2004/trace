@@ -847,23 +847,31 @@ trace edr list
 
 | Action | CLI Command |
 |--------|-------------|
-| Kill process | `trace edr dispatch <id> kill-process --pid 4521` |
-| Quarantine file | `trace edr dispatch <id> quarantine --path /tmp/evil.exe` |
-| Block IP | `trace edr dispatch <id> block-ip --ip 203.0.113.42` |
-| Isolate host | `trace edr dispatch <id> isolate` |
-| Collect forensics | `trace edr dispatch <id> collect-forensics` |
+| Kill process | `trace edr dispatch <id> kill_process --pid 4521` |
+| Quarantine file | `trace edr dispatch <id> quarantine_file --path /tmp/evil.exe` |
+| Block IP | `trace edr dispatch <id> block_ip --ip 203.0.113.42` |
+| Isolate host | `trace edr dispatch <id> isolate_host` |
+| Collect forensics | `trace edr dispatch <id> collect_forensics` |
+| System snapshot | `trace edr dispatch <id> system_snapshot` |
+| Run script | `trace edr dispatch <id> run_script --script "command"` |
 
 ### Viewing Agent Data
 
 ```bash
-# List agents
+# List active agents (--all to include revoked)
 trace edr list
 
-# View agent details
+# View agent details (shows CPU name, memory in GB, IP address)
 trace edr view <agent-id>
 
-# View recent events
+# View recent events (shows YARA rule name + event ID for copy-paste dismiss)
 trace edr events <agent-id>
+trace edr events <agent-id> --type alert              # Filter by type
+trace edr events <agent-id> --min-severity 3           # Minimum severity
+trace edr events <agent-id> --limit 10                 # Max results
+
+# Dismiss a false positive (trains FP learning, auto-throttles after 10)
+trace edr dismiss <event-id> --reason "Legitimate activity"
 
 # Revoke an agent
 trace edr revoke <agent-id>
