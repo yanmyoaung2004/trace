@@ -150,7 +150,59 @@ Examples:
 		},
 	}
 
-	cmd.AddCommand(reportCmd, assessCmd, evidenceCmd, listCmd)
+	trendCmd := &cobra.Command{
+		Use:   "trend",
+		Short: "Show compliance score history over time",
+		RunE: func(cmdCobra *cobra.Command, args []string) error {
+			framework, _ := cmdCobra.Flags().GetString("framework")
+			days, _ := cmdCobra.Flags().GetInt("days")
+
+			if framework == "" {
+				return fmt.Errorf("--framework is required")
+			}
+
+			history, err := complianceEngine.GetHistory(framework, days)
+			if err != nil {
+				return fmt.Errorf("history: %w", err)
+			}
+
+			if len(history) == 0 {
+				fmt.Println("No compliance history found. Run 'trace compliance report' first.")
+				return nil
+			}
+
+			fmt.Printf("\n  Compliance Trend — %s  (last %d days)\n\n", framework, days)
+			for _, p := range history {
+				score := int(p.Score)
+				bar := ""
+				for i := 0; i < score/5; i++ {
+					bar += "█"
+				}
+				for i := score / 5; i < 20; i++ {
+					bar += "░"
+				}
+				fmt.Printf("  %s  %3d%%  %s\n", p.Date[:10], score, bar)
+			}
+
+			// Show trend direction
+			if len(history) >= 2 {
+				first, last := history[0].Score, history[len(history)-1].Score
+				diff := last - first
+				dir := "→ stable"
+				if diff > 2 {
+					dir = fmt.Sprintf("↑ improving (+%.0f%%)", diff)
+				} else if diff < -2 {
+					dir = fmt.Sprintf("↓ declining (%.0f%%)", diff)
+				}
+				fmt.Printf("\n  Trend: %s\n", dir)
+			}
+			return nil
+		},
+	}
+	trendCmd.Flags().StringP("framework", "f", "", "Compliance framework")
+	trendCmd.Flags().Int("days", 30, "Number of days to show")
+
+	cmd.AddCommand(reportCmd, assessCmd, evidenceCmd, listCmd, trendCmd)
 	return cmd
 }
 

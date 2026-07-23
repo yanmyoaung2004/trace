@@ -39,8 +39,11 @@ func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 				}
 			}
 			if apiKey != "" {
-				if userID, role, err := h.manager.Authenticate(r.Context(), apiKey); err == nil && userID != "" {
+				if userID, role, orgID, err := h.manager.AuthenticateOrg(r.Context(), apiKey); err == nil && userID != "" {
 					ctx := context.WithValue(r.Context(), ctxKeyRole, role)
+					if orgID != "" {
+						ctx = context.WithValue(ctx, ctxKeyOrg, orgID)
+					}
 					r = r.WithContext(ctx)
 					handler(w, r)
 					return
@@ -74,6 +77,7 @@ func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/edr/alerts/dismiss", protected(h.handleEDRAlertDismiss))
 	mux.HandleFunc("/api/v1/edr/agents", readOnly(h.handleEDRAgentsList))
 	mux.HandleFunc("/api/v1/edr/agents/", readOnly(h.handleEDRAgentByID))
+	mux.HandleFunc("/api/v1/admin/orgs", protected(h.handleOrgs))
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -82,7 +86,10 @@ func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 
 type contextKey string
 
-const ctxKeyRole contextKey = "role"
+const (
+	ctxKeyRole contextKey = "role"
+	ctxKeyOrg  contextKey = "org_id"
+)
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -538,12 +545,17 @@ func (h *SyncHandler) handleEDRActionResult(w http.ResponseWriter, r *http.Reque
 func (h *SyncHandler) handleEDRAgentsList(w http.ResponseWriter, r *http.Request) {
 	onlyActive := r.URL.Query().Get("all") != "true"
 	query := `SELECT id, hostname, platform, arch, agent_version, status, ip_address, last_heartbeat, cpu_count, cpu_name, memory_mb, created_at
-		 FROM edr_agents`
+		 FROM edr_agents WHERE 1=1`
+	var args []any
 	if onlyActive {
-		query += ` WHERE status = 'active'`
+		query += ` AND status = 'active'`
+	}
+	if orgID := r.Context().Value(ctxKeyOrg); orgID != nil && orgID.(string) != "" {
+		query += ` AND (org_id = ? OR org_id = '')`
+		args = append(args, orgID.(string))
 	}
 	query += ` ORDER BY last_heartbeat DESC`
-	rows, err := h.manager.db.QueryContext(r.Context(), query)
+	rows, err := h.manager.db.QueryContext(r.Context(), query, args...)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "query error")
 		return
@@ -766,6 +778,46 @@ func ServeHTTP(opts ServeOptions, mgr *ServerManager, dashboard DashboardDataPro
 	}()
 
 	return srv, nil
+}
+
+func (h *SyncHandler) handleOrgs(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "POST" {
+		var req struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+			writeError(w, http.StatusBadRequest, "name required")
+			return
+		}
+		id, err := h.manager.CreateOrg(r.Context(), req.Name)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "create failed")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"id": id, "name": req.Name})
+		return
+	}
+
+	rows, err := h.manager.db.QueryContext(r.Context(),
+		`SELECT id, name, created_at FROM server_orgs ORDER BY name`)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	defer rows.Close()
+
+	type org struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	var orgs []org
+	for rows.Next() {
+		var o org
+		var createdAt string
+		rows.Scan(&o.ID, &o.Name, &createdAt)
+		orgs = append(orgs, o)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"orgs": orgs})
 }
 
 func init() {

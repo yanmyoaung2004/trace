@@ -147,6 +147,25 @@ func (m *ServerManager) Migrate() error {
 			last_seen TEXT NOT NULL DEFAULT (datetime('now')),
 			PRIMARY KEY (rule_name, process_name)
 		)`,
+		`CREATE TABLE IF NOT EXISTS compliance_snapshots (
+			id TEXT PRIMARY KEY,
+			hostname TEXT NOT NULL,
+			framework TEXT NOT NULL,
+			score REAL NOT NULL,
+			total INTEGER NOT NULL,
+			passed INTEGER NOT NULL,
+			failed INTEGER NOT NULL,
+			not_covered INTEGER NOT NULL,
+			snapshot TEXT NOT NULL DEFAULT '[]',
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_cs_host ON compliance_snapshots(hostname)`,
+		`CREATE INDEX IF NOT EXISTS idx_cs_framework ON compliance_snapshots(framework)`,
+		`CREATE TABLE IF NOT EXISTS server_orgs (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		)`,
 	}
 
 	for _, q := range queries {
@@ -157,6 +176,11 @@ func (m *ServerManager) Migrate() error {
 
 	// Migration: add cpu_name if missing (ignore error if column already exists)
 	m.db.Exec("ALTER TABLE edr_agents ADD COLUMN cpu_name TEXT DEFAULT ''")
+
+	// Migration: add org_id columns for RBAC
+	m.db.Exec("ALTER TABLE server_users ADD COLUMN org_id TEXT DEFAULT ''")
+	m.db.Exec("ALTER TABLE edr_agents ADD COLUMN org_id TEXT DEFAULT ''")
+	m.db.Exec("ALTER TABLE edr_events ADD COLUMN org_id TEXT DEFAULT ''")
 
 	return nil
 }
@@ -437,6 +461,66 @@ func (m *ServerManager) Authenticate(ctx context.Context, apiKey string) (string
 		return "", "", status.Error(codes.Unauthenticated, "invalid api key")
 	}
 	return id, role, nil
+}
+
+func (m *ServerManager) AuthenticateOrg(ctx context.Context, apiKey string) (string, string, string, error) {
+	var id, role, orgID string
+	err := m.db.QueryRowContext(ctx,
+		`SELECT id, role, COALESCE(org_id, '') FROM server_users WHERE api_key = ?`, apiKey).
+		Scan(&id, &role, &orgID)
+	if err != nil {
+		return "", "", "", status.Error(codes.Unauthenticated, "invalid api key")
+	}
+	return id, role, orgID, nil
+}
+
+func (m *ServerManager) RecordComplianceSnapshot(ctx context.Context, hostname, framework string, score float64, total, passed, failed, notCovered int, snapshot []byte) error {
+	_, err := m.db.ExecContext(ctx,
+		`INSERT INTO compliance_snapshots (id, hostname, framework, score, total, passed, failed, not_covered, snapshot, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+		uuid.New().String(), hostname, framework, score, total, passed, failed, notCovered, string(snapshot))
+	return err
+}
+
+type ComplianceScorePoint struct {
+	Date      string  `json:"date"`
+	Score     float64 `json:"score"`
+	Total     int     `json:"total"`
+	Passed    int     `json:"passed"`
+	Failed    int     `json:"failed"`
+}
+
+func (m *ServerManager) GetComplianceHistory(ctx context.Context, hostname, framework string, days int) ([]ComplianceScorePoint, error) {
+	cutoff := fmt.Sprintf("-%d days", days)
+	rows, err := m.db.QueryContext(ctx,
+		`SELECT created_at, score, total, passed, failed FROM compliance_snapshots
+		 WHERE hostname = ? AND framework = ?
+		 AND created_at >= datetime('now', ?)
+		 ORDER BY created_at`, hostname, framework, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var points []ComplianceScorePoint
+	for rows.Next() {
+		var p ComplianceScorePoint
+		if err := rows.Scan(&p.Date, &p.Score, &p.Total, &p.Passed, &p.Failed); err != nil {
+			return nil, err
+		}
+		points = append(points, p)
+	}
+	return points, nil
+}
+
+func (m *ServerManager) CreateOrg(ctx context.Context, name string) (string, error) {
+	id := uuid.New().String()
+	_, err := m.db.ExecContext(ctx,
+		`INSERT INTO server_orgs (id, name) VALUES (?, ?)`, id, name)
+	if err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
 func init() {

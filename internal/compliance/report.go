@@ -58,6 +58,14 @@ func NewReportEngine(scaAgent agent.Agent) *ReportEngine {
 	}
 }
 
+type ScorePoint struct {
+	Date      string  `json:"date"`
+	Score     float64 `json:"score"`
+	Total     int     `json:"total"`
+	Passed    int     `json:"passed"`
+	Failed    int     `json:"failed"`
+}
+
 func (e *ReportEngine) GenerateReport(ctx context.Context, opts ReportOptions) (*Report, error) {
 	fw, ok := Frameworks[opts.Framework]
 	if !ok {
@@ -121,7 +129,61 @@ func (e *ReportEngine) GenerateReport(ctx context.Context, opts ReportOptions) (
 		e.mergeScanResults(report)
 	}
 
+	// Record snapshot for trend tracking
+	e.recordSnapshot(report)
+
 	return report, nil
+}
+
+func (e *ReportEngine) recordSnapshot(report *Report) {
+	path := filepath.Join(e.DataDir, "history", report.Framework+".jsonl")
+	os.MkdirAll(filepath.Dir(path), 0700)
+
+	point := ScorePoint{
+		Date:   time.Now().UTC().Format(time.RFC3339),
+		Score:  report.Score,
+		Total:  report.Total,
+		Passed: report.Passed,
+		Failed: report.Failed,
+	}
+	data, _ := json.Marshal(point)
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	f.Write(data)
+	f.Write([]byte("\n"))
+}
+
+func (e *ReportEngine) GetHistory(framework string, days int) ([]ScorePoint, error) {
+	path := filepath.Join(e.DataDir, "history", framework+".jsonl")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, nil
+	}
+
+	cutoff := time.Now().AddDate(0, 0, -days)
+	var points []ScorePoint
+	for _, line := range strings.Split(string(data), "\n") {
+		if line == "" {
+			continue
+		}
+		var p ScorePoint
+		if err := json.Unmarshal([]byte(line), &p); err != nil {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, p.Date)
+		if err != nil {
+			continue
+		}
+		if t.Before(cutoff) {
+			continue
+		}
+		points = append(points, p)
+	}
+	return points, nil
 }
 
 func (e *ReportEngine) tryAutoScan(ctx context.Context, opts ReportOptions) error {
