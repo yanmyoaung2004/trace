@@ -51,8 +51,9 @@ type RegisterRequest struct {
 	CPUName       string `json:"cpu_name,omitempty"`
 	MemoryMB      int64  `json:"memory_mb"`
 	AgentVersion  string `json:"agent_version"`
-	Monitors      string `json:"monitors"`
-}
+		Monitors      string `json:"monitors"`
+		APIKey        string `json:"api_key,omitempty"`
+	}
 
 type RegisterResponse struct {
 	AgentID string `json:"agent_id"`

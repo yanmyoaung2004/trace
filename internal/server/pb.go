@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -472,6 +474,18 @@ func (m *ServerManager) AuthenticateOrg(ctx context.Context, apiKey string) (str
 		return "", "", "", status.Error(codes.Unauthenticated, "invalid api key")
 	}
 	return id, role, orgID, nil
+}
+
+func (m *ServerManager) AuthenticateAgent(ctx context.Context, apiKey string) (string, error) {
+	h := sha256.Sum256([]byte(apiKey))
+	hash := hex.EncodeToString(h[:])
+	var agentID string
+	err := m.db.QueryRowContext(ctx,
+		`SELECT id FROM edr_agents WHERE api_key_hash = ? AND status = 'active'`, hash).Scan(&agentID)
+	if err != nil {
+		return "", fmt.Errorf("invalid agent key")
+	}
+	return agentID, nil
 }
 
 func (m *ServerManager) RecordComplianceSnapshot(ctx context.Context, hostname, framework string, score float64, total, passed, failed, notCovered int, snapshot []byte) error {

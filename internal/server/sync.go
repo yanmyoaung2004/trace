@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -59,6 +61,29 @@ func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 		})
 	}
 
+	agentProtected := func(handler http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			var agentKey string
+			if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+				agentKey = strings.TrimPrefix(auth, "Bearer ")
+			} else {
+				agentKey = r.URL.Query().Get("api_key")
+			}
+			if agentKey == "" {
+				writeError(w, http.StatusUnauthorized, "unauthorized — provide Authorization: Bearer <agent-key>")
+				return
+			}
+			agentID, err := h.manager.AuthenticateAgent(r.Context(), agentKey)
+			if err != nil || agentID == "" {
+				writeError(w, http.StatusUnauthorized, "invalid agent key")
+				return
+			}
+			ctx := context.WithValue(r.Context(), ctxKeyAgentID, agentID)
+			r = r.WithContext(ctx)
+			handler(w, r)
+		}
+	}
+
 	mux.HandleFunc("/api/v1/register", protected(h.handleRegister))
 	mux.HandleFunc("/api/v1/heartbeat", protected(h.handleHeartbeat))
 	mux.HandleFunc("/api/v1/push", protected(h.handlePush))
@@ -69,10 +94,10 @@ func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/timeline/", readOnly(h.handleTimeline))
 
 	mux.HandleFunc("/api/v1/edr/register", h.handleEDRRegister)
-	mux.HandleFunc("/api/v1/edr/heartbeat", h.handleEDRHeartbeat)
-	mux.HandleFunc("/api/v1/edr/events", h.handleEDREvents)
-	mux.HandleFunc("/api/v1/edr/actions/pending", h.handleEDRActionsPending)
-	mux.HandleFunc("/api/v1/edr/actions/result", h.handleEDRActionResult)
+	mux.HandleFunc("/api/v1/edr/heartbeat", agentProtected(h.handleEDRHeartbeat))
+	mux.HandleFunc("/api/v1/edr/events", agentProtected(h.handleEDREvents))
+	mux.HandleFunc("/api/v1/edr/actions/pending", agentProtected(h.handleEDRActionsPending))
+	mux.HandleFunc("/api/v1/edr/actions/result", agentProtected(h.handleEDRActionResult))
 	mux.HandleFunc("/api/v1/edr/actions/dispatch", protected(h.handleEDRDispatch))
 	mux.HandleFunc("/api/v1/edr/alerts/dismiss", protected(h.handleEDRAlertDismiss))
 	mux.HandleFunc("/api/v1/edr/agents", readOnly(h.handleEDRAgentsList))
@@ -87,8 +112,9 @@ func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 type contextKey string
 
 const (
-	ctxKeyRole contextKey = "role"
-	ctxKeyOrg  contextKey = "org_id"
+	ctxKeyRole    contextKey = "role"
+	ctxKeyOrg     contextKey = "org_id"
+	ctxKeyAgentID contextKey = "agent_id"
 )
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -285,6 +311,7 @@ func (h *SyncHandler) handleEDRRegister(w http.ResponseWriter, r *http.Request) 
 		AgentVersion  string `json:"agent_version"`
 		Monitors      string `json:"monitors"`
 		OrgID         string `json:"org_id,omitempty"`
+		APIKey        string `json:"api_key"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
@@ -302,10 +329,17 @@ func (h *SyncHandler) handleEDRRegister(w http.ResponseWriter, r *http.Request) 
 		ip = r.RemoteAddr
 	}
 
+	// Hash the agent API key
+	apiKeyHash := ""
+	if req.APIKey != "" {
+		h := sha256.Sum256([]byte(req.APIKey))
+		apiKeyHash = hex.EncodeToString(h[:])
+	}
+
 	_, err := h.manager.db.ExecContext(r.Context(),
-		`INSERT INTO edr_agents (id, hostname, platform, arch, version, agent_version, status, ip_address, cpu_count, cpu_name, memory_mb, kernel_version, monitors, org_id, last_heartbeat, last_ip, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, req.Hostname, req.Platform, req.Arch, req.Version, req.AgentVersion, ip, req.CPUCount, req.CPUName, req.MemoryMB, req.KernelVersion, req.Monitors, req.OrgID, now, ip, now, now)
+		`INSERT INTO edr_agents (id, hostname, platform, arch, version, agent_version, status, ip_address, cpu_count, cpu_name, memory_mb, kernel_version, monitors, org_id, api_key_hash, last_heartbeat, last_ip, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, req.Hostname, req.Platform, req.Arch, req.Version, req.AgentVersion, ip, req.CPUCount, req.CPUName, req.MemoryMB, req.KernelVersion, req.Monitors, req.OrgID, apiKeyHash, now, ip, now, now)
 	if err != nil {
 		log.Printf("[edr] register error: %v", err)
 		writeError(w, http.StatusInternalServerError, "registration failed")

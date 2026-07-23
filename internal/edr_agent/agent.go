@@ -36,6 +36,8 @@ type Agent struct {
 	linuxProcMon *monitor.LinuxProcMonitor
 	winProcMon   *monitor.WindowsProcMonitor
 	fileMon    *monitor.FileMonitor
+	fanMon     *monitor.FanotifyMonitor
+	inoMon     *monitor.InotifyFileMonitor
 	netMon     *monitor.NetworkMonitor
 	fimMon     *monitor.FIMMonitor
 	etwChannels *monitor.ETWChannelMonitor
@@ -129,19 +131,21 @@ func (a *Agent) Start(ctx context.Context) error {
 	if a.config.MonitorProcess {
 		switch runtime.GOOS {
 		case "linux":
-			lpm := monitor.NewLinuxProcMonitor(a.eventCh)
-			if err := lpm.Start(ctx); err == nil {
+			a.linuxProcMon = monitor.NewLinuxProcMonitor(a.eventCh)
+			if err := a.linuxProcMon.Start(ctx); err == nil {
 				log.Printf("[trace-agent] linux netlink process monitor active")
 			} else {
+				a.linuxProcMon = nil
 				a.procMon = monitor.NewProcessMonitor(a.eventCh)
 				a.procMon.Start(ctx)
 				log.Printf("[trace-agent] /proc polling fallback active")
 			}
 		case "windows":
-			wpm := monitor.NewWindowsProcMonitor(a.eventCh)
-			if err := wpm.Start(ctx); err == nil {
+			a.winProcMon = monitor.NewWindowsProcMonitor(a.eventCh)
+			if err := a.winProcMon.Start(ctx); err == nil {
 				log.Printf("[trace-agent] windows ETW process monitor active")
 			} else {
+				a.winProcMon = nil
 				a.procMon = monitor.NewProcessMonitor(a.eventCh)
 				a.procMon.Start(ctx)
 				log.Printf("[trace-agent] WMI polling fallback active")
@@ -152,9 +156,30 @@ func (a *Agent) Start(ctx context.Context) error {
 		}
 	}
 	if a.config.MonitorFile {
-		a.fileMon = monitor.NewFileMonitor(a.eventCh, a.config.WatchPaths, a.config.ExcludePaths)
-		if err := a.fileMon.Start(ctx); err != nil {
-			log.Printf("[trace-agent] file monitor: %v (disabled)", err)
+		if runtime.GOOS == "linux" {
+			a.fanMon = monitor.NewFanotifyMonitor(a.eventCh)
+			if err := a.fanMon.Start(); err == nil {
+				log.Printf("[trace-agent] fanotify file monitor active")
+			} else {
+				a.fanMon = nil
+				a.inoMon = monitor.NewInotifyFileMonitor(a.eventCh, a.config.WatchPaths, a.config.ExcludePaths)
+				if err := a.inoMon.Start(ctx); err == nil {
+					log.Printf("[trace-agent] inotify file monitor active")
+				} else {
+					a.inoMon = nil
+					a.fileMon = monitor.NewFileMonitor(a.eventCh, a.config.WatchPaths, a.config.ExcludePaths)
+					if err := a.fileMon.Start(ctx); err != nil {
+						log.Printf("[trace-agent] file monitor: %v (disabled)", err)
+					} else {
+						log.Printf("[trace-agent] polling file monitor active")
+					}
+				}
+			}
+		} else {
+			a.fileMon = monitor.NewFileMonitor(a.eventCh, a.config.WatchPaths, a.config.ExcludePaths)
+			if err := a.fileMon.Start(ctx); err != nil {
+				log.Printf("[trace-agent] file monitor: %v (disabled)", err)
+			}
 		}
 	}
 	if a.config.MonitorNetwork {
@@ -243,6 +268,12 @@ func (a *Agent) Stop(ctx context.Context) error {
 	if a.procMon != nil {
 		a.procMon.Stop()
 	}
+	if a.fanMon != nil {
+		a.fanMon.Stop()
+	}
+	if a.inoMon != nil {
+		a.inoMon.Stop()
+	}
 	if a.fileMon != nil {
 		a.fileMon.Stop()
 	}
@@ -293,6 +324,7 @@ func (a *Agent) register(ctx context.Context) error {
 		MemoryMB:      info.MemoryMB,
 		AgentVersion:  info.AgentVersion,
 		Monitors:      info.Monitors,
+		APIKey:        a.config.APIKey,
 	}
 
 	resp, err := a.client.Register(ctx, regReq)
