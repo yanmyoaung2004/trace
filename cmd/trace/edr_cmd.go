@@ -350,7 +350,7 @@ cmd.Flags().Int("min-severity", 0, "Minimum severity level (1-10)")
 }
 
 func newEDRDispatchCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "dispatch <agent-id> <action> [target]",
 		Short: "Send a response action to an agent",
 		Long: `Send a response action to an EDR agent.
@@ -416,6 +416,11 @@ Actions:
 			return nil
 		},
 	}
+	cmd.Flags().Int("pid", 0, "Process ID (for kill-process action)")
+	cmd.Flags().String("path", "", "File path (for quarantine action)")
+	cmd.Flags().String("ip", "", "IP address (for block-ip action)")
+	cmd.Flags().String("script", "", "Script content or URL (for run-script action)")
+	return cmd
 }
 
 func newEDRDismissCmd() *cobra.Command {
