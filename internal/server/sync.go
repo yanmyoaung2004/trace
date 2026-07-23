@@ -452,6 +452,7 @@ func (h *SyncHandler) handleEDRAlertDismiss(w http.ResponseWriter, r *http.Reque
 	}
 	var req struct {
 		AlertID string `json:"alert_id"`
+		Reason  string `json:"reason,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.AlertID == "" {
 		writeError(w, http.StatusBadRequest, "alert_id required")

@@ -333,11 +333,11 @@ func newEDREventsCmd() *cobra.Command {
 						}
 					}
 				}
-				fmt.Println()
-				// Show event ID for dismiss
+				// Show ID for dismiss
 				if evt.ID != "" {
-					fmt.Printf("         id: %s\n", evt.ID)
+					fmt.Printf("  %s", evt.ID)
 				}
+				fmt.Println()
 
 			if i >= 50 {
 				fmt.Println("  ... (truncated)")
@@ -429,7 +429,7 @@ Actions:
 }
 
 func newEDRDismissCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "dismiss <alert-id>",
 		Short: "Mark an alert as false positive (trains FP learning)",
 		Long: `Mark an alert as a false positive. The FP learning module tracks
@@ -439,14 +439,18 @@ pair, the rule is auto-throttled (suppressed for 5 minutes).
 Find alert IDs via 'trace edr events <agent-id>'.
 Only the alert ID is needed — the server looks up the rule and process.`,
 		Args: cobra.ExactArgs(1),
-		Example: `  trace edr dismiss a1b2c3d4-e5f6-7890-abcd-ef1234567890`,
+		Example: `  trace edr dismiss a1b2c3d4-e5f6-7890-abcd-ef1234567890
+  trace edr dismiss a1b2c3d4 --reason "Legitimate admin activity"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := getEDRClient(cmd.Parent())
 			if err != nil {
 				return err
 			}
-			resp, err := client.do("POST", "/api/v1/edr/alerts/dismiss", strings.NewReader(
-				fmt.Sprintf(`{"alert_id":"%s"}`, args[0])))
+			body := fmt.Sprintf(`{"alert_id":"%s"}`, args[0])
+			if reason, _ := cmd.Flags().GetString("reason"); reason != "" {
+				body = fmt.Sprintf(`{"alert_id":"%s","reason":"%s"}`, args[0], reason)
+			}
+			resp, err := client.do("POST", "/api/v1/edr/alerts/dismiss", strings.NewReader(body))
 			if err != nil {
 				return fmt.Errorf("dismiss failed: %w", err)
 			}
@@ -471,6 +475,8 @@ Only the alert ID is needed — the server looks up the rule and process.`,
 			return nil
 		},
 	}
+	cmd.Flags().String("reason", "", "Reason for dismissal (logged for audit)")
+	return cmd
 }
 
 func newEDRRevokeCmd() *cobra.Command {

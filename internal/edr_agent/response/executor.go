@@ -237,6 +237,13 @@ func (e *Executor) blockIP(ctx context.Context, action *transport.PendingAction)
 	if err != nil {
 		status = "failed"
 		errMsg = err.Error()
+		if output != "" {
+			if strings.Contains(output, "elevation") || strings.Contains(output, "Administrator") {
+				errMsg = "requires administrator privileges — run agent as admin"
+			} else {
+				errMsg = output
+			}
+		}
 	}
 
 	return map[string]any{
