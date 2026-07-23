@@ -319,7 +319,20 @@ func newEDREventsCmd() *cobra.Command {
 				if len(ts) > 19 {
 					ts = ts[:19]
 				}
-				fmt.Printf("  %s  [%s]  %s\n", ts, sev, evt.Type)
+				fmt.Printf("  %s  [%s]  %s", ts, sev, evt.Type)
+
+				// Parse annotations from data for alert events
+				if evt.Type == "alert" && evt.Data != "" {
+					var full struct {
+						Annotations map[string]string `json:"annotations,omitempty"`
+					}
+					if err := json.Unmarshal([]byte(evt.Data), &full); err == nil && full.Annotations != nil {
+						if rule, ok := full.Annotations["yara_rule"]; ok {
+							fmt.Printf("  (%s)", rule)
+						}
+					}
+				}
+				fmt.Println()
 
 			if i >= 50 {
 				fmt.Println("  ... (truncated)")
