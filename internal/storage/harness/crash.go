@@ -8,6 +8,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"time"
+
+	"github.com/yanmyoaung2004/trace/internal/storage"
+	"github.com/yanmyoaung2004/trace/internal/storage/cold"
+	"github.com/yanmyoaung2004/trace/internal/storage/manifest"
+	"github.com/yanmyoaung2004/trace/internal/storage/sqlite"
 )
 
 // CrashPoint represents a specific location in the code where a crash can be injected.
@@ -104,7 +109,97 @@ func (ci *CrashInjector) runIteration(ctx context.Context, iter int) error {
 // VerifyDataIntegrity checks that the data in the given directory is consistent.
 // Returns number of events found and any integrity violations.
 func VerifyDataIntegrity(dir string) (totalEvents int, violations []string, err error) {
-	return 0, nil, nil
+	ctx := context.Background()
+
+	// 1. Open manifest
+	m, err := manifest.NewManifest(filepath.Join(dir, "manifest.db"))
+	if err != nil {
+		// No manifest means no data was committed — valid empty state
+		return 0, nil, nil
+	}
+	defer m.Close()
+
+	// 2. Get watermark
+	wm, err := m.Watermark(ctx)
+	if err != nil {
+		return 0, nil, fmt.Errorf("watermark: %w", err)
+	}
+
+	// 3. Open hot store
+	hot, err := sqlite.NewSQLiteHotStore(filepath.Join(dir, "hot.db"))
+	if err != nil {
+		// No hot store — check if watermark is empty
+		if wm.LastID == "" {
+			return 0, nil, nil
+		}
+		return 0, nil, fmt.Errorf("hot store: %w", err)
+	}
+	defer hot.Close()
+
+	// 4. Count hot events
+	hotResult, err := hot.Query(ctx, storage.Query{Limit: 1000000})
+	if err != nil {
+		return 0, nil, fmt.Errorf("hot query: %w", err)
+	}
+
+	// Build set of hot event IDs
+	hotIDs := make(map[string]bool, len(hotResult.Events))
+	for _, e := range hotResult.Events {
+		hotIDs[e.ID] = true
+	}
+
+	// 5. List committed parquet files
+	files, err := m.FilesFor(ctx, "", 0, 0, "committed")
+	if err != nil {
+		return 0, nil, fmt.Errorf("files: %w", err)
+	}
+
+	// 6. Read parquet files and check for internal consistency
+	// Note: duplicates BETWEEN hot and cold are EXPECTED by design (10min overlap window).
+	// We only flag duplicates WITHIN cold files and check watermark consistency.
+	pReader := cold.NewReaderPool(1)
+	coldIDs := make(map[string]bool)
+	for _, f := range files {
+		result, err := pReader.QueryFiles(ctx, []storage.FileInfo{f}, storage.Query{})
+		if err != nil {
+			violations = append(violations, fmt.Sprintf("read %s: %v", f.Path, err))
+			continue
+		}
+		for _, e := range result.Events {
+			if coldIDs[e.ID] {
+				violations = append(violations, fmt.Sprintf("duplicate ID %s within cold files", e.ID))
+			}
+			coldIDs[e.ID] = true
+		}
+	}
+
+	// Count unique events across tiers (hot+cold with overlap expected)
+	allIDs := make(map[string]bool)
+	for id := range hotIDs {
+		allIDs[id] = true
+	}
+	for id := range coldIDs {
+		allIDs[id] = true
+	}
+	totalEvents = len(allIDs)
+
+	// 7. Verify watermark
+	maxID := ""
+	for id := range hotIDs {
+		if id > maxID {
+			maxID = id
+		}
+	}
+	for id := range coldIDs {
+		if id > maxID {
+			maxID = id
+		}
+	}
+	if wm.LastID != "" && maxID > wm.LastID {
+		violations = append(violations, fmt.Sprintf("watermark %s is behind max event ID %s", wm.LastID, maxID))
+	}
+
+	return totalEvents, violations, nil
 }
 
 func randomCrashPoint() CrashPoint {

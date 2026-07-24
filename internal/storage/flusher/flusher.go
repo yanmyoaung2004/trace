@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,6 +25,7 @@ import (
 // flusher re-reads the same rows from SQLite on restart. No duplicates,
 // no data loss.
 type Flusher struct {
+	mu       sync.Mutex
 	hot      *sqlite.SQLiteHotStore
 	manifest *manifest.Manifest
 	parquet  *parquet.ParquetWriter
@@ -100,6 +102,8 @@ func (f *Flusher) Watermark(ctx context.Context) (*storage.Watermark, error) {
 //  4. For each ready group: sort, write Parquet, commit manifest
 //  5. Drop flushed hot tables
 func (f *Flusher) flush(ctx context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	// 1. Read watermark
 	wm, err := f.manifest.Watermark(ctx)
 	if err != nil {
@@ -166,10 +170,10 @@ func (f *Flusher) flush(ctx context.Context) error {
 		}
 
 		if err := f.manifest.Transaction(ctx, func(tx *sql.Tx) error {
-			if err := f.manifest.AddFile(ctx, fileRecord); err != nil {
+			if err := f.manifest.AddFileTx(ctx, tx, fileRecord); err != nil {
 				return fmt.Errorf("add file: %w", err)
 			}
-			if err := f.manifest.UpdateWatermark(ctx, fileResult.MaxEventID, fileResult.MaxTimestampUs); err != nil {
+			if err := f.manifest.UpdateWatermarkTx(ctx, tx, fileResult.MaxEventID, fileResult.MaxTimestampUs); err != nil {
 				return fmt.Errorf("update watermark: %w", err)
 			}
 			return nil

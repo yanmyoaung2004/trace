@@ -124,6 +124,33 @@ func (m *Manifest) AddFile(ctx context.Context, file storage.ParquetFileRecord) 
 	return err
 }
 
+// AddFileTx records a committed Parquet file in the manifest using the given transaction.
+func (m *Manifest) AddFileTx(ctx context.Context, tx *sql.Tx, file storage.ParquetFileRecord) error {
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO parquet_files (file_id, path, tenant_id, level,
+			min_ts_us, max_ts_us, min_event_id, max_event_id,
+			row_count, compressed_size, uncompressed_size,
+			sha256, compression, schema_version, status, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'committed', ?, ?)
+	`,
+		file.FileID, file.Path, file.TenantID, file.Level,
+		file.MinTimestampUs, file.MaxTimestampUs, file.MinEventID, file.MaxEventID,
+		file.RowCount, file.CompressedSize, file.UncompressedSize,
+		file.SHA256, file.Compression, file.SchemaVersion,
+		file.CreatedAt, file.UpdatedAt,
+	)
+	return err
+}
+
+// UpdateWatermarkTx advances the watermark to the given ID and timestamp using the given transaction.
+func (m *Manifest) UpdateWatermarkTx(ctx context.Context, tx *sql.Tx, lastID string, lastTS int64) error {
+	_, err := tx.ExecContext(ctx,
+		"UPDATE watermark SET last_id = ?, last_ts = ?, updated_at = ? WHERE id = 1",
+		lastID, lastTS, time.Now().UnixMicro(),
+	)
+	return err
+}
+
 // UpdateWatermark advances the watermark to the given ID and timestamp.
 func (m *Manifest) UpdateWatermark(ctx context.Context, lastID string, lastTS int64) error {
 	_, err := m.db.ExecContext(ctx,
