@@ -147,7 +147,7 @@ func (m *Manifest) Watermark(ctx context.Context) (*storage.Watermark, error) {
 
 // FilesFor returns committed Parquet files matching the given filters.
 func (m *Manifest) FilesFor(ctx context.Context, tenantID string, sinceUs, untilUs int64, status string) ([]storage.FileInfo, error) {
-	query := "SELECT path, file_id, status, min_ts_us, max_ts_us FROM parquet_files WHERE 1=1"
+	query := "SELECT path, file_id, status, level, tenant_id, min_ts_us, max_ts_us FROM parquet_files WHERE 1=1"
 	var args []any
 
 	if tenantID != "" {
@@ -179,7 +179,7 @@ func (m *Manifest) FilesFor(ctx context.Context, tenantID string, sinceUs, until
 	var files []storage.FileInfo
 	for rows.Next() {
 		var f storage.FileInfo
-		if err := rows.Scan(&f.Path, &f.FileID, &f.Status, &f.MinTS, &f.MaxTS); err != nil {
+		if err := rows.Scan(&f.Path, &f.FileID, &f.Status, &f.Level, &f.TenantID, &f.MinTS, &f.MaxTS); err != nil {
 			return nil, fmt.Errorf("scan file: %w", err)
 		}
 		files = append(files, f)

@@ -82,11 +82,13 @@ func MergeSortDedupByID(events []*Event) []*Event {
 
 // FileInfo describes a single committed Parquet file for query routing.
 type FileInfo struct {
-	Path   string `json:"path"`
-	FileID string `json:"file_id"`
-	Status string `json:"status"` // committed, superseded, etc.
-	MinTS  int64  `json:"min_ts_us"`
-	MaxTS  int64  `json:"max_ts_us"`
+	Path     string `json:"path"`
+	FileID   string `json:"file_id"`
+	Status   string `json:"status"` // committed, superseded, etc.
+	Level    int    `json:"level"`  // 0=hourly, 1=daily
+	TenantID string `json:"tenant_id"`
+	MinTS    int64  `json:"min_ts_us"`
+	MaxTS    int64  `json:"max_ts_us"`
 }
 
 // ParquetFileRecord is the manifest record for a Parquet file.
