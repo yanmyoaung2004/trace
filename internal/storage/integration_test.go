@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -134,6 +135,17 @@ func TestFileResult_Fields(t *testing.T) {
 	}
 	if fr.RowCount != 100 {
 		t.Errorf("expected 100, got %d", fr.RowCount)
+	}
+}
+
+func BenchmarkMergeSortDedupByID(b *testing.B) {
+	events := make([]*Event, 1000)
+	for i := 0; i < 1000; i++ {
+		events[i] = &Event{ID: fmt.Sprintf("%03d", i%500)} // ~50% dups
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		MergeSortDedupByID(events)
 	}
 }
 

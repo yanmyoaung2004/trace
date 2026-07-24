@@ -11,15 +11,15 @@ import (
 	"github.com/yanmyoaung2004/trace/internal/storage"
 )
 
-func newTestHotStore(t *testing.T) *SQLiteHotStore {
-	t.Helper()
-	dir := t.TempDir()
+func newTestHotStore(tb testing.TB) *SQLiteHotStore {
+	tb.Helper()
+	dir := tb.TempDir()
 	path := filepath.Join(dir, "test.db")
 	s, err := NewSQLiteHotStore(path)
 	if err != nil {
-		t.Fatalf("NewSQLiteHotStore: %v", err)
+		tb.Fatalf("NewSQLiteHotStore: %v", err)
 	}
-	t.Cleanup(func() { s.Close() })
+	tb.Cleanup(func() { s.Close() })
 	return s
 }
 
@@ -200,6 +200,62 @@ func TestDbPathCreation(t *testing.T) {
 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		t.Fatal("expected db file to be created")
+	}
+}
+
+func BenchmarkHotStore_WriteBatch(b *testing.B) {
+	s := newTestHotStore(b)
+	ctx := context.Background()
+
+	events := make([]*storage.Event, 100)
+	for i := 0; i < 100; i++ {
+		events[i] = &storage.Event{
+			ID:        fmt.Sprintf("bench-%d", i),
+			TenantID:  "bench",
+			AgentID:   "agent",
+			Timestamp: time.Now().UnixMicro(),
+			EventType: "benchmark",
+			Severity:  1,
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := s.WriteBatch(ctx, events); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkHotStore_Query(b *testing.B) {
+	s := newTestHotStore(b)
+	ctx := context.Background()
+
+	// Write 1000 events first
+	events := make([]*storage.Event, 1000)
+	for i := 0; i < 1000; i++ {
+		events[i] = &storage.Event{
+			ID:        fmt.Sprintf("q-%d", i),
+			TenantID:  "bench",
+			AgentID:   "agent",
+			Timestamp: time.Now().UnixMicro() + int64(i),
+			EventType: "benchmark",
+			Severity:  1,
+		}
+	}
+	if err := s.WriteBatch(ctx, events); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		result, err := s.Query(ctx, storage.Query{Limit: 100})
+		if err != nil {
+			b.Fatal(err)
+		}
+		if len(result.Events) == 0 {
+			b.Fatal("expected events")
+		}
 	}
 }
 

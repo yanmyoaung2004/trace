@@ -110,6 +110,31 @@ func TestParquetWriter_LargeBatch(t *testing.T) {
 	}
 }
 
+func BenchmarkParquetWriter_WriteBatch(b *testing.B) {
+	dir := b.TempDir()
+	w := NewParquetWriter(filepath.Join(dir, "temp"), filepath.Join(dir, "output"), DefaultParquetOptions())
+
+	events := make([]*storage.Event, 100)
+	for i := 0; i < 100; i++ {
+		events[i] = &storage.Event{
+			ID:        "e",
+			TenantID:  "bench",
+			AgentID:   "agent",
+			Timestamp: int64(i),
+			EventType: "benchmark",
+			Severity:  1,
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := w.WriteBatch(context.Background(), events, "bench/2026/07/24/15")
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func TestParquetWriter_EmptyBatchError(t *testing.T) {
 	dir := t.TempDir()
 	w := NewParquetWriter(filepath.Join(dir, "temp"), filepath.Join(dir, "output"), DefaultParquetOptions())
