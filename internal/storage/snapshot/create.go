@@ -55,7 +55,7 @@ func Create(ctx context.Context, outputPath, dataDir string, f *flusher.Flusher,
 			return nil
 		}
 		relPath, _ := filepath.Rel(dataDir, path)
-		return addFile(tw, path, filepath.Join("events", relPath))
+		return addFile(tw, path, relPath)
 	})
 
 	log.Printf("[snapshot] created: %s", outputPath)
