@@ -60,8 +60,8 @@ func initTSE(cfg *config.TSEConfig) (*TSE, error) {
 	}
 	pw := parquet.NewParquetWriter(tempDir, eventsDir, parquetOpts)
 
-	// Cold reader
-	cr := cold.NewParquetReader()
+	// Cold reader (pooled to bound goroutine leaks from xitongsys/parquet-go)
+	cr := cold.NewReaderPool(cold.DefaultMaxConcurrent)
 
 	// Router
 	r := router.NewRouter(hot, cr, m)

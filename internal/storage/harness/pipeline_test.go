@@ -49,7 +49,7 @@ func TestPipeline_WriteFlushRouter(t *testing.T) {
 	go f.Run(ctx)
 	time.Sleep(500 * time.Millisecond)
 
-	cr := cold.NewParquetReader()
+	cr := cold.NewReaderPool(4)
 	r := router.NewRouter(hot, cr, m)
 
 	// 2. Write events
@@ -115,7 +115,7 @@ func TestPipeline_EmptyPipeline(t *testing.T) {
 	defer m.Close()
 	pw := parquet.NewParquetWriter(dir, dir, parquet.DefaultParquetOptions())
 	defer pw.Close()
-	cr := cold.NewParquetReader()
+	cr := cold.NewReaderPool(2)
 	r := router.NewRouter(hot, cr, m)
 
 	result, err := r.Query(ctx, storage.Query{Limit: 10})

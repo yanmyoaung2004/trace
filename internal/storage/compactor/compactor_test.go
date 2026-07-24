@@ -250,7 +250,7 @@ func TestCompactor_CompactionCreatesDaily(t *testing.T) {
 	)
 	defer pw2.Close()
 
-	cr := cold.NewParquetReader()
+	cr := cold.NewReaderPool(2)
 	c := NewCompactor(m, cr, pw2, 0)
 
 	// Call compactOnce directly (same package, unexported is accessible)
