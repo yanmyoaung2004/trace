@@ -137,6 +137,31 @@ trace edr list
 trace edr dispatch <agent-id> isolate
 ```
 
+### Trace Storage Engine (TSE)
+
+Optional columnar event store for long-term retention. `trace serve --tse` to enable.
+
+```
+Events -> SQLite (hot, ~1-2h) -> Flusher (watermark) -> Parquet (cold, ZSTD) -> DuckDB (opt-in)
+```
+
+| Component | Role |
+|-----------|------|
+| SQLite hot tier | Hourly tables, DROP TABLE retention. |
+| Parquet cold tier | Columnar archive, ZSTD compression (10-20x). |
+| Manifest catalog | File tracking + watermark cursor. |
+| Flusher | Background goroutine, exactly-once semantics. |
+| Router | Transparent hot/cold query routing. |
+| DuckDB | Optional analytics (5-10x faster, -tags duckdb). |
+
+```bash
+trace serve --tse
+trace tse status
+trace tse flush
+```
+
+---
+
 ## Architecture
 
 ```
