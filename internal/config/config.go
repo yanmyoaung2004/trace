@@ -17,6 +17,7 @@ type Config struct {
 	Telemetry TelemetryConfig `json:"telemetry"`
 	SIEM      SIEMConfig      `json:"siem"`
 	Server    ServerConfig    `json:"server"`
+	TSE      TSEConfig        `json:"tse"`
 
 	LLMProvider  string `json:"llm_provider"`
 	LLMURL       string `json:"llm_url"`
@@ -50,6 +51,14 @@ type SIEMConfig struct {
 	Enabled  bool   `json:"enabled"`
 	LogDir   string `json:"log_dir"`
 	SyslogAddr string `json:"syslog_addr"`
+}
+
+type TSEConfig struct {
+	Enabled       bool   `json:"tse_enabled"`
+	StoragePath   string `json:"tse_storage_path"`
+	Compression   string `json:"tse_compression"`
+	HotWindow     string `json:"tse_hot_window"`
+	FlushInterval string `json:"tse_flush_interval"`
 }
 
 type TLSConfig struct {
@@ -103,6 +112,13 @@ func Default() *Config {
 		Playbook:   playbookDir,
 		IntelDir:   intelDir,
 		LLMProvider: "openai",
+		TSE: TSEConfig{
+			Enabled:       false,
+			StoragePath:   filepath.Join(base, "tse"),
+			Compression:   "zstd",
+			HotWindow:     "2h",
+			FlushInterval: "30s",
+		},
 		SIEM: SIEMConfig{
 			SyslogAddr: ":514",
 		},

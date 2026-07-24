@@ -19,11 +19,12 @@ func newServeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the investigation server daemon",
-		Long: `Start the Trace daemon. Optionally enables SIEM log monitoring.
+		Long: `Start the Trace daemon. Optionally enables SIEM log monitoring and TSE storage.
 Examples:
   trace serve
   trace serve --siem
-  trace serve --siem --syslog-addr :514`,
+  trace serve --tse
+  trace serve --siem --tse`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := app.initialize(cmd.Flag("config").Value.String()); err != nil {
 				return err
@@ -37,6 +38,19 @@ Examples:
 
 			log.Printf("Trace v%s starting", Version)
 			log.Printf("Database: %s", app.cfg.DBPath)
+
+			// Initialize TSE if enabled
+			tseEnabled, _ := cmd.Flags().GetBool("tse")
+			if tseEnabled {
+				app.cfg.TSE.Enabled = true
+				tse, err := initTSE(&app.cfg.TSE)
+				if err != nil {
+					return fmt.Errorf("init TSE: %w", err)
+				}
+				app.tse = tse
+				app.tse.StartTSE()
+				defer app.tse.StopTSE()
+			}
 
 			siemEnabled, _ := cmd.Flags().GetBool("siem")
 			if siemEnabled {
@@ -212,6 +226,7 @@ Examples:
 	}
 
 	cmd.Flags().Bool("siem", false, "enable SIEM log monitoring")
+	cmd.Flags().Bool("tse", false, "enable Trace Storage Engine (columnar event store)")
 	cmd.Flags().String("syslog-addr", "", "syslog listener address (e.g. :514)")
 	cmd.Flags().StringSlice("log-dir", nil, "directories to watch for log files")
 	cmd.Flags().String("export", "", "start HTML report server on given address (e.g. :8080)")

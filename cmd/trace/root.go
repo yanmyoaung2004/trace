@@ -50,6 +50,7 @@ type App struct {
 	huntScheduler   *hunt.Scheduler
 	caseManager     *cases.Manager
 	telemetry       *telemetry.Telemetry
+	tse             *TSE
 }
 
 func (a *App) ListPlaybooks() []*playbook.Playbook {
@@ -533,6 +534,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newVersionCmd())
 	cmd.AddCommand(newEDRCmd())
 	cmd.AddCommand(newAdminCmd())
+	cmd.AddCommand(newTSECmd())
 
 	return cmd
 }
