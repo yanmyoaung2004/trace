@@ -118,6 +118,37 @@ func TestClampQuery(t *testing.T) {
 	}
 }
 
+func FuzzClampQuery(f *testing.F) {
+	seeds := []struct{ a, b, c, d string }{
+		{"a", "m", "a", "z"},
+		{"", "z", "a", "z"},
+		{"a", "", "a", "z"},
+		{"x", "y", "a", "z"},
+	}
+	for _, s := range seeds {
+		f.Add(s.a, s.b, s.c, s.d)
+	}
+
+	f.Fuzz(func(t *testing.T, minID, maxID, boundMin, boundMax string) {
+		q := storage.Query{MinID: minID, MaxID: maxID}
+		result := clampQuery(q, boundMin, boundMax)
+
+		// Invariant: if MinID is set and boundMin is set, result >= boundMin
+		if result.MinID != "" && boundMin != "" && result.MinID < boundMin {
+			t.Errorf("MinID clamped below bound: %s < %s", result.MinID, boundMin)
+		}
+		// Invariant: if MaxID is set and boundMax is set, result <= boundMax
+		if result.MaxID != "" && boundMax != "" && result.MaxID > boundMax {
+			t.Errorf("MaxID clamped above bound: %s > %s", result.MaxID, boundMax)
+		}
+		// Invariant: clamp is idempotent
+		twice := clampQuery(result, boundMin, boundMax)
+		if twice.MinID != result.MinID || twice.MaxID != result.MaxID {
+			t.Errorf("clamp not idempotent")
+		}
+	})
+}
+
 func TestParquetReader_Name(t *testing.T) {
 	r := NewParquetReader()
 	if r.Name() == "" {

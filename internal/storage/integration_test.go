@@ -138,6 +138,49 @@ func TestFileResult_Fields(t *testing.T) {
 	}
 }
 
+func FuzzMergeSortDedupByID(f *testing.F) {
+	seeds := []*Event{
+		{ID: "a"}, {ID: "b"}, {ID: "c"},
+		{ID: "a"}, {ID: "x"}, {ID: "y"}, {ID: "z"},
+	}
+	for _, s := range seeds {
+		f.Add(s.ID)
+	}
+
+	f.Fuzz(func(t *testing.T, id string) {
+		events := []*Event{
+			{ID: id},
+			{ID: "middle"},
+			{ID: id},
+			{ID: "zzz"},
+			{ID: "aaa"},
+		}
+		result := MergeSortDedupByID(events)
+
+		// Invariant: no duplicates
+		seen := make(map[string]bool)
+		for _, e := range result {
+			if seen[e.ID] {
+				t.Errorf("duplicate after dedup: %s", e.ID)
+			}
+			seen[e.ID] = true
+		}
+
+		// Invariant: sorted
+		for i := 1; i < len(result); i++ {
+			if result[i-1].ID > result[i].ID {
+				t.Errorf("not sorted: %s > %s", result[i-1].ID, result[i].ID)
+			}
+		}
+
+		// Invariant: idempotent
+		twice := MergeSortDedupByID(result)
+		if len(twice) != len(result) {
+			t.Errorf("not idempotent: %d vs %d", len(result), len(twice))
+		}
+	})
+}
+
 func BenchmarkMergeSortDedupByID(b *testing.B) {
 	events := make([]*Event, 1000)
 	for i := 0; i < 1000; i++ {

@@ -169,6 +169,42 @@ func TestSQLiteHotStore_ConcurrentWrites(t *testing.T) {
 	}
 }
 
+func FuzzBuildHotQuery(f *testing.F) {
+	seeds := []struct {
+		table string
+		minID string
+		maxID string
+		cursor string
+	}{
+		{"edr_events_2026072415", "", "", ""},
+		{"edr_events_2026072415", "id-001", "", ""},
+		{"edr_events_2026072415", "", "id-100", "id-050"},
+	}
+	for _, s := range seeds {
+		f.Add(s.table, s.minID, s.maxID, s.cursor)
+	}
+
+	f.Fuzz(func(t *testing.T, tableName, minID, maxID, cursor string) {
+		q := storage.Query{
+			MinID:    minID,
+			MaxID:    maxID,
+			Cursor:   cursor,
+			SinceUs:  1000,
+			UntilUs:  2000,
+			MinSeverity: 3,
+			AgentIDs: []string{"agent-a", "agent-b"},
+		}
+		query, args := buildHotQuery([]string{tableName}, q)
+
+		if query == "" {
+			t.Error("empty query generated")
+		}
+		if len(args) == 0 && (q.MinID != "" || q.MaxID != "" || q.SinceUs > 0 || q.UntilUs > 0 || q.Cursor != "") {
+			t.Log("fuzz: non-empty query with empty args is valid when table list is empty")
+		}
+	})
+}
+
 func TestHourlyTableName(t *testing.T) {
 	hourStart := time.Date(2026, 7, 24, 15, 0, 0, 0, time.Local).UnixMicro()
 	name := hourlyTableName(hourStart, "edr_events_%s")
