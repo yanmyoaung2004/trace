@@ -456,20 +456,91 @@ trace snapshot restore --input trace-snapshot-2026-07-24.tar.zst
 
 ---
 
+## Deployment Model: Single SOC → Enterprise Multi-SOC
+
+The same binary, the same Parquet format, the same manifest catalog — just one config change.
+
+### Single SOC (Local Disk)
+
+```
+trace serve --tse
+
+All data on local disk:
+  /data/tse/manifest.db
+  /data/tse/events.db (hot SQLite tables)
+  /data/tse/events/{tenant}/{date}/{hour}/*.parquet
+
+Postgres or SQLite for alerts, investigations, config.
+```
+
+### Enterprise Multi-SOC (S3 Object Storage)
+
+```
+trace serve --tse --storage s3://trace-bucket/events/
+
+Each node runs TSE independently:
+  /data/tse/manifest.db          ← local (per node)
+  /data/tse/events.db            ← local hot tables (per node)
+  s3://trace-bucket/events/...   ← shared Parquet (all nodes)
+
+Any node queries the full dataset via DuckDB over S3:
+  SELECT * FROM read_parquet('s3://trace-bucket/events/*.parquet')
+```
+
+| Aspect | Single SOC | Enterprise Multi-SOC |
+|--------|-----------|---------------------|
+| Storage | Local disk | S3 / MinIO / Cloudflare R2 / GCS |
+| Binary | Same `trace` binary | Same `trace` binary |
+| Parquet format | Same | Same |
+| Manifest | Local | Local per node + optional central |
+| Hot tier | Local SQLite | Local SQLite per node |
+| Cold tier | Local Parquet | Shared Parquet on object storage |
+| Multi-node query | N/A | DuckDB reads S3 Parquet directly |
+| Durability | Disk RAID | 99.99999999% (S3) |
+| Cost | Fixed hardware | Pay per GB stored |
+
+### How Multi-SOC Works
+
+```
+SOC Node A (NYC)              SOC Node B (London)
+    │                              │
+    ▼                              ▼
+SQLite (hot, local)          SQLite (hot, local)
+    │                              │
+    ▼                              ▼
+Flusher ──► Parquet on S3 ◄── Flusher
+                 │
+                 ▼
+          Manifest (optional central)
+                 │
+                 ▼
+    Any node queries all Parquet via DuckDB read_parquet('s3://...')
+```
+
+Each node writes Parquet files to the same S3 bucket. The files are partitioned by `{tenant}/{date}/{hour}`, so there's no conflict. DuckDB can query any subset of files via `read_parquet(['s3://.../part-0001.parquet', ...])`.
+
+The manifest per node tracks what it has written. A central manifest (optional) federates across all nodes for global queries. Without a central manifest, each node queries its own data + any S3 prefix it has access to.
+
+### Key Insight
+
+**You don't need a distributed system to get distributed query.** You need a shared storage layer and a query engine that can read from it. S3 + DuckDB + Parquet gives you that without the complexity of sharding, replication, or cluster coordination.
+
+---
+
 ## What This Architecture Is
 
 - **An LSM tree built from boring components.** SQLite = memtable+WAL. Flusher = memtable flush. Compactor = LSM compaction. Manifest = MANIFEST file. You are not avoiding the LSM architecture; you are renting its hardest parts from battle-tested components.
 
 - **A storage engine, not a database integration.** Parquet is the canonical format. The query engine (DuckDB) is swappable. The manifest is the metadata catalog.
 
-- **Single-node by design.** Multi-node is future work via Parquet on object storage + manifest federation.
+- **Single-node first. Multi-node via object storage.** Same binary, same format. Change one config line from local disk to S3.
 
 ---
 
 ## What It Is Not
 
 - **Not a Lucene competitor.** SIEM queries are structured (field = value), not free-text.
-- **Not a multi-node cluster.** Not yet. The Parquet + manifest design makes it possible.
+- **Not a multi-node cluster in the traditional sense.** No sharding, no replication, no master election. Multi-node is achieved via shared object storage + per-node manifests.
 - **Not replacing SQLite for operational data.** SQLite stays for alerts, investigations, config.
 
 ---
@@ -477,21 +548,20 @@ trace snapshot restore --input trace-snapshot-2026-07-24.tar.zst
 ## Evolution Path
 
 ```
-Today:    SQLite (all data)
+Today:        SQLite (all data on local disk)
 
-Phase 1:  Hourly hot tables + batch writer + queue
-Phase 2:  Flusher + watermark + manifest + Parquet writer
-Phase 3:  Router + pure-Go cold reader
-Phase 4:  DuckDB analytics (opt-in CGO)
-Phase 5:  Compaction + TTL + scrub + snapshots
+Phase 1:      Hourly hot tables + batch writer + queue
+Phase 2:      Flusher + watermark + manifest + Parquet writer
+Phase 3:      Router + pure-Go cold reader
+Phase 4:      DuckDB analytics (opt-in CGO)
+Phase 5:      Compaction + TTL + scrub + snapshots
 
-Enterprise:
-  SQLite (per-node WAL) + Parquet on S3 + any query engine
+Enterprise:   Same binary, just change storage path:
+              trace serve --tse --storage s3://trace-bucket/events/
 
-Future (distributed):
-  Every node runs TSE independently.
-  Parquet on shared object store.
-  Cross-node query via manifest federation + DuckDB federated scan.
+Multi-SOC:    Each node writes to shared S3 bucket.
+              Any node queries the full dataset.
+              No distributed system complexity.
 ```
 
-No rewrites between stages. Each phase is additive.
+No rewrites between stages. Each phase is additive. The jump from single SOC to enterprise multi-SOC is a config change, not an architecture change.
