@@ -10,400 +10,477 @@ SQLite is the only storage engine. It's row-oriented OLTP. At scale, it hits thr
 | **Storage bloat** | Row format + JSON blobs = no compression. 1KB/event × 1B events = 1TB. | ~100M events before pain |
 | **Time-range queries** | No partitioning. Full table scans on `edr_events`. | ~100M rows = multi-second |
 
-## Final Architecture (Peer-Reviewed)
+## Architecture (4-Peer-Reviewed)
 
-Both independent reviews (Claude + ChatGPT) converged on the same correction: **Parquet is the canonical event store. DuckDB reads Parquet. It never stores data.**
+Four independent reviews converged on the same shape: **SQLite as durable WAL, Parquet as canonical store, manifest as single source of truth for what has safely moved from one to the other.**
+
+The critical insight from the final review: **You're not avoiding the LSM architecture. You're renting its hardest parts from boring, battle-tested components.** SQLite is the memtable+WAL, the flusher is the memtable flush, compaction is LSM compaction, the manifest is the MANIFEST file. The design gets LSM semantics without writing an LSM from scratch.
 
 ```
-                    Trace Storage Engine (TSE)
-                    ═══════════════════════════
+                     Trace Storage Engine (TSE)
+                     ═══════════════════════════
 
   Collectors / SIEM / Agents
+        │
+        ▼
+  Ingest Queue (bounded, blocking w/ timeout, spill-to-disk overflow)
+        │
+        ├── N ingest workers (default 4)
+        │
+        ▼
+  Batch Writer ──────────────► Dedicated Writer Goroutine (owns SQLite conn)
+        │                          │
+        │                          ▼
+        │                   SQLite (hot tier + durable WAL)
+        │                   ┌──────────────────────────────┐
+        │                   │  Hourly tables:               │
+        │                   │  edr_events_2026072410        │
+        │                   │  edr_events_2026072411        │
+        │                   │  edr_events_2026072412        │
+        │                   │  Only index: (ts_us)          │
+        │                   │  WAL mode, passive checkpoint  │
+        │                   │  Retention: DROP TABLE (O(1)) │
+        │                   └──────────────────────────────┘
+        │                                   │
+        │                                   ▼
+        │                    ┌──────────────────────────────┐
+        │                    │  Flusher (single goroutine)  │
+        │                    │  reads: id > watermark        │
+        │                    │  accumulates by (tenant,hour) │
+        │                    │  sorts by (agent_id, ts_us)   │
+        │                    └──────────────┬───────────────┘
+        │                                   │
+        │                                   ▼
+        │                          Parquet segments (canonical)
+        │                          events/{tenant}/{yyyy-mm-dd}/{hh}/part-*.parquet
+        │                          Columnar-decomposed: 5-10 hot JSON fields as real columns
+        │                          Timestamps: INT64 epoch microseconds
+        │                                   │
+        │                                   ▼
+        │                          Manifest (SQLite, separate DB)
+        │                          One atomic transaction per file:
+        │                            INSERT file row (status='committed')
+        │                            UPDATE watermark (last_id, last_ts)
+        │                                   │
+        ▼                                   ▼
+  Query Router ◄────── watermark ────► Compactor (hourly → daily after 48h)
+        │                                   │
+  ┌──────┴──────┐                     Weekly integrity scrub:
+  │ hot: SQLite │                     re-hash committed files → status='corrupted' if mismatch
+  │ cold: DuckDB│                     Bit rot detection for cold data
+  └──────┬──────┘
          │
-         ▼
-  Memory Queue (MPMC ring buffer, 10k cap, non-blocking)
-         │
-         ├── N worker goroutines (configurable, default 4)
-         │
-         ▼
-  Batch Writer (1000 events or 1s, whichever first)
-         │
-         ├──────────────────────► SQLite (hot tier, 0-7 days)
-         │                            │
-         │                            ├── Active investigations
-         │                            ├── Recent alerts
-         │                            ├── Current agent status
-         │                            └── UI queries (WAL mode)
-         │
-         └──────────────────────► Parquet (warm/cold tier, 7 days+)
-                                      │
-                                      ├── Written directly from batch
-                                      ├── No re-read from SQLite
-                                      ├── Roll: max(256MB, 1 hour)
-                                      ├── ZSTD compression (10-20x)
-                                      └── Partitioned:
-                                          events/{tenant}/{agent}/{year}/{month}/{day}/{hour}/part-NNNN.parquet
-
-  Retention:
-    DELETE FROM sqlite WHERE timestamp < NOW() - 7 days
-    (No archiver, no re-read, no checksum verification pipeline.
-     SQLite and Parquet receive the same batch simultaneously.)
-
-  Query Router
-         │
-         ├── SQLite:      timestamp >= NOW() - 7 days
-         ├── DuckDB:      read_parquet('events/**/*.parquet') WHERE timestamp < NOW() - 7 days
-         │                (Plus SQLite for boundary overlap — UNION ALL + DISTINCT id)
-         └── Merge:       sort by timestamp, dedup by id, return
-
-  Manifest Catalog (SQLite)
-         │
-         ├── Tracks all Parquet files: path, min/max time, row count, checksum, schema_version
-         ├── Enables DuckDB to discover files without filesystem scan
-         └── Status: writing → committed → corrupted → deleted
-
-  DuckDB (optional, build tag: duckdb)
-         │
-         └── SELECT * FROM read_parquet('events/*/*/*.parquet')
-             WHERE severity >= 5
-             GROUP BY event_type
-             ORDER BY count DESC
+  Merge + dedup by UUIDv7 + partial-result warnings
 ```
 
----
+## What Changed From v4 (and Why)
+
+| v4 | v5 (Final) | Reason |
+|----|-----------|--------|
+| Hot tier = single SQLite table, DELETE rows | Hot tier = hourly tables, DROP TABLE | DELETE billions of rows = WAL explosion, checkpoint stalls, vacuum. DROP TABLE = O(1), zero overhead. |
+| N workers each write to SQLite | N workers feed a dedicated writer goroutine (owns SQLite connection) | Removes writer-lock contention entirely. One goroutine serializes batch INSERTs. |
+| Indexes on agent, type, severity in hot tier | Single index: (ts_us) only | Every index is write-amplification tax on ingest ceiling. Rich indexing is Parquet's job (dictionary + min/max stats). |
+| Events written as JSON blob in data column | 5-10 hottest JSON fields promoted to real columns (process_name, cmdline, parent_pid, sha256, dest_ip, src_ip, user, hostname) + residual as data_raw | Columnar decomposition of repetitive fields is where 10-20× compression comes from. ZSTD on opaque JSON = 3-5×. Predicate pushdown on real columns = fast queries. |
+| Flusher accumulates flat | Flusher accumulates by (tenant_id, hour_of_timestamp) groups | Each group becomes a well-packed Parquet file sorted by (agent_id, ts_us). No cross-tenant mixing. |
+| File write then manifest update | Temp path → fsync → atomic rename → manifest commit (single txn) | Atomic rename on POSIX. Crash before manifest commit = orphan GC'd on startup. Crash after = file committed. Exactly-once. |
+| No orphan GC | Startup scan: delete files not in manifest or status='writing' | Prevents orphan accumulation from crashed flushes. |
+| Timestamps as strings | INT64 epoch microseconds in Parquet | Min/max pruning on int64 is faster and smaller. |
+| No audit trail | `ingested_at` stored alongside `ts_us` | Enables auditing clock skew and late event handling. |
+| Offset-based pagination | Cursor-based pagination (UUIDv7 = free cursor) | Offset is quadratic under concurrent writes. UUIDv7 is simultaneously sort key, dedup key, and pagination token. |
+| Single SQLite connection | Read-only connection pool for UI + dedicated writer goroutine | Checkpoint never pinned by long UI read. Passive checkpoint escalation to truncate only during idle. |
+| No integrity scrub | Weekly re-hash of committed files → detect bit rot | Bit rot on year-old cold files that nobody reads until incident response. |
+| DuckDB required for cold queries | Pure-Go fallback cold reader in default build | CGO-free build can read its own canonical data. DuckDB is performance upgrade, not requirement. |
+| Watermark table | Singleton watermark: `CHECK (id = 1)` | Prevents accidental multi-row corruption. |
 
 ## Key Design Decisions
 
 | Decision | Rationale |
 |----------|-----------|
-| **Parquet is canonical storage** | Columnar, ZSTD, filter pushdown. DuckDB reads it with `read_parquet()` — no ETL, no import, no duplication. |
-| **Batch writes to both SQLite + Parquet simultaneously** | No archiver pipeline. No re-reading from SQLite. No migration. Retention is just `DELETE FROM sqlite`. |
-| **UUIDv7 for event IDs** | Time-sortable, no DB dependency, survives Parquet → S3 → distributed merge without collision. |
-| **EventID is the idempotency key** | `ON CONFLICT (id) DO NOTHING` on both SQLite and Parquet. Crash-safe without watermarks. |
-| **No custom bitmap index** | 99% of SIEM queries are structured field = value. Parquet dictionary encoding + min/max row group pruning handles this. Full-text search on cmdline is a future DuckDB FTS extension. |
-| **Opt-in DuckDB via build tag** | Default build stays CGO-free + trivial cross-compile. DuckDB analytics only when explicitly enabled. |
-| **Fan-out query router** | Queries spanning the 7-day boundary hit both stores. Results merged by timestamp + deduped by ID. |
-
----
+| **SQLite is the WAL** | All ingestion lands in SQLite. Single fsync per batch. ~1-2 hours of data. |
+| **Hourly tables, DROP TABLE retention** | DELETE on billions of rows is disqualifying. DROP TABLE = O(1), no WAL explosion, no vacuum. |
+| **Dedicated writer goroutine** | Owns the SQLite connection. N workers feed it over a channel. Removes writer-lock contention. |
+| **Single index on hot table: ts_us** | Every extra index is write-amplification tax. Rich indexing is Parquet's job. |
+| **Columnar-decomposed schema** | 5-10 hot JSON fields → real columns. This is where 10-20x compression comes from. |
+| **Watermark-driven flusher** | Re-reads from SQLite (page cache = free). Atomic manifest commit per file. Exactly-once semantics. |
+| **Manifest is single source of truth** | Not filesystem glob. Not wall clock. Router cutoff = watermark. No boundary race. |
+| **Partition by {tenant}/{date}/{hour}** | NOT by agent. Agent is sort column. Parquet min/max + dictionary handles pruning. |
+| **Pure-Go fallback reader in default build** | CGO-free build can read its own canonical data. DuckDB is optional performance upgrade. |
+| **Weekly integrity scrub** | Re-hashes committed files. Detects bit rot before incident response. |
 
 ## Storage Tiers
 
-### Hot: SQLite (0-7 days)
+### Hot: SQLite WAL (0-2 hours)
 
 | Property | Value |
 |----------|-------|
-| Retention | DELETE FROM sqlite WHERE timestamp < NOW() - 7d |
-| Schema | Fixed: `edr_events(id, agent_id, event_type, severity, data, timestamp, org_id)` |
-| Index | idx_edr_events_agent, idx_edr_events_type, idx_edr_events_severity, idx_edr_events_time |
-| WAL mode | Checkpoint every 1000 writes |
+| Role | Write-ahead log + hot query tier |
+| Schema | One table per hour: `edr_events_{yyyymmddhh}` |
+| Index | `(ts_us)` only — single index for time-range queries |
+| WAL mode | synchronous=NORMAL, passive checkpointing |
+| Writer | Dedicated goroutine owns the connection |
+| Readers | Pool of read-only connections (UI queries) |
+| Retention | `DROP TABLE edr_events_{yyyymmddhh}` when fully behind watermark + safety window |
+| Max rows | ~360M at 50K/s × 2h |
 
-### Warm/Cold: Parquet (7 days+)
+### Warm: Parquet (2 hours — 7 days)
 
 | Property | Value |
 |----------|-------|
-| Format | Apache Parquet v2 |
-| Compression | ZSTD (level 1 for speed, configurable via `CompressionCodec` enum) |
-| Row group size | ~1M events |
-| File roll | `max(256MB uncompressed, 1 hour)` |
-| Partition layout | `events/{tenant}/{agent}/{year}/{month}/{day}/{hour}/part-NNNN.parquet` |
-| Schema version | Stored in manifest + Parquet key-value metadata |
+| File format | Apache Parquet v2 |
+| Compression | ZSTD level 1 (configurable via CompressionCodec enum) |
+| Row group size | ~1M rows, 128MB |
+| File target | 256MB uncompressed |
+| Roll trigger | 256MB OR hour boundary |
+| Partition | `events/{tenant}/{yyyy-mm-dd}/{hh}/part-NNNN.parquet` |
+| Sorted by | (agent_id, ts_us) within each file |
+| Timestamps | INT64 epoch microseconds |
+| Schema | 5-10 hot JSON fields decomposed to real columns + data_raw BLOB for residual |
+| Compaction | Hourly → daily files after 48h |
 
-### Partition Layout
+### Cold: Parquet (7 days+)
 
-```
-data/events/
-├── {tenant_id}/
-│   ├── {agent_id}/
-│   │   ├── 2026/
-│   │   │   ├── 07/
-│   │   │   │   ├── 24/
-│   │   │   │   │   ├── 10/
-│   │   │   │   │   │   ├── part-0001.parquet
-│   │   │   │   │   │   └── part-0002.parquet
-│   │   │   │   │   └── 11/
-│   │   │   │   └── 25/
-│   │   │   └── 08/
-│   │   └── ...
-```
+| Property | Value |
+|----------|-------|
+| Retention | TTL per compliance framework (PCI: 1y, HIPAA: 6y, default: 90d) |
+| Deletion | Manifest status='expired' → grace period → delete files → status='deleted' |
+| Integrity | Weekly scrub: re-hash committed files, detect bit rot |
 
----
-
-## Event ID Format (UUIDv7)
-
-```go
-// UUIDv7: time-ordered UUID with millisecond precision
-// |--- 48 bits Unix ms ---|---- 74 bits random ----|-- 2 bits variant --|
-func NewEventID() string {
-    id, _ := uuid.NewV7()
-    return id.String()
-}
-```
-
-Benefits:
-- Time-sortable: `ORDER BY id` ≈ `ORDER BY timestamp`
-- No AUTOINCREMENT dependency — survives distributed writes
-- 122 bits of randomness — collision probability near zero
-- Standard UUID format — all tools parse it
-
----
-
-## Manifest Catalog
-
-Stored in a separate SQLite database (`manifest.db`):
+## Columnar Schema
 
 ```sql
+-- Events table (hot tier, one per hour)
+CREATE TABLE edr_events_{yyyymmddhh} (
+    id          TEXT PRIMARY KEY,   -- UUIDv7
+    tenant_id   TEXT NOT NULL,
+    agent_id    TEXT NOT NULL,
+    ts_us       INTEGER NOT NULL,   -- epoch microseconds
+    ingested_at INTEGER NOT NULL,   -- for lateness auditing
+
+    -- Decomposed JSON fields (5-10 hottest)
+    event_type  TEXT NOT NULL,
+    severity    INTEGER NOT NULL,
+    process_name TEXT,
+    cmdline     TEXT,
+    parent_pid  INTEGER,
+    sha256      TEXT,
+    dest_ip     TEXT,
+    src_ip      TEXT,
+    user_name   TEXT,
+    hostname    TEXT,
+
+    -- Residual JSON payload
+    data_raw    BLOB                -- zstd-compressed if >4KB
+);
+CREATE INDEX idx_{yyyymmddhh}_ts ON edr_events_{yyyymmddhh}(ts_us);
+```
+
+```sql
+-- Manifest (separate DB)
 CREATE TABLE parquet_files (
-    file_id         TEXT PRIMARY KEY,     -- UUIDv7
-    path            TEXT NOT NULL,         -- relative path from data dir
-    tenant_id       TEXT NOT NULL DEFAULT '',
-    agent_id        TEXT NOT NULL DEFAULT '',
-    min_timestamp   TEXT NOT NULL,         -- RFC3339
-    max_timestamp   TEXT NOT NULL,
-    min_event_id    TEXT NOT NULL,
-    max_event_id    TEXT NOT NULL,
-    row_count       INTEGER NOT NULL,
-    compressed_size INTEGER NOT NULL,      -- bytes
+    file_id           TEXT PRIMARY KEY,
+    path              TEXT NOT NULL UNIQUE,
+    tenant_id         TEXT NOT NULL,
+    level             INTEGER NOT NULL DEFAULT 0,  -- 0=hourly, 1=daily
+    min_ts_us         INTEGER NOT NULL,
+    max_ts_us         INTEGER NOT NULL,
+    min_event_id      TEXT NOT NULL,
+    max_event_id      TEXT NOT NULL,
+    row_count         INTEGER NOT NULL,
+    compressed_size   INTEGER NOT NULL,
     uncompressed_size INTEGER NOT NULL,
-    sha256          TEXT NOT NULL,
-    compression     TEXT NOT NULL DEFAULT 'zstd',
-    schema_version  INTEGER NOT NULL DEFAULT 1,
-    status          TEXT NOT NULL DEFAULT 'writing',  -- writing | committed | corrupted | deleted
-    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    sha256            TEXT NOT NULL,
+    compression       TEXT NOT NULL DEFAULT 'zstd',
+    schema_version    INTEGER NOT NULL DEFAULT 1,
+    status            TEXT NOT NULL DEFAULT 'writing',
+    -- writing | committed | superseded | expired | corrupted | deleted
+    created_at        INTEGER NOT NULL,
+    updated_at        INTEGER NOT NULL
+);
+CREATE INDEX idx_pf_lookup ON parquet_files(tenant_id, status, min_ts_us, max_ts_us);
+
+CREATE TABLE watermark (
+    id       INTEGER PRIMARY KEY CHECK (id = 1),  -- singleton row
+    last_id  TEXT NOT NULL,
+    last_ts  INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
 );
 
-CREATE INDEX idx_manifest_time ON parquet_files(min_timestamp, max_timestamp);
-CREATE INDEX idx_manifest_tenant ON parquet_files(tenant_id);
+-- Registry of live hourly tables
+CREATE TABLE hot_tables (
+    table_name TEXT PRIMARY KEY,
+    hour_start INTEGER NOT NULL,
+    status     TEXT NOT NULL DEFAULT 'active'  -- active | flushed | dropped
+);
 ```
 
----
-
-## Compression Codec (Enum, Not Hardcoded)
+## Queue Backpressure
 
 ```go
-type CompressionCodec string
+type IngestQueue struct {
+    ch      chan *Event        // cap: 65536 (≥1s at 50K/s)
+    spill   *DiskSpill         // segment files
+    dropped atomic.Uint64
+}
 
-const (
-    CompressionZSTD   CompressionCodec = "zstd"
-    CompressionSnappy CompressionCodec = "snappy"
-    CompressionLZ4    CompressionCodec = "lz4"
-    CompressionBrotli CompressionCodec = "brotli"
-    CompressionNone   CompressionCodec = "none"
-)
+func (q *IngestQueue) Enqueue(e *Event) error {
+    select {
+    case q.ch <- e:
+        return nil
+    case <-time.After(q.enqueueTimeout):  // default 100ms
+        if err := q.spill.Write(e); err != nil {
+            q.dropped.Add(1)
+            return ErrEventDropped
+        }
+        return nil
+    }
+}
 ```
 
-Future codecs added without API changes.
+Policy: block briefly → spill to disk → drop with counter + alert. Never silent. A SIEM that loses the events documenting the attack that overloaded it has failed at its one job.
 
----
-
-## Schema Evolution
-
-Parquet supports schema evolution natively:
-- **New columns** added with default values → old files remain readable
-- **Deprecated columns** skipped in queries
-- Schema version stored in:
-  - `manifest.parquet_files.schema_version`
-  - Parquet file key-value metadata
-
-DuckDB handles mixed-schema reads: columns missing from older files return NULL.
-
----
-
-## Interfaces
+## Flusher (Exactly-Once Semantics)
 
 ```go
-// Writer — ingestion path
-type Writer interface {
-    WriteBatch(ctx context.Context, events []*Event) error
-    Close() error
-}
+func (f *Flusher) Run(ctx context.Context) {
+    for {
+        // 1. Read watermark (singleton, CHECK id=1)
+        wm := f.manifest.GetWatermark()
 
-// Reader — query path
-type Reader interface {
-    Query(ctx context.Context, q Query) ([]*Event, error)
-}
+        // 2. Read from hot tables: id > watermark
+        rows := f.sqlite.Query(ctx, Query{MinID: wm.LastID, Limit: 100000})
 
-// Retention — lifecycle management
-type Retention interface {
-    DeleteOlderThan(ctx context.Context, cutoff time.Time) (int, error)
-}
+        // 3. Accumulate by (tenant_id, hour_of_ts)
+        groups := groupBy(rows, func(e *Event) GroupKey {
+            return GroupKey{Tenant: e.TenantID, Hour: truncateHour(e.TsUs)}
+        })
 
+        // 4. For each group that's ready (≥256MB OR hour boundary):
+        for _, g := range groups.ready() {
+            sort.Slice(g, byAgentIDThenTsUs)
+            tempPath := f.writeTempParquet(g)  // fsync file AND directory
+            sha256, stats := f.checksum(tempPath)
+            finalPath := f.rename(tempPath)    // atomic on POSIX
+
+            // 5. One manifest transaction:
+            f.manifest.Transaction(func(tx) {
+                tx.InsertParquetFile(finalPath, stats, status='committed')
+                tx.UpdateWatermark(stats.MaxID, stats.MaxTs)
+            })
+        }
+
+        // 6. Cleanup flushed hot tables (safely behind watermark + margin)
+        f.manifest.DropFlushedTables(wm.LastID)
+
+        select {
+        case <-ctx.Done(): return
+        case <-time.After(f.interval):
+        }
+    }
+}
+```
+
+**Crash safety matrix:**
+
+| Crash point | Effect | Recovery |
+|-------------|--------|----------|
+| Before manifest commit | Watermark not advanced | Flusher re-reads same rows. Temp file GC'd on startup. |
+| After manifest commit | Watermark advanced | Rows never re-flushed. File durable. |
+| During manifest commit | Transaction rollback | Watermark unchanged. Same as crash before commit. |
+| During SQLite batch write | Transaction rollback | Collector retries. ON CONFLICT DO NOTHING. |
+
+## Query Router
+
+```go
+func (r *Router) Query(ctx context.Context, q Query) (*Result, error) {
+    wm := r.manifest.Watermark()
+    boundary := wm.Timestamp
+    overlap := 10 * time.Minute  // covers flush latency + clock skew
+
+    var res Result
+    var wg errgroup.Group
+
+    // Hot side (SQLite): data newer than watermark - overlap
+    if q.Overlaps(boundary.Add(-overlap), time.Now()) {
+        wg.Go(func() error {
+            events, err := r.hot.Query(gctx, q.ClampSince(boundary.Add(-overlap)))
+            if err != nil {
+                res.AddWarning("hot tier: %v", err)
+                return nil  // partial results, not failure
+            }
+            res.AppendHot(events)
+            return nil
+        })
+    }
+
+    // Cold side (Parquet via DuckDB or pure-Go): data older than watermark + overlap
+    if q.Overlaps(time.Time{}, boundary.Add(overlap)) {
+        wg.Go(func() error {
+            files := r.manifest.FilesFor(q.TenantID, q.Since, q.Until)  // committed only
+            events, err := r.cold.QueryFiles(gctx, files, q.ClampUntil(boundary.Add(overlap)))
+            if err != nil {
+                res.AddWarning("cold tier: %v", err)
+                return nil
+            }
+            res.AppendCold(events)
+            return nil
+        })
+    }
+
+    wg.Wait()
+    res.MergeSortDedupByID()  // UUIDv7: dedup = ID equality, sort = ID order
+    res.ApplyLimitOffset(q)
+    return &res, nil
+}
+```
+
+**Partial-result transparency:** The UI can render "cold storage unavailable — showing last 2 hours only." This is the difference between a degraded SIEM and a lying one.
+
+## Pagination (Cursor-Based)
+
+```go
 type Query struct {
     TenantID    string
     AgentIDs    []string
     EventTypes  []string
     MinSeverity int
-    Since, Until time.Time
+    Since, Until *time.Time
     Limit       int
-    Offset      int
+    Cursor      string   // last UUIDv7 seen; strictly-greater continuation
 }
 ```
 
-### Implementations
+UUIDv7 makes the cursor free: it's simultaneously the sort key, the dedup key, and the pagination token.
 
-| Type | Implementation | Build tag | CGO |
-|------|---------------|-----------|-----|
-| Writer + Reader + Retention | `SQLiteStore` | (none) | No |
-| Writer | `ParquetWriter` | (none, pure Go via go-parquet) | No |
-| Reader | `DuckDBAnalytics` | `duckdb` | Yes |
-| Composite | `StorageRouter` | (none) | No |
+## Fallback Reader (CGO-Free Default Build)
 
----
-
-## Queue Architecture
-
-```
-Collector goroutines
-    │
-    ▼
-MPMC ring buffer (channel, cap=10000, non-blocking send)
-    │
-    ├── Worker 1 (goroutine)
-    ├── Worker 2 (goroutine)
-    ├── Worker 3 (goroutine)
-    └── Worker N (goroutine, default 4)
-         │
-         ▼
-    Batch (accumulate 1000 events or 1s)
-         │
-         ├── SQLiteStore.WriteBatch(ctx, batch)
-         └── ParquetWriter.WriteBatch(ctx, batch)
-```
-
-Multiple workers prevent head-of-line blocking. If one Parquet file write stalls, other workers continue processing.
-
----
-
-## Query Router (Fan-Out)
+The default build includes a pure-Go Parquet reader that can evaluate simple `field = value` AND `ts BETWEEN` predicates with row-group pruning. Slower than DuckDB, but the default build can read its own canonical data.
 
 ```go
-func (r *Router) Query(ctx context.Context, q Query) ([]*Event, error) {
-    if q.Since == nil || time.Since(*q.Since) < 7*24*time.Hour {
-        // Query spans hot data — hit SQLite
-        hotEvents, _ := r.hot.Query(ctx, q)
-        return hotEvents, nil
+// default build — no CGO required
+func (r *ParquetReader) Query(ctx context.Context, files []FileInfo, q Query) ([]*Event, error) {
+    for _, f := range files {
+        reader, _ := parquet.Open(f.Path)
+        for _, rg := range reader.RowGroups() {
+            if !rg.MinMax("ts_us").Overlaps(q.Since, q.Until) {
+                continue  // row group pruning
+            }
+            // Scan matching rows
+        }
     }
-
-    // Fan-out: query both stores, merge
-    var wg sync.WaitGroup
-    var hot, cold []*Event
-
-    if q.Since.Before(time.Now().Add(-7 * 24 * time.Hour)) {
-        wg.Add(1)
-        go func() {
-            defer wg.Done()
-            cold, _ = r.cold.Query(ctx, q)
-        }()
-    }
-    if q.Until == nil || q.Until.After(time.Now().Add(-7*24*time.Hour)) {
-        wg.Add(1)
-        go func() {
-            defer wg.Done()
-            hot, _ = r.hot.Query(ctx, q)
-        }()
-    }
-    wg.Wait()
-
-    // Merge + dedup by ID
-    return mergeEvents(append(hot, cold...)), nil
 }
 ```
 
----
-
-## DuckDB Dependency
+## Compaction
 
 ```go
-// analytics_duckdb.go — go build -tags duckdb
+func (c *Compactor) Run(ctx context.Context) {
+    for each (tenant, day) older than 48h with hourly files:
+        1. Read all part files for the day
+        2. Re-sort by (agent_id, ts_us)
+        3. Write day.parquet to temp, fsync, checksum
+        4. One manifest transaction:
+             INSERT day file (status='committed')
+             UPDATE hourly files SET status='superseded'
+        5. GC: delete superseded files after 1h grace period
+}
+```
+
+## Integrity Scrub (Weekly)
+
+```go
+func (s *Scrubber) Run(ctx context.Context) {
+    // Low-priority weekly pass over committed files
+    for _, file := range s.manifest.GetFilesToScrub() {
+        actualSHA := sha256File(file.Path)
+        if actualSHA != file.SHA256 {
+            s.manifest.SetStatus(file.ID, "corrupted")
+            alert("TSE: bit rot detected in %s", file.Path)
+        }
+    }
+}
+```
+
+Bit rot on year-old cold files that nobody reads until the incident response is exactly the failure you want caught before the incident.
+
+## DuckDB Dependency (Opt-In)
+
+```go
 //go:build duckdb
-
-func (d *DuckDBAnalytics) Query(ctx context.Context, q Query) ([]*Event, error) {
+func (d *DuckDBAnalytics) QueryFiles(ctx context.Context, files []FileInfo, q Query) ([]*Event, error) {
+    // Manifest-pruned file list — not a glob
+    paths := make([]string, len(files))
+    for i, f := range files { paths[i] = f.Path }
     db, _ := sql.Open("duckdb", "")
     rows, _ := db.QueryContext(ctx, `
-        SELECT * FROM read_parquet('data/events/**/*.parquet')
-        WHERE timestamp >= ? AND timestamp < ?
+        SELECT * FROM read_parquet(?)
+        WHERE ts_us >= ? AND ts_us < ?
         AND severity >= ?
-    `, q.Since, q.Until, q.MinSeverity)
+    `, strings.Join(paths, ","), q.SinceUs, q.UntilUs, q.MinSeverity)
     return scanEvents(rows)
 }
 ```
 
-```go
-// analytics_stub.go — default build, no CGO
-//go:build !duckdb
+## Implementation Phases
 
-func (d *DuckDBAnalytics) Query(ctx context.Context, q Query) ([]*Event, error) {
-    return nil, fmt.Errorf("DuckDB analytics requires CGO: go build -tags duckdb")
-}
-```
+| Phase | Weeks | Deliverable |
+|-------|-------|-------------|
+| 1 | 1-2 | Hourly hot tables + registry, batch writer, dedicated writer goroutine, queue with backpressure/spill. Crash-injection harness skeleton. |
+| 2 | 3-4 | Flusher + watermark + manifest + atomic commit protocol + startup orphan GC. Run harness continuously. |
+| 3 | 5 | Router (watermark cutoff, overlap merge, cursor pagination, partial-result warnings). Pure-Go fallback cold reader. |
+| 4 | 6 | DuckDB reader behind build tag, manifest-driven file lists. |
+| 5 | 7-8 | Compactor, cold-tier GC/TTL, integrity scrub, snapshots, soak benchmark. |
 
----
+## Benchmark Targets
 
-## Benchmark Target
+| Metric | Target | Gate |
+|--------|--------|------|
+| Sustained ingest | 50K ev/s, 24h soak, NVMe | p99 enqueue < 50ms; zero drops |
+| Flush lag | < 90s steady state | Alert threshold: 15 min |
+| Hot query (1h, 1 agent) | < 50ms | |
+| Cold query (30d, 1 tenant, sev>=5) | < 2s over ~1B rows | |
+| Boundary query | Correct merge, zero missing, zero dupes | Test under crash injection |
+| Compression | >= 10x on columnar-decomposed schema | Measured on real EDR payloads |
+| Crash recovery | kill -9 at random points, 1000 iterations | Zero committed-data loss, zero committed duplicates |
 
-| Metric | Target | Hardware |
-|--------|--------|----------|
-| Sustained write | 50K events/sec | NVMe SSD, ZSTD level 1 |
-| Batch size | 1000 events | MPMC queue |
-| Compression | 10-20x | ZSTD, depends on field cardinality |
-
----
+The last row is the one that matters. Build the crash-injection harness in Phase 1, not as an afterthought — it's the executable proof that the watermark design delivers what simpler architectures cannot.
 
 ## Snapshots
 
 ```bash
-# Create a full snapshot of all state
+# Quiesce flusher → snapshot manifest + hot tables + Parquet → resume
 trace snapshot create --output trace-snapshot-2026-07-24.tar.zst
-
-# Restore from snapshot
 trace snapshot restore --input trace-snapshot-2026-07-24.tar.zst
 ```
 
-Snapshot contents:
-- `manifest.db` (Parquet file catalog)
-- `events.db` (SQLite hot tier)
-- `events/` (Parquet files, max 7 days)
-- `config.json`
+## What This Architecture Is
 
----
+- **An LSM tree, built from boring components.** SQLite = memtable+WAL. Flusher = memtable flush. Compactor = LSM compaction. Manifest = MANIFEST file. You're not avoiding the LSM architecture; you're renting its hardest parts from battle-tested components.
+- **A storage engine, not a database integration.** Parquet is the canonical format. The query engine (DuckDB) is swappable. The manifest is the metadata catalog.
+- **Single-node by design.** Multi-node is future work via Parquet on object storage + manifest federation.
 
-## What This Makes Possible
+## What It Is Not
 
-| Before | After |
-|--------|-------|
-| SQLite falls over at 100M events | Parquet handles 100B+ events |
-| Queries on old data = full table scan | DuckDB reads only matching row groups |
-| Retention = manual DELETE FROM | Automated `DELETE FROM sqlite WHERE ...` |
-| Archiver re-reads SQLite → double I/O | Batch writes to both simultaneously — no re-read |
-| Multi-node = impossible | Parquet on S3 → any node queries it |
-| CGO required for analytics | Default build stays CGO-free |
-| Event IDs = SQLite AUTOINCREMENT | UUIDv7 — survives distributed writes |
-
----
-
-## What This Is Not
-
-- **Not a Lucene competitor** — SIEM queries are structured (field = value), not free-text. Parquet dictionary encoding + min/max row group pruning covers 99% of queries.
-- **Not a multi-node cluster** — single node. Multi-node is future work via Parquet on object storage.
-- **Not replacing SQLite** — SQLite stays for operational data (alerts, investigations, recent events). Only event data migrates to Parquet.
-
----
+- **Not a Lucene competitor.** SIEM queries are structured (field = value), not free-text.
+- **Not a multi-node cluster.** Not yet. The Parquet + manifest design makes it possible.
+- **Not replacing SQLite for operational data.** SQLite stays for alerts, investigations, config.
 
 ## Evolution Path
 
 ```
-Today:
-  SQLite (all data)
+Today:    SQLite (all data)
 
-Tomorrow:
-  SQLite (hot) + Parquet (warm) + DuckDB (analytics)
+Phase 1:  Hourly hot tables + batch writer + queue
+Phase 2:  Flusher + watermark + manifest + Parquet
+Phase 3:  Router + pure-Go cold reader
+Phase 4:  DuckDB analytics (opt-in CGO)
+Phase 5:  Compaction + TTL + scrub + snapshots
 
 Enterprise:
-  SQLite (hot) + Parquet on S3 + any query engine (DuckDB / DataFusion / Polars)
+  SQLite (per-node WAL) + Parquet on S3 + any query engine
 
 Future (distributed):
-  Per-node SQLite + Parquet on shared object store
-  Cross-node query via manifest catalog
+  Every node runs TSE independently. Parquet on shared object store.
+  Cross-node query via manifest federation + DuckDB federated scan.
 ```
 
-No rewrites at any stage. Each tier is additive. DuckDB is just one query backend — if a pure-Go analytical engine emerges (Apache DataFusion, Polars), swap it in without changing the storage format.
+No rewrites between stages. Each phase is additive.
