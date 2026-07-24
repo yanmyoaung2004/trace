@@ -363,6 +363,16 @@ Flags:
       <li>FP learning: auto-throttles after 10 dismissals</li>
     </ul>
 
+    <h3>Storage: Trace Storage Engine</h3>
+    <p>Optionally store historical agent events in a columnar Parquet archive (requires <code>trace serve --tse</code>):</p>
+    <ul>
+      <li>SQLite hot tier for recent events (~1-2 hours)</li>
+      <li>Parquet cold tier with ZSTD compression (10-20x, configurable TTL)</li>
+      <li>Watermark-driven flusher with exactly-once semantics</li>
+      <li>Pure-Go cold reader (CGO-free); optional DuckDB for 5-10x faster analytics</li>
+      <li>Also available as standalone module: <code>github.com/yanmyoaung2004/trace-storage-engine</code></li>
+    </ul>
+
     <h3>Management (from Trace server)</h3>
     <pre><code>trace edr list                                         # List active agents (--all for revoked)
 trace edr view &lt;id&gt;                                    # Details: CPU name, memory in GB, IP
@@ -396,7 +406,16 @@ trace edr revoke &lt;id&gt;                                  # Remove agent</cod
       <tr><td><code>genkey</code></td><td></td><td>Generate TLS cert</td></tr>
       <tr><td><code>update</code></td><td></td><td>Update binary, intel, or playbooks</td></tr>
       <tr><td><code>version</code></td><td></td><td>Print version</td></tr>
+      <tr><td><code>tse</code></td><td></td><td>Trace Storage Engine (5 subcommands: status, flush, inspect, snapshot, metrics)</td></tr>
     </table>
+
+    <h3>Trace Storage Engine</h3>
+    <p>Optional columnar event store for long-term retention (requires <code>trace serve --tse</code>):</p>
+    <pre><code>trace tse status                  # Watermark, event counts, file stats
+trace tse flush                   # Force SQLite → Parquet flush
+trace tse inspect                 # List Parquet files in manifest
+trace tse snapshot --output backup.tar.gz --storage-path ~/.trace/tse
+trace tse metrics                 # Operational counters</code></pre>
 
     <h2 id="siem">SIEM Engine</h2>
     <table>

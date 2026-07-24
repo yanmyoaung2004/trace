@@ -367,6 +367,29 @@ trace edr dispatch abc123 isolate_host
 trace edr dismiss a1b2c3d4-e5f6-7890-abcd-ef1234567890 --reason "Legitimate admin activity"
 ```
 
+## `trace tse` — Trace Storage Engine
+
+Manage the columnar event store. Requires `trace serve --tse`.
+
+| Command | Description |
+|---------|-------------|
+| `status` | Show TSE status: watermark, hot/cold counts, event throughput, error counters |
+| `flush` | Trigger an immediate flush cycle (SQLite → Parquet) |
+| `inspect` | List recent Parquet files in the manifest catalog |
+| `snapshot --storage-path <path>` | Create a full TSE backup (manifest + events) |
+| `metrics` | Show operational counters (events enqueued, flushed, errors, etc.) |
+
+Examples:
+```powershell
+trace tse status
+trace tse flush
+trace tse inspect
+trace tse snapshot --storage-path ~/.trace/tse --output backup.tar.gz
+trace tse metrics
+```
+
+---
+
 ## `trace-agent` (separate binary)
 
 The `trace-agent` binary is deployed to endpoints for local monitoring.

@@ -279,7 +279,49 @@ trace edr dismiss <alert-id> [--reason "note"]          # Mark alert as false po
 trace edr revoke <id>                                   # Remove agent
 ```
 
-## What This Enables
+## Trace Storage Engine (TSE)
+
+TSE is an optional columnar event store that replaces SQLite-only storage with a hot/warm/cold tiered pipeline. Enable it with `trace serve --tse`.
+
+**Architecture:**
+
+```
+Ingest → SQLite (hot, hourly tables) → Flusher (watermark) → Parquet (cold, ZSTD) → DuckDB (analytics, optional)
+```
+
+| Component | Role | Retention |
+|-----------|------|-----------|
+| SQLite hot tier | Recent events, active investigations | 1-2 hours (behind watermark) |
+| Parquet cold tier | Columnar-compressed event archive | Configurable TTL (default 365d) |
+| Manifest | File catalog + watermark cursor | Permanent (audit trail) |
+| Optional DuckDB | 5-10x faster analytics queries | Requires `-tags duckdb` |
+
+**CLI commands:**
+
+```bash
+trace serve --tse                                      # Start with TSE enabled
+trace tse status                                       # Show TSE status, watermark, counts
+trace tse flush                                        # Trigger immediate flush
+trace tse inspect                                      # List recent Parquet files
+trace tse snapshot --storage-path /data/tse            # Create backup
+trace tse metrics                                      # Show operational counters
+```
+
+**Configuration in `~/.trace/config.json`:**
+
+```json
+{
+  "tse": {
+    "enabled": true,
+    "storage_path": "~/.trace/tse",
+    "compression": "zstd",
+    "hot_window": "2h",
+    "flush_interval": "30s"
+  }
+}
+```
+
+**What This Enables**
 
 - **Deploy anywhere** — laptop, Raspberry Pi, small VM, cloud instance
 - **No UI to install** — CLI-first, optional web dashboard

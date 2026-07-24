@@ -275,3 +275,4 @@ type Capability struct {
 | 9 — Central server   | 14 days    | 77 days     | Team deployment, RBAC              | ✅ |
 | 10 — Polish          | 7 days     | 84 days     | v0.1.0 release, i18n, hardening    | ✅ |
 | **11 — Custom EDR**  | **10 days**| **94 days** | **trace-agent binary, endpoint monitoring, 8 response actions, ETW/inotify/fanotify/ReadDirectoryChangesW, on-agent YARA, memory scanning, process tree, correlator, dedup, mTLS, auto-update, SCM service** | ✅ |
+| **12 — Trace Storage Engine** | **8 weeks** | **~150 days** | **SQLite hot tier (hourly tables, DROP retention), Parquet cold tier (ZSTD, columnar), watermark-driven flusher, manifest catalog, query router, pure-Go cold reader, optional DuckDB analytics, compactor, GC, integrity scrub, snapshots, metrics. 13 packages, 49 tests.** | ✅ |

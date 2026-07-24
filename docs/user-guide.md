@@ -877,6 +877,41 @@ trace edr dismiss <event-id> --reason "Legitimate activity"
 trace edr revoke <agent-id>
 ```
 
+### Trace Storage Engine (TSE)
+
+TSE is an optional columnar event store for long-term retention. Enable it when running `trace serve`:
+
+```bash
+trace serve --tse
+```
+
+Once enabled, manage it via:
+
+```bash
+trace tse status              # View watermark age, event counts, Parquet file stats
+trace tse flush               # Force SQLite → Parquet flush
+trace tse inspect             # List Parquet files in manifest
+trace tse metrics             # Operational counters
+```
+
+TSE stores events in three tiers:
+- **SQLite** (hot, ~1-2 hours) — recent events for low-latency queries
+- **Parquet** (cold, configurable TTL) — columnar-compressed historical archive
+- **DuckDB** (optional, requires `-tags duckdb`) — 5-10x faster analytics over Parquet files
+
+Configuration in `~/.trace/config.json`:
+
+```json
+{
+  "tse": {
+    "enabled": true,
+    "storage_path": "~/.trace/tse",
+    "compression": "zstd",
+    "flush_interval": "30s"
+  }
+}
+```
+
 ---
 
 > For playbook authoring: see `docs/playbook-authoring.md`
