@@ -50,18 +50,21 @@ func (r *ParquetReader) QueryFiles(ctx context.Context, files []storage.FileInfo
 		}
 		fr, err := reader.NewParquetReader(pf, &parquet.TraceEventParquet{}, 1_000_000)
 		if err != nil {
+			pf.Close()
 			warnings = append(warnings, fmt.Sprintf("open %s: %v", fi.Path, err))
 			continue
 		}
 
-		// Read all rows
+			// Read all rows
 		rows, err := fr.ReadByNumber(int(fr.GetNumRows()))
 		if err != nil {
 			fr.ReadStop()
+			pf.Close()
 			warnings = append(warnings, fmt.Sprintf("read %s: %v", fi.Path, err))
 			continue
 		}
 		fr.ReadStop()
+		pf.Close()
 
 		// Convert and filter
 		for _, row := range rows {
