@@ -178,6 +178,9 @@ func TestCompactor_FormatBytes(t *testing.T) {
 }
 
 func TestCompactor_CompactionCreatesDaily(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping compaction test in short mode")
+	}
 	dir := t.TempDir()
 	ctx := context.Background()
 	outputDir := filepath.Join(dir, "events")

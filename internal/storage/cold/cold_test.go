@@ -177,6 +177,9 @@ func TestParquetReader_InvalidFile(t *testing.T) {
 }
 
 func TestParquetReader_Roundtrip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping parquet read test in short mode")
+	}
 	dir := t.TempDir()
 
 	events := []*storage.Event{
@@ -214,6 +217,9 @@ func TestParquetReader_Roundtrip(t *testing.T) {
 }
 
 func TestParquetReader_MultipleFiles(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping parquet read test in short mode")
+	}
 	dir := t.TempDir()
 
 	p1 := writeParquetFile(t, dir, "test/2026/07/24/10", []*storage.Event{
