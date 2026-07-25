@@ -17,6 +17,11 @@ type Client struct {
 	httpClient *http.Client
 	cacheDB    *sql.DB
 	mu         sync.Mutex
+	testURL    string
+}
+
+func (c *Client) SetTestURL(url string) {
+	c.testURL = url
 }
 
 func New(apiKey string, cacheDB *sql.DB) *Client {
@@ -64,8 +69,8 @@ func (c *Client) CheckIP(ctx context.Context, ip string) (*AbuseData, error) {
 		}
 	}
 
-	url := fmt.Sprintf("https://api.abuseipdb.com/api/v2/check?ipAddress=%s&maxAgeInDays=90", ip)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	apiURL := c.apiURL(ip)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -167,4 +172,12 @@ func (a *Agent) ipReputation(ctx context.Context, input agent.Input) (agent.Outp
 		"isp":              data.ISP,
 		"domain":           data.Domain,
 	}, nil
+}
+
+func (c *Client) apiURL(ip string) string {
+	base := c.testURL
+	if base == "" {
+		base = "https://api.abuseipdb.com"
+	}
+	return fmt.Sprintf("%s/api/v2/check?ipAddress=%s&maxAgeInDays=90", base, ip)
 }
