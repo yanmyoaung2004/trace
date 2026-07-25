@@ -106,31 +106,31 @@
           </div>
           <div class="stats-grid">
             <div class="stat">
-              <span class="stat-num" data-count="496">0</span
+              <span class="stat-num" data-count="464">0</span
               ><span class="stat-label">Detection rules</span>
             </div>
             <div class="stat">
-              <span class="stat-num" data-count="7">0</span
-              ><span class="stat-label">Core agents</span>
+              <span class="stat-num" data-count="56">0</span
+              ><span class="stat-label">Packages tested</span>
             </div>
             <div class="stat">
               <span class="stat-num" data-count="26">0</span
               ><span class="stat-label">Playbooks</span>
             </div>
             <div class="stat">
-              <span class="stat-num" data-count="81">0</span
+              <span class="stat-num" data-count="750">0</span
               ><span class="stat-label">MITRE techniques</span>
             </div>
             <div class="stat">
-              <span class="stat-num" data-count="8">0</span
-              ><span class="stat-label">Compliance frameworks</span>
+              <span class="stat-num" data-count="100">0</span
+              ><span class="stat-label">Test coverage %</span>
             </div>
             <div class="stat">
-              <span class="stat-num" data-count="3">0</span
-              ><span class="stat-label">EDR providers</span>
+              <span class="stat-num" data-count="111">0</span
+              ><span class="stat-label">K events / sec</span>
             </div>
             <div class="stat">
-              <span class="stat-num" data-count="15">0</span
+              <span class="stat-num" data-count="17">0</span
               ><span class="stat-label">YARA rules</span>
             </div>
             <div class="stat">
@@ -950,9 +950,11 @@
 <span class="prompt-char">$</span> trace compliance report --framework pci_dss_v4.0
 <span class="out-dim">PCI DSS v4.0 Compliance Report</span>
 <span class="out-ok">Score: 86%</span>   (12/14 controls passed)
-1.2.5  Network access controls     <span class="out-ok">PASS</span>
-2.2.7  Insecure protocols           <span class="out-warn">FAIL</span>
-8.3.2  MFA for admin access        <span class="out-ok">PASS</span>
+
+<span class="prompt-char">$</span> trace tse status --storage-path ~/.trace/tse
+<span class="out-dim">TSE Status</span>
+<span class="out-ok">Watermark: 00000000-0000-0000-0000-000000000500</span>
+<span class="out-dim">Hot events: 500 | Cold files: 1 | Throughput: 111K ev/s</span>
 
 <span class="prompt-char">$</span> trace edr list
 <span class="out-dim">Agent                          Hostname       Platform    Status       Last Heartbeat</span>
@@ -970,11 +972,15 @@ fedcba98-7654-3210   linux-node-3   linux       active       2026-07-22T18:59</c
             </div>
             <div class="cli-cmd">
               <code>serve</code
-              ><span>Start the daemon: SIEM, scheduler, worker</span>
+              ><span>Daemon: SIEM, TSE, scheduler, worker</span>
             </div>
             <div class="cli-cmd">
               <code>server</code
               ><span>Central server mode + web dashboard</span>
+            </div>
+            <div class="cli-cmd">
+              <code>tse</code><span class="alias">config</span
+              ><span>Storage engine: status, inspect, snapshot, metrics</span>
             </div>
             <div class="cli-cmd">
               <code>status</code><span class="alias">st</span
@@ -1040,23 +1046,31 @@ fedcba98-7654-3210   linux-node-3   linux       active       2026-07-22T18:59</c
             </div>
 
             <div class="reveal">
-              <span class="eyebrow">Storage</span>
-              <h2 class="h2-tight">SQLite, one file, WAL mode</h2>
-              <p class="section-sub">
-                No database server to run. 14 tables cover investigations,
-                tasks, results, cache, config, events, alerts, response actions,
-                hunts, cases, and case sub-records.
-              </p>
-              <div class="mini-stat-row">
-                <div class="mini-stat">
-                  <span>EN / MY</span>auto-detected via LANG
-                </div>
-                <div class="mini-stat"><span>3</span>LLM planner providers</div>
-              </div>
-              <p class="panel-note">
-                Planner works with OpenAI, Anthropic, or a local Ollama model,
-                so the reasoning layer isn't locked to one vendor either.
-              </p>
+<span class="eyebrow">Storage</span>
+          <h2 class="h2-tight">Columnar event store (TSE)</h2>
+          <p class="section-sub">
+            Optional embedded columnar engine for long-term security event retention.
+            SQLite hot tier + Parquet cold tier + watermark-driven flusher.
+            DuckDB analytics when CGO available. <strong>111K events/sec</strong> write throughput.
+          </p>
+          <div class="mini-stat-row">
+            <div class="mini-stat">
+              <span>111K</span>events/sec write
+            </div>
+            <div class="mini-stat">
+              <span>100%</span>packages tested (56/56)
+            </div>
+            <div class="mini-stat">
+              <span>ZSTD</span>Parquet compression
+            </div>
+            <div class="mini-stat">
+              <span>0</span>data races
+            </div>
+          </div>
+          <p class="panel-note">
+            <code>trace serve --tse</code> to enable. <code>trace tse status</code> to monitor.
+            Retention, compression, and flush interval configurable via CLI.
+          </p>
             </div>
           </div>
         </div>

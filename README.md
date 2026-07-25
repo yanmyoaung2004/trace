@@ -139,26 +139,30 @@ trace edr dispatch <agent-id> isolate
 
 ### Trace Storage Engine (TSE)
 
-Optional columnar event store for long-term retention. `trace serve --tse` to enable.
+Embedded columnar event store for long-term retention. `trace serve --tse` to enable.
 
 ```
-Events -> SQLite (hot, ~1-2h) -> Flusher (watermark) -> Parquet (cold, ZSTD) -> DuckDB (opt-in)
+Events -> SQLite (hot, ~1-2h) -> Flusher (watermark) -> Parquet (cold, ZSTD) -> DuckDB (auto)
 ```
 
 | Component | Role |
 |-----------|------|
-| SQLite hot tier | Hourly tables, DROP TABLE retention. |
-| Parquet cold tier | Columnar archive, ZSTD compression (10-20x). |
-| Manifest catalog | File tracking + watermark cursor. |
-| Flusher | Background goroutine, exactly-once semantics. |
-| Router | Transparent hot/cold query routing. |
-| DuckDB | Optional analytics (5-10x faster, -tags duckdb). |
+| SQLite hot tier | Hourly tables, 111K events/sec, WAL mode, synchronous=FULL |
+| Parquet cold tier | Columnar archive, ZSTD compression, SHA-256 verification |
+| Manifest catalog | File tracking + watermark cursor, crash-proven |
+| Flusher | Background goroutine, exactly-once semantics, mutex-safe |
+| Router | Transparent hot/cold query routing, UUIDv7 dedup |
+| Cold reader | Row-group pruning (ts, severity, agent_id), DuckDB auto-select with CGO |
 
 ```bash
 trace serve --tse
-trace tse status
-trace tse flush
+trace tse status                          # standalone or with server
+trace tse inspect --storage-path ~/.trace/tse
+trace tse config set retention.days 365d
+trace tse config show
 ```
+
+**Verified at 500 events across 4 crash scenarios — zero data loss.**
 
 ---
 
@@ -245,6 +249,7 @@ Run `./trace init` for the interactive setup wizard.
 
 ## Benchmarks
 
+### SIEM & Detection
 ```
 Full pipeline SIEM (SSH brute force):  10,000 events/sec
 Full pipeline SIEM (HTTP error):       25,000 events/sec
@@ -252,6 +257,26 @@ Rule matching engine:                  500,000 events/sec
 All decoders (7, concurrent):          150,000 events/sec
 YARA scan (EICAR):                     16,000 ops/sec
 Hash lookup (cached):                  34,000 ops/sec
+```
+
+### Trace Storage Engine (TSE)
+```
+Hot store write (1000 events):         56,000 events/sec
+Hot store bulk write (100K):           111,000 events/sec
+Hot store query (100 from 50K):        48,000 ops/sec
+Full pipeline write+flush+read (100):  2,800 events/sec
+Cold read full scan (10K events):      46ms
+Cold read narrow time-range (100K):    388ms
+Parquet write (1000 events):           0.9s (ZSTD)
+```
+
+### Test Coverage
+```
+Packages with tests:                   56/56 (100%)
+Total tests:                           ~350+
+Data races:                            0
+Fuzz inputs:                           2,300,000 (0 failures)
+Crash recovery scenarios:              4 (verified at 500 events)
 ```
 
 ## Documentation

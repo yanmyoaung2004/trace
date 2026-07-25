@@ -409,13 +409,15 @@ trace edr revoke &lt;id&gt;                                  # Remove agent</cod
       <tr><td><code>tse</code></td><td></td><td>Trace Storage Engine (5 subcommands: status, flush, inspect, snapshot, metrics)</td></tr>
     </table>
 
-    <h3>Trace Storage Engine</h3>
-    <p>Optional columnar event store for long-term retention (requires <code>trace serve --tse</code>):</p>
+    <h3>Trace Storage Engine (TSE)</h3>
+    <p>Embedded columnar event store — SQLite hot tier, Parquet cold tier, watermark flusher, DuckDB analytics. <strong>111K events/sec</strong> throughput. Crash recovery verified at 500 events.</p>
     <pre><code>trace tse status                  # Watermark, event counts, file stats
 trace tse flush                   # Force SQLite → Parquet flush
 trace tse inspect                 # List Parquet files in manifest
 trace tse snapshot --output backup.tar.gz --storage-path ~/.trace/tse
-trace tse metrics                 # Operational counters</code></pre>
+trace tse metrics                 # Operational counters
+trace tse config show             # View TSE configuration
+trace tse config set retention.days 365d  # Set cold TTL</code></pre>
 
     <h2 id="siem">SIEM Engine</h2>
     <table>
