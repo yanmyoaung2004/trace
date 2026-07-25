@@ -8,7 +8,11 @@ import (
 	"time"
 
 	"github.com/yanmyoaung2004/trace/internal/storage"
+	"github.com/yanmyoaung2004/trace/internal/storage/cold"
+	"github.com/yanmyoaung2004/trace/internal/storage/flusher"
 	"github.com/yanmyoaung2004/trace/internal/storage/manifest"
+	"github.com/yanmyoaung2004/trace/internal/storage/parquet"
+	"github.com/yanmyoaung2004/trace/internal/storage/router"
 	"github.com/yanmyoaung2004/trace/internal/storage/sqlite"
 )
 
@@ -84,6 +88,111 @@ func BenchmarkHotStoreQueryThroughput(b *testing.B) {
 		}
 		if len(result.Events) == 0 {
 			b.Fatal("expected events")
+		}
+	}
+}
+
+func BenchmarkPipeline_WriteFlush(b *testing.B) {
+	dir := b.TempDir()
+	pw := parquet.NewParquetWriter(
+		filepath.Join(dir, "temp"),
+		filepath.Join(dir, "events"),
+		parquet.DefaultParquetOptions(),
+	)
+	defer pw.Close()
+
+	hot, err := sqlite.NewSQLiteHotStore(filepath.Join(dir, "hot.db"))
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer hot.Close()
+
+	m, err := manifest.NewManifest(filepath.Join(dir, "manifest.db"))
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer m.Close()
+
+	f := flusher.NewFlusher(hot, m, pw, 0, 100, 10000, filepath.Join(dir, "events"))
+
+	ctx := context.Background()
+	batchSize := 100
+	events := make([]*storage.Event, batchSize)
+	for i := 0; i < batchSize; i++ {
+		events[i] = &storage.Event{
+			ID:        fmt.Sprintf("pipeline-bench-%d", i),
+			TenantID:  "bench",
+			AgentID:   fmt.Sprintf("agent-%d", i%5),
+			Timestamp: time.Now().UnixMicro() + int64(i),
+			EventType: "bench",
+			Severity:  1,
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := hot.WriteBatch(ctx, events); err != nil {
+			b.Fatal(err)
+		}
+		if err := f.FlushNow(ctx); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkPipeline_WriteFlushRead(b *testing.B) {
+	dir := b.TempDir()
+	pw := parquet.NewParquetWriter(
+		filepath.Join(dir, "temp"),
+		filepath.Join(dir, "events"),
+		parquet.DefaultParquetOptions(),
+	)
+	defer pw.Close()
+
+	hot, err := sqlite.NewSQLiteHotStore(filepath.Join(dir, "hot.db"))
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer hot.Close()
+
+	m, err := manifest.NewManifest(filepath.Join(dir, "manifest.db"))
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer m.Close()
+
+	f := flusher.NewFlusher(hot, m, pw, 0, 100, 10000, filepath.Join(dir, "events"))
+	cr := cold.NewParquetReader()
+	r := router.NewRouter(hot, cr, m)
+
+	ctx := context.Background()
+	batchSize := 100
+	events := make([]*storage.Event, batchSize)
+	for i := 0; i < batchSize; i++ {
+		events[i] = &storage.Event{
+			ID:        fmt.Sprintf("pipeline-bench-%d", i),
+			TenantID:  "bench",
+			AgentID:   fmt.Sprintf("agent-%d", i%5),
+			Timestamp: time.Now().UnixMicro() + int64(i),
+			EventType: "bench",
+			Severity:  1,
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := hot.WriteBatch(ctx, events); err != nil {
+			b.Fatal(err)
+		}
+		if err := f.FlushNow(ctx); err != nil {
+			b.Fatal(err)
+		}
+		result, err := r.Query(ctx, storage.Query{Limit: batchSize})
+		if err != nil {
+			b.Fatal(err)
+		}
+		if len(result.Events) == 0 {
+			b.Fatal("expected events from pipeline")
 		}
 	}
 }
