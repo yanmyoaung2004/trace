@@ -212,7 +212,11 @@ func (c *Client) do(ctx context.Context, method, path string, body any) ([]byte,
 
 		if resp.StatusCode == 429 {
 			lastErr = fmt.Errorf("rate limited")
-			time.Sleep(5 * time.Second)
+			backoff := c.config.RetryBase * time.Duration(math.Pow(2, float64(attempt)))
+			if backoff > 30*time.Second {
+				backoff = 30 * time.Second
+			}
+			time.Sleep(backoff)
 			continue
 		}
 		if resp.StatusCode >= 500 {

@@ -201,15 +201,15 @@ func TestRateLimitRetry(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewClient(&Config{ServerURL: server.URL, Timeout: time.Second, RetryMax: 1, RetryBase: time.Millisecond})
+	c := NewClient(&Config{ServerURL: server.URL, Timeout: time.Second, RetryMax: 2, RetryBase: time.Microsecond})
 	c.client = server.Client()
 
 	_, err := c.Register(context.Background(), &RegisterRequest{})
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if attempts != 2 { // initial + 1 retry
-		t.Errorf("expected 2 attempts (rate limited), got %d", attempts)
+	if attempts != 3 { // initial + 2 retries (RetryMax=2)
+		t.Errorf("expected 3 attempts (rate limited), got %d", attempts)
 	}
 }
 
