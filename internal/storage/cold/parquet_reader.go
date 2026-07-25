@@ -15,22 +15,31 @@ import (
 
 var parquetMagic = []byte("PAR1")
 
-// ParquetReader is a pure-Go cold reader that evaluates field = value AND
-// ts BETWEEN predicates with row-group pruning. It is the default reader
-// for the CGO-free build. DuckDB is 5-10x faster but requires CGO.
+// column indexes in TraceEventParquet (0-indexed by leaf column order)
+const (
+	colID          = 0
+	colTenantID    = 1
+	colAgentID     = 2
+	colTimestampUs = 3
+	colIngestedAt  = 4
+	colEventType   = 5
+	colSeverity    = 6
+)
+
+// ParquetReader is a pure-Go cold reader with row-group pruning.
+// It evaluates field = value AND ts BETWEEN predicates, skipping
+// non-matching row groups using parquet column statistics.
 type ParquetReader struct{}
 
-// NewParquetReader creates a pure-Go Parquet reader.
 func NewParquetReader() *ParquetReader {
 	return &ParquetReader{}
 }
 
-// Name returns the reader name.
 func (r *ParquetReader) Name() string {
-	return "parquet-go (pure Go)"
+	return "parquet-go (pure Go, pruned)"
 }
 
-// QueryFiles reads events from the given Parquet files with basic filtering.
+// QueryFiles reads events from Parquet files with row-group pruning.
 func (r *ParquetReader) QueryFiles(ctx context.Context, files []storage.FileInfo, q storage.Query) (*storage.Result, error) {
 	q = q.ApplyDefaults()
 	var allEvents []*storage.Event
@@ -40,7 +49,6 @@ func (r *ParquetReader) QueryFiles(ctx context.Context, files []storage.FileInfo
 		if ctx.Err() != nil {
 			break
 		}
-
 		if _, err := os.Stat(fi.Path); os.IsNotExist(err) {
 			warnings = append(warnings, fmt.Sprintf("file not found: %s", fi.Path))
 			continue
@@ -52,15 +60,13 @@ func (r *ParquetReader) QueryFiles(ctx context.Context, files []storage.FileInfo
 			continue
 		}
 
-		// Validate parquet magic header before opening reader
-		// (pq.NewGenericReader panics on invalid files)
 		if !isValidParquet(f) {
 			f.Close()
 			warnings = append(warnings, fmt.Sprintf("invalid parquet file: %s", fi.Path))
 			continue
 		}
-		// Re-open after checking magic (we consumed bytes from the reader)
 		f.Close()
+
 		f, err = os.Open(fi.Path)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("re-open %s: %v", fi.Path, err))
@@ -68,47 +74,61 @@ func (r *ParquetReader) QueryFiles(ctx context.Context, files []storage.FileInfo
 		}
 
 		pf := pq.NewGenericReader[parquet.TraceEventParquet](f)
+		fileView := pf.File()
+		rowGroups := fileView.RowGroups()
 
-		rows := make([]parquet.TraceEventParquet, pf.NumRows())
-		n, err := pf.Read(rows)
-		if err != nil && err != io.EOF {
-			pf.Close()
-			f.Close()
-			warnings = append(warnings, fmt.Sprintf("read %s: %v", fi.Path, err))
-			continue
+		for _, rg := range rowGroups {
+			if ctx.Err() != nil {
+				break
+			}
+
+			// Row-group pruning: skip if column stats prove no match
+			if !rgMayMatch(rg, q) {
+				continue
+			}
+
+			rgReader := pq.NewGenericRowGroupReader[parquet.TraceEventParquet](rg)
+			rgRows := make([]parquet.TraceEventParquet, rg.NumRows())
+			n, err := rgReader.Read(rgRows)
+			if err != nil && err != io.EOF {
+				rgReader.Close()
+				warnings = append(warnings, fmt.Sprintf("read row group in %s: %v", fi.Path, err))
+				continue
+			}
+			rgRows = rgRows[:n]
+			rgReader.Close()
+
+			for _, row := range rgRows {
+				if q.SinceUs > 0 && row.TimestampUs < q.SinceUs {
+					continue
+				}
+				if q.UntilUs > 0 && row.TimestampUs >= q.UntilUs {
+					continue
+				}
+				if q.MinSeverity > 0 && int(row.Severity) < q.MinSeverity {
+					continue
+				}
+				if len(q.AgentIDs) > 0 && !contains(q.AgentIDs, row.AgentID) {
+					continue
+				}
+				if len(q.EventTypes) > 0 && !contains(q.EventTypes, row.EventType) {
+					continue
+				}
+				if q.MinID != "" && row.ID <= q.MinID {
+					continue
+				}
+				if q.MaxID != "" && row.ID > q.MaxID {
+					continue
+				}
+				if q.Cursor != "" && row.ID <= q.Cursor {
+					continue
+				}
+				allEvents = append(allEvents, parquetToEvent(row))
+			}
 		}
-		rows = rows[:n]
+
 		pf.Close()
 		f.Close()
-
-		for _, row := range rows {
-			if q.SinceUs > 0 && row.TimestampUs < q.SinceUs {
-				continue
-			}
-			if q.UntilUs > 0 && row.TimestampUs >= q.UntilUs {
-				continue
-			}
-			if q.MinSeverity > 0 && int(row.Severity) < q.MinSeverity {
-				continue
-			}
-			if len(q.AgentIDs) > 0 && !contains(q.AgentIDs, row.AgentID) {
-				continue
-			}
-			if len(q.EventTypes) > 0 && !contains(q.EventTypes, row.EventType) {
-				continue
-			}
-			if q.MinID != "" && row.ID <= q.MinID {
-				continue
-			}
-			if q.MaxID != "" && row.ID > q.MaxID {
-				continue
-			}
-			if q.Cursor != "" && row.ID <= q.Cursor {
-				continue
-			}
-
-			allEvents = append(allEvents, parquetToEvent(row))
-		}
 	}
 
 	result := &storage.Result{}
@@ -128,7 +148,68 @@ func (r *ParquetReader) QueryFiles(ctx context.Context, files []storage.FileInfo
 	return result, nil
 }
 
-// parquetToEvent converts a Parquet struct back to a storage.Event.
+// rgMayMatch checks if a row group could contain matching rows for the query.
+// Uses parquet column statistics to skip row groups that can't possibly match.
+func rgMayMatch(rg pq.RowGroup, q storage.Query) bool {
+	chunks := rg.ColumnChunks()
+	if len(chunks) <= max(colTimestampUs, colSeverity) {
+		return true // can't check, assume match
+	}
+
+	if q.SinceUs > 0 || q.UntilUs > 0 {
+		tsMin, tsMax := columnMinMax(chunks[colTimestampUs])
+		if q.SinceUs > 0 && tsMax < q.SinceUs {
+			return false // all timestamps before query window
+		}
+		if q.UntilUs > 0 && tsMin >= q.UntilUs {
+			return false // all timestamps after query window
+		}
+	}
+
+	if q.MinSeverity > 0 {
+		_, sevMax := columnMinMax(chunks[colSeverity])
+		if int32(sevMax) < int32(q.MinSeverity) {
+			return false // all severities below query minimum
+		}
+	}
+
+	return true
+}
+
+// columnMinMax returns the min and max int64 values from a column chunk's index.
+func columnMinMax(chunk pq.ColumnChunk) (int64, int64) {
+	colIdx, err := chunk.ColumnIndex()
+	if err != nil {
+		return 0, 0 // can't get stats, assume all
+	}
+
+	n := colIdx.NumPages()
+	if n == 0 {
+		return 0, 0
+	}
+
+	min := colIdx.MinValue(0).Int64()
+	max := colIdx.MaxValue(0).Int64()
+
+	for i := 1; i < n; i++ {
+		if v := colIdx.MinValue(i).Int64(); v < min {
+			min = v
+		}
+		if v := colIdx.MaxValue(i).Int64(); v > max {
+			max = v
+		}
+	}
+
+	return min, max
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func parquetToEvent(pe parquet.TraceEventParquet) *storage.Event {
 	return &storage.Event{
 		ID:          pe.ID,
@@ -159,9 +240,6 @@ func contains(slice []string, val string) bool {
 	return false
 }
 
-// isValidParquet checks if the reader contains a valid parquet file by reading
-// the 4-byte magic header. The reader position is advanced, so callers should
-// re-open the file after this check.
 func isValidParquet(r io.ReadSeeker) bool {
 	magic := make([]byte, 4)
 	if _, err := r.Read(magic); err != nil {
