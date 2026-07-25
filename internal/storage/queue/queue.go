@@ -26,6 +26,9 @@ type DiskSpillConfig struct {
 	Limit int64  // max bytes before dropping (0 = unlimited)
 }
 
+// OnDropFunc is called when an event is dropped (for metrics hookup).
+type OnDropFunc func()
+
 // IngestQueue is a bounded MPMC queue with backpressure:
 // 1. Block briefly (channel send with timeout)
 // 2. Spill to disk (segment files)
@@ -37,6 +40,12 @@ type IngestQueue struct {
 	dropped   atomic.Uint64
 	closeOnce sync.Once
 	closeCh   chan struct{}
+	onDrop    OnDropFunc
+}
+
+// OnDrop registers a callback for dropped events.
+func (q *IngestQueue) OnDrop(fn OnDropFunc) {
+	q.onDrop = fn
 }
 
 // NewIngestQueue creates a bounded ingest queue.
@@ -76,11 +85,17 @@ func (q *IngestQueue) Enqueue(ctx context.Context, e *storage.Event) error {
 		if q.spill != nil {
 			if err := q.spill.Write(e); err != nil {
 				q.dropped.Add(1)
+				if q.onDrop != nil {
+					q.onDrop()
+				}
 				return ErrEventDropped
 			}
 			return nil
 		}
 		q.dropped.Add(1)
+		if q.onDrop != nil {
+			q.onDrop()
+		}
 		return ErrEventDropped
 	case <-ctx.Done():
 		return ctx.Err()
