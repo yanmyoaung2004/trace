@@ -152,24 +152,40 @@ func (r *ParquetReader) QueryFiles(ctx context.Context, files []storage.FileInfo
 // Uses parquet column statistics to skip row groups that can't possibly match.
 func rgMayMatch(rg pq.RowGroup, q storage.Query) bool {
 	chunks := rg.ColumnChunks()
-	if len(chunks) <= max(colTimestampUs, colSeverity) {
+	if len(chunks) <= max(max(colTimestampUs, colSeverity), colAgentID) {
 		return true // can't check, assume match
 	}
 
 	if q.SinceUs > 0 || q.UntilUs > 0 {
 		tsMin, tsMax := columnMinMax(chunks[colTimestampUs])
 		if q.SinceUs > 0 && tsMax < q.SinceUs {
-			return false // all timestamps before query window
+			return false
 		}
 		if q.UntilUs > 0 && tsMin >= q.UntilUs {
-			return false // all timestamps after query window
+			return false
 		}
 	}
 
 	if q.MinSeverity > 0 {
 		_, sevMax := columnMinMax(chunks[colSeverity])
 		if int32(sevMax) < int32(q.MinSeverity) {
-			return false // all severities below query minimum
+			return false
+		}
+	}
+
+	if len(q.AgentIDs) > 0 {
+		agMin, agMax := columnMinMaxStr(chunks[colAgentID])
+		if agMin != "" && agMax != "" {
+			anyMatch := false
+			for _, agent := range q.AgentIDs {
+				if agent >= agMin && agent <= agMax {
+					anyMatch = true
+					break
+				}
+			}
+			if !anyMatch {
+				return false
+			}
 		}
 	}
 
@@ -200,6 +216,29 @@ func columnMinMax(chunk pq.ColumnChunk) (int64, int64) {
 		}
 	}
 
+	return min, max
+}
+
+// columnMinMaxStr returns the min and max string values from a column chunk's index.
+func columnMinMaxStr(chunk pq.ColumnChunk) (string, string) {
+	colIdx, err := chunk.ColumnIndex()
+	if err != nil {
+		return "", ""
+	}
+	n := colIdx.NumPages()
+	if n == 0 {
+		return "", ""
+	}
+	min := colIdx.MinValue(0).String()
+	max := colIdx.MaxValue(0).String()
+	for i := 1; i < n; i++ {
+		if v := colIdx.MinValue(i).String(); v < min {
+			min = v
+		}
+		if v := colIdx.MaxValue(i).String(); v > max {
+			max = v
+		}
+	}
 	return min, max
 }
 
