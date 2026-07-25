@@ -62,10 +62,17 @@ func initTSE(cfg *config.TSEConfig) (*TSE, error) {
 	if cfg.Compression != "" {
 		parquetOpts.Compression = cfg.Compression
 	}
+	if cfg.CompressionLevel > 0 {
+		parquetOpts.CompressionLevel = cfg.CompressionLevel
+	}
+	if cfg.RowGroupSize > 0 {
+		parquetOpts.RowGroupSize = cfg.RowGroupSize
+	}
 	pw := parquet.NewParquetWriter(tempDir, eventsDir, parquetOpts)
 
-	// Cold reader (pooled to bound goroutine leaks from xitongsys/parquet-go)
+	// Cold reader — DuckDB (CGO) or pure Go (auto-selected)
 	cr := cold.NewReaderPool(cold.DefaultMaxConcurrent)
+	cr.SetReader(cold.NewDefaultReader())
 
 	// Router
 	r := router.NewRouter(hot, cr, m)

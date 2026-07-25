@@ -6,20 +6,16 @@ import (
 	"github.com/yanmyoaung2004/trace/internal/storage"
 )
 
-// DefaultMaxConcurrent is the default maximum number of concurrent
-// Parquet file reads. Each read leaks goroutines from xitongsys/parquet-go,
-// so this bounds the worst-case leak.
+// DefaultMaxConcurrent is the default maximum number of concurrent reads.
 const DefaultMaxConcurrent = 4
 
-// ReaderPool bounds concurrent Parquet reads to prevent OOM from
-// goroutine leaks in xitongsys/parquet-go. This is a mitigation,
-// not a fix — the library should be replaced.
+// ReaderPool bounds concurrent cold reads with a semaphore.
 type ReaderPool struct {
 	sem   chan struct{}
-	inner *ParquetReader
+	inner ColdReader
 }
 
-// NewReaderPool creates a pool that limits concurrent Parquet reads.
+// NewReaderPool creates a pool that limits concurrent reads.
 func NewReaderPool(maxConcurrent int) *ReaderPool {
 	if maxConcurrent <= 0 {
 		maxConcurrent = DefaultMaxConcurrent
@@ -30,8 +26,7 @@ func NewReaderPool(maxConcurrent int) *ReaderPool {
 	}
 }
 
-// QueryFiles reads events from Parquet files, bounded by the pool's
-// concurrency limit.
+// QueryFiles reads events from Parquet files, bounded by the pool.
 func (p *ReaderPool) QueryFiles(ctx context.Context, files []storage.FileInfo, q storage.Query) (*storage.Result, error) {
 	select {
 	case p.sem <- struct{}{}:
@@ -45,5 +40,10 @@ func (p *ReaderPool) QueryFiles(ctx context.Context, files []storage.FileInfo, q
 
 // Name returns the reader name.
 func (p *ReaderPool) Name() string {
-	return "parquet-go (pooled)"
+	return p.inner.Name() + " (pooled)"
+}
+
+// SetReader replaces the underlying reader (e.g., switch to DuckDB at runtime).
+func (p *ReaderPool) SetReader(r ColdReader) {
+	p.inner = r
 }
