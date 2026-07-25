@@ -128,6 +128,20 @@ func Default() *Config {
 	}
 }
 
+// Save writes the config to the given path.
+func Save(path string, cfg *Config) error {
+	if path == "" {
+		home, _ := os.UserHomeDir()
+		path = filepath.Join(home, ".trace", "config.json")
+	}
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	os.MkdirAll(filepath.Dir(path), 0755)
+	return os.WriteFile(path, data, 0644)
+}
+
 func Load(path string) (*Config, error) {
 	cfg := Default()
 

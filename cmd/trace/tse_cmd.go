@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/yanmyoaung2004/trace/internal/config"
 	"github.com/yanmyoaung2004/trace/internal/storage"
 	"github.com/yanmyoaung2004/trace/internal/storage/admin"
 	"github.com/yanmyoaung2004/trace/internal/storage/manifest"
@@ -110,7 +113,63 @@ func newTSECmd() *cobra.Command {
 		},
 	}
 
-	cmd.AddCommand(statusCmd, flushCmd, inspectCmd, snapshotCmd, metricsCmd)
+	configCmd := &cobra.Command{
+		Use:   "config",
+		Short: "View or modify TSE configuration",
+	}
+	configShowCmd := &cobra.Command{
+		Use:   "show",
+		Short: "Show current TSE config",
+		RunE: func(cmdCobra *cobra.Command, args []string) error {
+			home, _ := os.UserHomeDir()
+			cfg, err := config.Load(filepath.Join(home, ".trace", "config.json"))
+			if err != nil {
+				return err
+			}
+			data, _ := json.MarshalIndent(cfg.TSE, "", "  ")
+			fmt.Println(string(data))
+			return nil
+		},
+	}
+	configSetCmd := &cobra.Command{
+		Use:   "set <key> <value>",
+		Short: "Set a TSE config value (e.g. retention.days 90)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmdCobra *cobra.Command, args []string) error {
+			home, _ := os.UserHomeDir()
+			path := filepath.Join(home, ".trace", "config.json")
+			cfg, err := config.Load(path)
+			if err != nil {
+				return err
+			}
+			key, val := args[0], args[1]
+			switch key {
+			case "storage_path":
+				cfg.TSE.StoragePath = val
+			case "compression":
+				cfg.TSE.Compression = val
+			case "compression_level":
+				fmt.Sscanf(val, "%d", &cfg.TSE.CompressionLevel)
+			case "row_group_size":
+				fmt.Sscanf(val, "%d", &cfg.TSE.RowGroupSize)
+			case "hot_window":
+				cfg.TSE.HotWindow = val
+			case "flush_interval":
+				cfg.TSE.FlushInterval = val
+			case "cold_ttl", "retention.days":
+				cfg.TSE.ColdTTL = val
+			default:
+				return fmt.Errorf("unknown config key: %s (valid: storage_path, compression, compression_level, row_group_size, hot_window, flush_interval, cold_ttl, retention.days)", key)
+			}
+			if err := config.Save(path, cfg); err != nil {
+				return err
+			}
+			fmt.Printf("tse.%s = %s\n", key, val)
+			return nil
+		},
+	}
+	configCmd.AddCommand(configShowCmd, configSetCmd)
+	cmd.AddCommand(statusCmd, flushCmd, inspectCmd, snapshotCmd, metricsCmd, configCmd)
 	return cmd
 }
 
