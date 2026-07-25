@@ -43,6 +43,18 @@ Examples:
 			tseEnabled, _ := cmd.Flags().GetBool("tse")
 			if tseEnabled {
 				app.cfg.TSE.Enabled = true
+				if sp, _ := cmd.Flags().GetString("tse-storage-path"); sp != "" {
+					app.cfg.TSE.StoragePath = sp
+				}
+				if c, _ := cmd.Flags().GetString("tse-compression"); c != "" {
+					app.cfg.TSE.Compression = c
+				}
+				if l, _ := cmd.Flags().GetInt("tse-compression-level"); l > 0 {
+					app.cfg.TSE.CompressionLevel = l
+				}
+				if s, _ := cmd.Flags().GetInt("tse-row-group-size"); s > 0 {
+					app.cfg.TSE.RowGroupSize = s
+				}
 				tse, err := initTSE(&app.cfg.TSE)
 				if err != nil {
 					return fmt.Errorf("init TSE: %w", err)
@@ -227,6 +239,10 @@ Examples:
 
 	cmd.Flags().Bool("siem", false, "enable SIEM log monitoring")
 	cmd.Flags().Bool("tse", false, "enable Trace Storage Engine (columnar event store)")
+	cmd.Flags().String("tse-storage-path", "", "TSE data directory")
+	cmd.Flags().String("tse-compression", "zstd", "Parquet compression (zstd, snappy, gzip, lz4, none)")
+	cmd.Flags().Int("tse-compression-level", 0, "Parquet compression level (0=default)")
+	cmd.Flags().Int("tse-row-group-size", 0, "Parquet row group size (default 1,000,000)")
 	cmd.Flags().String("syslog-addr", "", "syslog listener address (e.g. :514)")
 	cmd.Flags().StringSlice("log-dir", nil, "directories to watch for log files")
 	cmd.Flags().String("export", "", "start HTML report server on given address (e.g. :8080)")

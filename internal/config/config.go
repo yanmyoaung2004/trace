@@ -54,12 +54,14 @@ type SIEMConfig struct {
 }
 
 type TSEConfig struct {
-	Enabled       bool   `json:"tse_enabled"`
-	StoragePath   string `json:"tse_storage_path"`
-	Compression   string `json:"tse_compression"`
-	HotWindow     string `json:"tse_hot_window"`
-	FlushInterval string `json:"tse_flush_interval"`
-	ColdTTL       string `json:"tse_cold_ttl"`
+	Enabled          bool   `json:"tse_enabled"`
+	StoragePath      string `json:"tse_storage_path"`
+	Compression      string `json:"tse_compression"`
+	CompressionLevel int    `json:"tse_compression_level"`
+	RowGroupSize     int    `json:"tse_row_group_size"`
+	HotWindow        string `json:"tse_hot_window"`
+	FlushInterval    string `json:"tse_flush_interval"`
+	ColdTTL          string `json:"tse_cold_ttl"`
 }
 
 type TLSConfig struct {
