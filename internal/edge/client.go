@@ -103,6 +103,7 @@ func (c *SyncClient) syncInvestigations(ctx context.Context) error {
 				"confidence": confidence,
 				"summary":    generateSummary(inv),
 				"indicators": indicators,
+				"updated_at": inv.UpdatedAt,
 			},
 		}
 
