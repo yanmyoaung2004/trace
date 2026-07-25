@@ -39,6 +39,10 @@ type Flusher struct {
 	// alerting state
 	errCount    int
 	errWindow   time.Time
+
+	// AlertFunc is called when alert threshold is exceeded.
+	// Can be set by the server to route alerts through notifier channels.
+	AlertFunc func(message string)
 }
 
 // NewFlusher creates a watermark-driven flusher.
@@ -207,7 +211,11 @@ func (f *Flusher) trackError(ctx context.Context) {
 	}
 	f.errCount++
 	if f.errCount >= alertErrorThreshold {
-		log.Printf("[tse] ALERT: flush errors exceeded threshold (%d in 1min)", f.errCount)
+		msg := fmt.Sprintf("[tse] ALERT: flush errors exceeded threshold (%d in 1min)", f.errCount)
+		log.Print(msg)
+		if f.AlertFunc != nil {
+			f.AlertFunc(msg)
+		}
 		f.errCount = 0
 	}
 }

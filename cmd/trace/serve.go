@@ -11,6 +11,7 @@ import (
 
 	"github.com/yanmyoaung2004/trace/internal/agent"
 	"github.com/yanmyoaung2004/trace/internal/edge"
+	"github.com/yanmyoaung2004/trace/internal/integration/notifier"
 	"github.com/yanmyoaung2004/trace/internal/siem"
 	"github.com/spf13/cobra"
 )
@@ -60,6 +61,28 @@ Examples:
 					return fmt.Errorf("init TSE: %w", err)
 				}
 				app.tse = tse
+
+				// Wire TSE alerts through notifier if configured
+				if app.cfg.HasAnyNotifier() {
+					tse.Flusher.AlertFunc = func(msg string) {
+						ntf := notifier.NewWithConfig(notifier.AgentConfig{
+							SlackWebhookURL:     app.cfg.SlackWebhookURL,
+							DiscordWebhookURL:   app.cfg.DiscordWebhookURL,
+							TelegramBotToken:    app.cfg.TelegramBotToken,
+							TelegramChatID:      app.cfg.TelegramChatID,
+							SMTPHost:            app.cfg.SMTPHost,
+							SMTPPort:            app.cfg.SMTPPort,
+							SMTPUser:            app.cfg.SMTPUser,
+							SMTPPassword:        app.cfg.SMTPPassword,
+							SMTPFrom:            app.cfg.SMTPFrom,
+							EmailTo:             app.cfg.EmailTo,
+							PagerDutyRoutingKey: app.cfg.PagerDutyRoutingKey,
+							WebhookURL:          app.cfg.WebhookURL,
+						})
+						ntf.Execute(context.Background(), agent.Input{"message": msg})
+					}
+				}
+
 				app.tse.StartTSE()
 				defer app.tse.StopTSE()
 			}

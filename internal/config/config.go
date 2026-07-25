@@ -143,6 +143,16 @@ func Save(path string, cfg *Config) error {
 	return os.WriteFile(path, data, 0644)
 }
 
+// HasAnyNotifier returns true if at least one notification channel is configured.
+func (c *Config) HasAnyNotifier() bool {
+	return c.SlackWebhookURL != "" ||
+		c.DiscordWebhookURL != "" ||
+		c.TelegramBotToken != "" ||
+		c.SMTPHost != "" ||
+		c.PagerDutyRoutingKey != "" ||
+		c.WebhookURL != ""
+}
+
 func Load(path string) (*Config, error) {
 	cfg := Default()
 
