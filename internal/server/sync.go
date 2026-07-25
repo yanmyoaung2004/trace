@@ -802,6 +802,18 @@ type ServeOptions struct {
 func ServeHTTP(opts ServeOptions, mgr *ServerManager, dashboard DashboardDataProvider) (*http.Server, error) {
 	mux := http.NewServeMux()
 
+	// Health check endpoints
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+
 	// TSE Prometheus metrics
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
