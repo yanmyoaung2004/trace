@@ -20,19 +20,46 @@ jobs:
       - name: Tidy
         run: go mod tidy && git diff --exit-code
 
+      - name: Install GCC (for race detector + DuckDB CGO)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc libc6-dev
+
       - name: Vet
         run: go vet ./...
 
       - name: Lint
         run: go vet ./...
 
-      - name: Build
-        run: go build -o .trace ./cmd/trace
+      - name: Build (no CGO)
+        run: CGO_ENABLED=0 go build -o .trace ./cmd/trace
 
-      - name: Test
+      - name: TSE default tests
+        run: go test ./internal/storage/... -short -count=1
+
+      - name: All short tests
         run: go test ./... -short -count=1 -p 2
 
-      - name: Fuzz (short)
+      - name: TSE race detection
+        run: go test -race ./internal/storage/... -short -count=1 -timeout 300s
+
+      - name: TSE DuckDB
+        run: go test -tags duckdb ./internal/storage/cold -count=1 -timeout 120s
+
+      - name: TSE load tests
+        run: go test ./internal/storage/... -run "TestPipeline_10kEventsThroughput|TestPipeline_100kEventsLoad" -count=1 -timeout 120s
+
+      - name: TSE crash recovery
+        run: go test ./internal/storage/harness -run "TestCrashRecovery_NormalRun" -count=1 -timeout 120s
+
+      - name: TSE fuzz (MergeSortDedupByID)
+        run: go test ./internal/storage -fuzz=FuzzMergeSortDedupByID -fuzztime=10s
+
+      - name: TSE fuzz (clampQuery)
+        run: go test ./internal/storage/cold -fuzz=FuzzClampQuery -fuzztime=10s
+
+      - name: TSE fuzz (buildHotQuery)
+        run: go test ./internal/storage/sqlite -fuzz=FuzzBuildHotQuery -fuzztime=10s
+
+      - name: SIEM fuzz (short)
         run: go test ./internal/siem/... -fuzz=FuzzAutoDecoder -fuzztime=10s
 
       - name: Docker meta
