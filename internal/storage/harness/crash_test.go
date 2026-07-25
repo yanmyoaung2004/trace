@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"fmt"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -18,11 +19,13 @@ func buildTestBinary(t *testing.T) string {
 	return binaryPath
 }
 
+const crashTestOps = 500
+
 func runBinary(t *testing.T, binaryPath, dataDir string, ops int) error {
 	t.Helper()
 	cmd := exec.Command(binaryPath,
 		"-data-dir", dataDir,
-		"-ops", "50",
+		"-ops", fmt.Sprintf("%d", ops),
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -35,7 +38,7 @@ func runBinaryWithKill(t *testing.T, binaryPath, dataDir string, ops int, killDe
 	t.Helper()
 	cmd := exec.Command(binaryPath,
 		"-data-dir", dataDir,
-		"-ops", "50",
+		"-ops", fmt.Sprintf("%d", ops),
 	)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start: %v", err)
@@ -59,7 +62,7 @@ func TestCrashRecovery_NormalRun(t *testing.T) {
 	binaryPath := buildTestBinary(t)
 	dataDir := t.TempDir()
 
-	if err := runBinary(t, binaryPath, dataDir, 50); err != nil {
+	if err := runBinary(t, binaryPath, dataDir, crashTestOps); err != nil {
 		t.Fatal(err)
 	}
 
@@ -67,8 +70,8 @@ func TestCrashRecovery_NormalRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if total < 50 {
-		t.Errorf("expected at least 50 events, got %d", total)
+	if total < crashTestOps {
+		t.Errorf("expected at least %d events, got %d", crashTestOps, total)
 	}
 	if len(violations) > 0 {
 		t.Errorf("integrity violations: %v", violations)
@@ -83,11 +86,11 @@ func TestCrashRecovery_KillDuringWrite(t *testing.T) {
 	binaryPath := buildTestBinary(t)
 	dataDir := t.TempDir()
 
-	// Kill the process after 300ms (mid-way through writes)
-	runBinaryWithKill(t, binaryPath, dataDir, 50, 300*time.Millisecond)
+	// Kill the process after 500ms (mid-way through writes)
+	runBinaryWithKill(t, binaryPath, dataDir, crashTestOps, 500*time.Millisecond)
 
 	// Run again to recover
-	if err := runBinary(t, binaryPath, dataDir, 50); err != nil {
+	if err := runBinary(t, binaryPath, dataDir, crashTestOps); err != nil {
 		t.Fatal(err)
 	}
 
@@ -96,8 +99,8 @@ func TestCrashRecovery_KillDuringWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if total < 50 {
-		t.Errorf("expected at least 50 events after recovery, got %d", total)
+	if total < crashTestOps {
+		t.Errorf("expected at least %d events after recovery, got %d", crashTestOps, total)
 	}
 	if len(violations) > 0 {
 		t.Errorf("integrity violations after crash recovery: %v", violations)
@@ -126,11 +129,11 @@ func TestCrashRecovery_KillDuringFlush(t *testing.T) {
 		t.Errorf("first run violations: %v", v1)
 	}
 
-	// Second run writes 50 more, kill during flush/parquet write
-	runBinaryWithKill(t, binaryPath, dataDir, 100, 200*time.Millisecond)
+	// Second run writes crashTestOps more, kill during flush/parquet write
+	runBinaryWithKill(t, binaryPath, dataDir, crashTestOps*2, 500*time.Millisecond)
 
 	// Recover
-	if err := runBinary(t, binaryPath, dataDir, 100); err != nil {
+	if err := runBinary(t, binaryPath, dataDir, crashTestOps*2); err != nil {
 		t.Fatal(err)
 	}
 
@@ -157,11 +160,11 @@ func TestCrashRecovery_RepeatedKills(t *testing.T) {
 	var lastTotal int
 
 	for i := 0; i < 5; i++ {
-		killDelay := time.Duration(100+50*i) * time.Millisecond
-		runBinaryWithKill(t, binaryPath, dataDir, 50, killDelay)
+		killDelay := time.Duration(200+100*i) * time.Millisecond
+		runBinaryWithKill(t, binaryPath, dataDir, crashTestOps*(i+1), killDelay)
 
 		// Recover
-		if err := runBinary(t, binaryPath, dataDir, 50); err != nil {
+		if err := runBinary(t, binaryPath, dataDir, crashTestOps*(i+1)); err != nil {
 			t.Fatalf("iteration %d recovery: %v", i, err)
 		}
 
