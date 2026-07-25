@@ -34,6 +34,21 @@ func PrometheusText() string {
 	snap := Global.Snapshot()
 	var buf []byte
 
+	// Add disk usage metrics (live check)
+	if checkDiskFunc != nil {
+		if du := checkDiskFunc(); du != nil {
+		buf = append(buf, "# HELP trace_tse_disk_bytes_total Total disk space in bytes\n"...)
+		buf = append(buf, "# TYPE trace_tse_disk_bytes_total gauge\n"...)
+		buf = append(buf, fmt.Sprintf("trace_tse_disk_bytes_total %d\n", du.TotalBytes)...)
+		buf = append(buf, "# HELP trace_tse_disk_bytes_free Free disk space in bytes\n"...)
+		buf = append(buf, "# TYPE trace_tse_disk_bytes_free gauge\n"...)
+		buf = append(buf, fmt.Sprintf("trace_tse_disk_bytes_free %d\n", du.FreeBytes)...)
+		buf = append(buf, "# HELP trace_tse_disk_usage_ratio Disk usage ratio (0-1)\n"...)
+		buf = append(buf, "# TYPE trace_tse_disk_usage_ratio gauge\n"...)
+		buf = append(buf, fmt.Sprintf("trace_tse_disk_usage_ratio %.4f\n", du.UsedRatio)...)
+		}
+	}
+
 	for _, pm := range promMetrics {
 		val, ok := snap[pm.key]
 		if !ok {
@@ -87,6 +102,21 @@ type Metrics struct {
 
 // Global is the shared metrics instance.
 var Global Metrics
+
+// DiskInfo carries filesystem usage for Prometheus export.
+type DiskInfo struct {
+	TotalBytes uint64
+	FreeBytes  uint64
+	UsedRatio  float64
+}
+
+// checkDiskFunc is set by the caller to provide live disk usage.
+var checkDiskFunc func() *DiskInfo
+
+// SetDiskChecker registers a disk check function for Prometheus /metrics.
+func SetDiskChecker(fn func() *DiskInfo) {
+	checkDiskFunc = fn
+}
 
 // Snapshot returns a consistent view of all counters.
 func (m *Metrics) Snapshot() map[string]any {
