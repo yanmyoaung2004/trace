@@ -245,9 +245,15 @@ func etwEventCallbackBridge(recordPtr uintptr) uintptr {
 		return 0
 	}
 
+	// Windows ETW callback delivers the record pointer via uintptr.
+	// Conversion to unsafe.Pointer is required and safe here because the
+	// EVENT_RECORD memory is pinned by the ETW runtime for the duration
+	// of the callback. This is a known Go vet limitation (#40685).
+	ptr := unsafe.Pointer(recordPtr)
+
 	// Read event ID from raw EVENT_HEADER at byte offset 40-41 (cross-arch safe)
-	eventID := readU16(recordPtr, 40)
-	processID := readU32(recordPtr, 12)
+	eventID := readU16(ptr, 40)
+	processID := readU32(ptr, 12)
 
 	// EVENT_HEADER layout (byte offsets, verified against ETW spec):
 	//   0: Size     (u16)
@@ -275,17 +281,17 @@ func etwEventCallbackBridge(recordPtr uintptr) uintptr {
 	//  80: ExtendedData (ptr)
 	//  88: UserData (ptr)
 
-	userDataPtr := readPtr(recordPtr, 88)
-	userDataLen := readU16(recordPtr, 74)
+	userDataPtr := readPtr(ptr, 88)
+	userDataLen := readU16(ptr, 74)
 
 	switch eventID {
 	case eventIDCreate:
-		if userDataPtr == 0 || userDataLen < 24 {
+		if userDataPtr == nil || userDataLen < 24 {
 			return 0
 		}
 		handleETWProcessCreateRaw(userDataPtr, uint32(userDataLen), processID)
 	case eventIDProcessEnd:
-		if userDataPtr == 0 || userDataLen < 8 {
+		if userDataPtr == nil || userDataLen < 8 {
 			return 0
 		}
 		handleETWProcessEndRaw(userDataPtr, uint32(userDataLen), processID)
@@ -293,45 +299,41 @@ func etwEventCallbackBridge(recordPtr uintptr) uintptr {
 	return 0
 }
 
-// Cross-architecture safe readers — no struct casts
-//
-//go:nocheckptr
-func readU16(ptr uintptr, offset uintptr) uint16 {
-	if ptr == 0 {
+// Cross-architecture safe readers using unsafe.Pointer arithmetic.
+func readU16(ptr unsafe.Pointer, offset uintptr) uint16 {
+	if ptr == nil {
 		return 0
 	}
-	return *(*uint16)(unsafe.Pointer(ptr + offset))
+	return *(*uint16)(unsafe.Add(ptr, offset))
 }
 
-//go:nocheckptr
-func readU32(ptr uintptr, offset uintptr) uint32 {
-	if ptr == 0 {
+func readU32(ptr unsafe.Pointer, offset uintptr) uint32 {
+	if ptr == nil {
 		return 0
 	}
-	return *(*uint32)(unsafe.Pointer(ptr + offset))
+	return *(*uint32)(unsafe.Add(ptr, offset))
 }
 
-//go:nocheckptr
-func readPtr(ptr uintptr, offset uintptr) uintptr {
-	if ptr == 0 {
-		return 0
+func readPtr(ptr unsafe.Pointer, offset uintptr) unsafe.Pointer {
+	if ptr == nil {
+		return nil
 	}
-	return *(*uintptr)(unsafe.Pointer(ptr + offset))
+	return *(*unsafe.Pointer)(unsafe.Add(ptr, offset))
 }
 
-func handleETWProcessCreateRaw(userData uintptr, userLen uint32, processID uint32) {
+func handleETWProcessCreateRaw(userData unsafe.Pointer, userLen uint32, processID uint32) {
 	pid := readU32(userData, 0)
 	ppid := readU32(userData, 4)
 	if pid == 0 || pid == 4 {
 		return
 	}
-	name := readUTF16(userData+16, minU32(userLen-16, 520))
+	name := readUTF16(unsafe.Add(userData, 16), minU32(userLen-16, 520))
 	if name == "" {
 		name = "unknown"
 	}
 	cmdline := ""
 	if userLen > 16+520 {
-		cmdline = readUTF16(userData+16+520, minU32(userLen-16-520, 2048))
+		cmdline = readUTF16(unsafe.Add(userData, 16+520), minU32(userLen-16-520, 2048))
 	}
 	sev := SeverityInfo
 	for _, s := range suspiciousProcesses {
@@ -350,14 +352,14 @@ func handleETWProcessCreateRaw(userData uintptr, userLen uint32, processID uint3
 }
 
 //go:nocheckptr
-func handleETWProcessEndRaw(userData uintptr, userLen uint32, processID uint32) {
+func handleETWProcessEndRaw(userData unsafe.Pointer, userLen uint32, processID uint32) {
 	pid := readU32(userData, 0)
 	if pid == 0 || pid == 4 {
 		return
 	}
 	exitCode := int32(0)
 	if userLen >= 12 {
-		exitCode = *(*int32)(unsafe.Pointer(userData + 8))
+		exitCode = *(*int32)(unsafe.Add(userData, 8))
 	}
 	evt := &Event{
 		ID: uuid.New().String(), Timestamp: time.Now(),
@@ -378,8 +380,8 @@ func sendETWEvent(evt *Event) {
 
 var globalETWEventRateLimit = time.NewTicker(time.Second / maxETWEventsPerSec).C
 
-func readUTF16(ptr uintptr, maxBytes uint32) string {
-	if ptr == 0 || maxBytes < 2 {
+func readUTF16(ptr unsafe.Pointer, maxBytes uint32) string {
+	if ptr == nil || maxBytes < 2 {
 		return ""
 	}
 	n := maxBytes / 2
@@ -388,7 +390,7 @@ func readUTF16(ptr uintptr, maxBytes uint32) string {
 	}
 	buf := make([]uint16, n)
 	for i := uint32(0); i < n; i++ {
-		buf[i] = *(*uint16)(unsafe.Pointer(ptr + uintptr(i*2)))
+		buf[i] = *(*uint16)(unsafe.Add(ptr, uintptr(i*2)))
 	}
 	return windows.UTF16ToString(buf)
 }
