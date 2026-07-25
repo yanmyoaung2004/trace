@@ -8,6 +8,7 @@ import (
 	"github.com/yanmyoaung2004/trace/internal/config"
 	"github.com/yanmyoaung2004/trace/internal/storage/cold"
 	"github.com/yanmyoaung2004/trace/internal/storage/flusher"
+	"github.com/yanmyoaung2004/trace/internal/storage/gc"
 	manifestpkg "github.com/yanmyoaung2004/trace/internal/storage/manifest"
 	"github.com/yanmyoaung2004/trace/internal/storage/parquet"
 	"github.com/yanmyoaung2004/trace/internal/storage/router"
@@ -20,6 +21,7 @@ type TSE struct {
 	Manifest *manifestpkg.Manifest
 	Parquet  *parquet.ParquetWriter
 	Flusher  *flusher.Flusher
+	GC       *gc.GC
 	Router   *router.Router
 	Reader   cold.ColdReader
 	Ctx      context.Context
@@ -76,6 +78,11 @@ func initTSE(cfg *config.TSEConfig) (*TSE, error) {
 
 	f := flusher.NewFlusher(hot, m, pw, flushInterval, 256<<20, 100000, eventsDir)
 
+	g := gc.NewGC(m, storagePath, 24*time.Hour)
+
+	// Run orphan cleanup at startup
+	manifestpkg.OrphanGC(context.Background(), storagePath, m)
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	log.Printf("[tse] initialized (hot=%s, events=%s, compression=%s)", hotPath, eventsDir, parquetOpts.Compression)
@@ -85,6 +92,7 @@ func initTSE(cfg *config.TSEConfig) (*TSE, error) {
 		Manifest: m,
 		Parquet:  pw,
 		Flusher:  f,
+		GC:       g,
 		Router:   r,
 		Reader:   cr,
 		Ctx:      ctx,
@@ -92,13 +100,14 @@ func initTSE(cfg *config.TSEConfig) (*TSE, error) {
 	}, nil
 }
 
-// StartTSE starts the TSE background tasks (flusher, etc.).
+// StartTSE starts the TSE background tasks (flusher, GC).
 func (t *TSE) StartTSE() {
 	if t == nil {
 		return
 	}
 	go t.Flusher.Run(t.Ctx)
-	log.Printf("[tse] flusher started")
+	go t.GC.Run(t.Ctx)
+	log.Printf("[tse] flusher+GC started")
 }
 
 // StopTSE gracefully shuts down the TSE pipeline.

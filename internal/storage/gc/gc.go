@@ -15,17 +15,19 @@ import (
 // for compliance audit.
 type GC struct {
 	manifest  *manifestpkg.Manifest
+	dataDir   string
 	interval  time.Duration
 	grace     time.Duration // grace period between expired and deleted
 }
 
 // NewGC creates a garbage collector for Parquet files.
-func NewGC(m *manifestpkg.Manifest, interval time.Duration) *GC {
+func NewGC(m *manifestpkg.Manifest, dataDir string, interval time.Duration) *GC {
 	if interval <= 0 {
 		interval = 24 * time.Hour
 	}
 	return &GC{
 		manifest: m,
+		dataDir:  dataDir,
 		interval: interval,
 		grace:    7 * 24 * time.Hour, // 7 day grace period
 	}
@@ -50,7 +52,14 @@ func (g *GC) Run(ctx context.Context) error {
 
 // collectOnce executes a single GC cycle.
 func (g *GC) collectOnce(ctx context.Context) {
-	// Find files past their grace period with expired status
+	// 1. Clean up orphan parquet files from crashes (status=writing)
+	if g.dataDir != "" {
+		if err := manifestpkg.OrphanGC(ctx, g.dataDir, g.manifest); err != nil {
+			log.Printf("[gc] orphan cleanup: %v", err)
+		}
+	}
+
+	// 2. Delete expired files past grace period
 	cutoff := time.Now().Add(-g.grace).UnixMicro()
 	files, err := g.manifest.FilesFor(ctx, "", 0, cutoff, "expired")
 	if err != nil {

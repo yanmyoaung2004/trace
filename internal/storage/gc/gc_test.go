@@ -12,10 +12,11 @@ import (
 )
 
 func TestNewGC(t *testing.T) {
-	m, _ := manifestpkg.NewManifest(filepath.Join(t.TempDir(), "manifest.db"))
+	dir := t.TempDir()
+	m, _ := manifestpkg.NewManifest(filepath.Join(dir, "manifest.db"))
 	defer m.Close()
 
-	g := NewGC(m, 0)
+	g := NewGC(m, dir, 0)
 	if g == nil {
 		t.Fatal("expected non-nil GC")
 	}
@@ -25,10 +26,11 @@ func TestNewGC(t *testing.T) {
 }
 
 func TestGC_RunCancel(t *testing.T) {
-	m, _ := manifestpkg.NewManifest(filepath.Join(t.TempDir(), "manifest.db"))
+	dir := t.TempDir()
+	m, _ := manifestpkg.NewManifest(filepath.Join(dir, "manifest.db"))
 	defer m.Close()
 
-	g := NewGC(m, 100*time.Millisecond)
+	g := NewGC(m, dir, 100*time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		time.Sleep(50 * time.Millisecond)
@@ -48,7 +50,7 @@ func TestGC_CollectOnce_DeletesExpired(t *testing.T) {
 	m, _ := manifestpkg.NewManifest(filepath.Join(dir, "manifest.db"))
 	defer m.Close()
 
-	g := NewGC(m, 0)
+	g := NewGC(m, dir, 0)
 	g.grace = 10 * time.Millisecond
 
 	// Create an expired file
@@ -89,7 +91,7 @@ func TestGC_CollectOnce_KeepsWithinGrace(t *testing.T) {
 	m, _ := manifestpkg.NewManifest(filepath.Join(dir, "manifest.db"))
 	defer m.Close()
 
-	g := NewGC(m, 0)
+	g := NewGC(m, dir, 0)
 	g.grace = 1 * time.Hour
 
 	recentPath := filepath.Join(dir, "recent.parquet")
@@ -127,7 +129,7 @@ func TestGC_CollectOnce_NonExistentFile(t *testing.T) {
 	m, _ := manifestpkg.NewManifest(filepath.Join(dir, "manifest.db"))
 	defer m.Close()
 
-	g := NewGC(m, 0)
+	g := NewGC(m, dir, 0)
 	g.grace = 10 * time.Millisecond
 
 	// Register a file that doesn't exist on disk
