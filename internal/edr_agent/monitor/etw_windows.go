@@ -245,13 +245,8 @@ func etwEventCallbackBridge(recordPtr uintptr) uintptr {
 		return 0
 	}
 
-	// Windows ETW callback delivers the record pointer via uintptr.
-	// Conversion to unsafe.Pointer is required and safe here because the
-	// EVENT_RECORD memory is pinned by the ETW runtime for the duration
-	// of the callback. This is a known Go vet limitation (#40685).
-	ptr := unsafe.Pointer(recordPtr)
-
 	// Read event ID from raw EVENT_HEADER at byte offset 40-41 (cross-arch safe)
+	ptr := unsafe.Pointer(recordPtr)
 	eventID := readU16(ptr, 40)
 	processID := readU32(ptr, 12)
 

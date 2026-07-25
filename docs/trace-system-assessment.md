@@ -11,7 +11,8 @@
 | Packages without tests | **0** (0%) |
 | Build (CGO_ENABLED=0) | ✅ Passes |
 | Race detection | ✅ Zero races across all tested packages |
-| `go vet` warnings | ⚠️ 5 unsafe.Pointer in EDR agent (ETW Windows) |
+| `go vet` warnings | ⚠️ 1 on Windows only (`etw_windows.go`, Windows API callback, unavoidable) |
+| CI vet (Linux) | ✅ Clean — `etw_windows.go` excluded by `//go:build windows` |
 | Bugs found during testing | **2 unique** (`id[:12]` slice bounds in exporter + edge, 4 locations total) |
 | Total tests added this session | **~154** across 19 previously untested packages |
 
