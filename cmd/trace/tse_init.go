@@ -81,6 +81,11 @@ func initTSE(cfg *config.TSEConfig) (*TSE, error) {
 	f := flusher.NewFlusher(hot, m, pw, flushInterval, 256<<20, 100000, eventsDir)
 
 	g := gc.NewGC(m, storagePath, 24*time.Hour)
+	if cfg.ColdTTL != "" {
+		if d, err := time.ParseDuration(cfg.ColdTTL); err == nil && d > 0 {
+			g.WithColdTTL(d)
+		}
+	}
 
 	// Check disk at startup
 	if du, err := storage.CheckDisk(storagePath); err == nil {
