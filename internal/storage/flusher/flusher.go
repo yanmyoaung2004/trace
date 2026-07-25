@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/yanmyoaung2004/trace/internal/storage"
 	"github.com/yanmyoaung2004/trace/internal/storage/manifest"
+	"github.com/yanmyoaung2004/trace/internal/storage/metrics"
 	"github.com/yanmyoaung2004/trace/internal/storage/parquet"
 	"github.com/yanmyoaung2004/trace/internal/storage/sqlite"
 )
@@ -34,6 +35,10 @@ type Flusher struct {
 	targetSize  int64
 	batchLimit  int
 	outputDir   string
+
+	// alerting state
+	errCount    int
+	errWindow   time.Time
 }
 
 // NewFlusher creates a watermark-driven flusher.
@@ -79,7 +84,9 @@ func (f *Flusher) Run(ctx context.Context) error {
 			return ctx.Err()
 		case <-ticker.C:
 			if err := f.flush(ctx); err != nil {
-				log.Printf("[flusher] flush error: %v", err)
+				metrics.Global.FlushErrors.Add(1)
+				log.Printf("[tse] flush error: %v", err)
+				f.trackError(ctx)
 			}
 		}
 	}
@@ -188,6 +195,21 @@ func (f *Flusher) flush(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+const alertErrorThreshold = 5
+
+func (f *Flusher) trackError(ctx context.Context) {
+	now := time.Now()
+	if now.Sub(f.errWindow) > time.Minute {
+		f.errCount = 0
+		f.errWindow = now
+	}
+	f.errCount++
+	if f.errCount >= alertErrorThreshold {
+		log.Printf("[tse] ALERT: flush errors exceeded threshold (%d in 1min)", f.errCount)
+		f.errCount = 0
+	}
 }
 
 func formatSize(bytes int64) string {
