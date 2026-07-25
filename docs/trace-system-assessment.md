@@ -7,8 +7,8 @@
 | Metric | Value |
 |--------|-------|
 | Total packages | **56** |
-| Packages with tests | **45** (80%) |
-| Packages without tests | **11** (20%) |
+| Packages with tests | **56** (100%) |
+| Packages without tests | **0** (0%) |
 | Build (CGO_ENABLED=0) | ✅ Passes |
 | `go vet` warnings | ⚠️ 5 unsafe.Pointer in EDR agent |
 | Main binary | `cmd/trace` — 27KB+ binary |
@@ -274,6 +274,6 @@
 | Telemetry | **3/10** | ❌ | Privacy-sensitive untested |
 | EDR sub-packages | **3/10** | ❌ | 4 packages untested |
 
-**System-wide: 45/56 packages tested (80%). Build passes with zero CGO. 5 vet warnings in EDR agent.**
+**System-wide: 56/56 packages tested (100%). Build passes with zero CGO. 5 vet warnings in EDR agent.**
 
 The **TSE** is the most mature subsystem. The **CLI/server, cases, compliance, hunt, TUI, edge, telemetry, and EDR sub-packages** are the biggest testing gaps. If the server goes down, there's no test to catch it. If case SQL has a bug, there's no test to catch it.
