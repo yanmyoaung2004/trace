@@ -18,6 +18,12 @@ type Client struct {
 	httpClient *http.Client
 	cacheDB    *sql.DB
 	mu         sync.Mutex
+	testURL    string // overrides base URL when set (for testing)
+}
+
+// SetTestURL overrides the API base URL for testing.
+func (c *Client) SetTestURL(url string) {
+	c.testURL = url
 }
 
 func New(apiKey string, cacheDB *sql.DB) *Client {
@@ -76,17 +82,7 @@ func (c *Client) CheckIndicator(ctx context.Context, indicator string) (*OTXResp
 	}
 
 	indicatorType := classifyIndicator(indicator)
-	var apiURL string
-	switch indicatorType {
-	case "file":
-		apiURL = fmt.Sprintf("https://otx.alienvault.com/api/v1/indicators/file/%s/general", indicator)
-	case "domain":
-		apiURL = fmt.Sprintf("https://otx.alienvault.com/api/v1/indicators/domain/%s/general", indicator)
-	case "url":
-		apiURL = fmt.Sprintf("https://otx.alienvault.com/api/v1/indicators/url/%s/general", indicator)
-	default:
-		apiURL = fmt.Sprintf("https://otx.alienvault.com/api/v1/indicators/ip/%s/general", indicator)
-	}
+	apiURL := c.apiURL(indicatorType, indicator)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
@@ -185,4 +181,22 @@ func (a *Agent) indicatorCheck(ctx context.Context, input agent.Input) (agent.Ou
 		"confidence":     confidence,
 		"pulse_count":    data.PulseInfo.Count,
 	}, nil
+}
+
+// apiURL returns the URL for the given indicator type, using testURL if set.
+func (c *Client) apiURL(indicatorType, indicator string) string {
+	base := c.testURL
+	if base == "" {
+		base = "https://otx.alienvault.com"
+	}
+	switch indicatorType {
+	case "file":
+		return fmt.Sprintf("%s/api/v1/indicators/file/%s/general", base, indicator)
+	case "domain":
+		return fmt.Sprintf("%s/api/v1/indicators/domain/%s/general", base, indicator)
+	case "url":
+		return fmt.Sprintf("%s/api/v1/indicators/url/%s/general", base, indicator)
+	default:
+		return fmt.Sprintf("%s/api/v1/indicators/ip/%s/general", base, indicator)
+	}
 }
