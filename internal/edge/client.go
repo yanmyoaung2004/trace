@@ -47,7 +47,7 @@ func (c *SyncClient) Register(ctx context.Context) error {
 		return fmt.Errorf("register: %w", err)
 	}
 	c.nodeID = resp.ID
-	log.Printf("[edge-sync] registered as node %s", c.nodeID[:12])
+	log.Printf("[edge-sync] registered as node %s", shortID(c.nodeID))
 	return nil
 }
 
@@ -107,7 +107,7 @@ func (c *SyncClient) syncInvestigations(ctx context.Context) error {
 		}
 
 		if err := c.postJSON(ctx, "/api/v1/push", payload, nil); err != nil {
-			log.Printf("[edge-sync] push %s: %v", inv.ID[:12], err)
+			log.Printf("[edge-sync] push %s: %v", shortID(inv.ID), err)
 		}
 	}
 	return nil
@@ -181,6 +181,13 @@ func isAlphaNum(b byte) bool {
 	return (b >= '0' && b <= '9') || (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z')
 }
 
+func shortID(id string) string {
+	if len(id) > 12 {
+		return id[:12]
+	}
+	return id
+}
+
 func generateSummary(inv investigation.Investigation) string {
-	return fmt.Sprintf("Investigation %s: %s [%s]", inv.ID[:12], inv.Intent, inv.Status)
+	return fmt.Sprintf("Investigation %s: %s [%s]", shortID(inv.ID), inv.Intent, inv.Status)
 }
