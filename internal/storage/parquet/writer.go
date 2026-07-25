@@ -10,18 +10,24 @@ import (
 	"sort"
 	"time"
 
-	"github.com/xitongsys/parquet-go/writer"
+	pq "github.com/parquet-go/parquet-go"
+	"github.com/parquet-go/parquet-go/compress"
+	pqbrotli "github.com/parquet-go/parquet-go/compress/brotli"
+	pqgzip "github.com/parquet-go/parquet-go/compress/gzip"
+	pqlz4 "github.com/parquet-go/parquet-go/compress/lz4"
+	pqsnappy "github.com/parquet-go/parquet-go/compress/snappy"
+	pqzstd "github.com/parquet-go/parquet-go/compress/zstd"
+
 	"github.com/yanmyoaung2004/trace/internal/storage"
 )
 
 // ParquetWriter writes events to Parquet v2 files with ZSTD compression.
 // It implements the "write to temp → fsync → atomic rename → manifest commit" pattern.
 type ParquetWriter struct {
-	opts        ParquetOptions
-	tempDir     string
-	outputDir   string
-	accumulated []TraceEventParquet
-	targetSize  int64 // target uncompressed file size
+	opts       ParquetOptions
+	tempDir    string
+	outputDir  string
+	targetSize int64
 }
 
 // NewParquetWriter creates a Parquet writer.
@@ -30,7 +36,7 @@ func NewParquetWriter(tempDir, outputDir string, opts ParquetOptions) *ParquetWr
 	if opts.RowGroupSize <= 0 {
 		opts.RowGroupSize = 1_000_000
 	}
-	targetSize := int64(256 << 20) // 256MB default
+	targetSize := int64(256 << 20)
 	return &ParquetWriter{
 		opts:       opts,
 		tempDir:    tempDir,
@@ -42,24 +48,16 @@ func NewParquetWriter(tempDir, outputDir string, opts ParquetOptions) *ParquetWr
 // WriteBatch writes events to a Parquet file. The events are sorted
 // by (agent_id, timestamp) within the file for optimal compression
 // and row-group pruning.
-//
-// The write pattern:
-//  1. Write to temp path
-//  2. Compute SHA-256
-//  3. Atomic rename to final path
-//  4. Return FileResult for manifest commit
 func (w *ParquetWriter) WriteBatch(ctx context.Context, events []*storage.Event, partitionKey string) (*storage.FileResult, error) {
 	if len(events) == 0 {
 		return nil, fmt.Errorf("empty batch")
 	}
 
-	// Convert to Parquet structs
 	parqEvents := make([]TraceEventParquet, len(events))
 	for i, e := range events {
 		parqEvents[i] = eventToParquet(e)
 	}
 
-	// Sort by (agent_id, timestamp) for optimal compression
 	sort.Slice(parqEvents, func(i, j int) bool {
 		if parqEvents[i].AgentID != parqEvents[j].AgentID {
 			return parqEvents[i].AgentID < parqEvents[j].AgentID
@@ -67,46 +65,40 @@ func (w *ParquetWriter) WriteBatch(ctx context.Context, events []*storage.Event,
 		return parqEvents[i].TimestampUs < parqEvents[j].TimestampUs
 	})
 
-	// Generate temp path and final path
 	ts := time.Now().UnixMicro()
-	fileName := fmt.Sprintf("part-%s.parquet", fmt.Sprintf("%x", ts))
+	fileName := fmt.Sprintf("part-%x.parquet", ts)
 	tempPath := filepath.Join(w.tempDir, fileName+"."+fmt.Sprintf("%d", os.Getpid()))
 	finalPath := filepath.Join(w.outputDir, partitionKey, fileName)
 
 	if err := os.MkdirAll(filepath.Dir(finalPath), 0700); err != nil {
 		return nil, fmt.Errorf("output dir: %w", err)
 	}
-
 	os.MkdirAll(w.tempDir, 0700)
 
-	// Write Parquet file
 	fw, err := os.Create(tempPath)
 	if err != nil {
 		return nil, fmt.Errorf("create temp: %w", err)
 	}
 
-	pw, err := writer.NewParquetWriterFromWriter(fw, &TraceEventParquet{}, int64(w.opts.RowGroupSize))
-	if err != nil {
-		fw.Close()
-		os.Remove(tempPath)
-		return nil, fmt.Errorf("new parquet writer: %w", err)
-	}
+	compression := parquetCompression(w.opts.Compression)
+	pw := pq.NewGenericWriter[TraceEventParquet](fw,
+		pq.Compression(compression),
+		pq.PageBufferSize(64*1024),
+	)
 
-	pw.CompressionType = ToParquetCompression(w.opts.Compression)
-
-	for i := range parqEvents {
-		if err := pw.Write(parqEvents[i]); err != nil {
-			pw.WriteStop()
+	for _, row := range parqEvents {
+		if _, err := pw.Write([]TraceEventParquet{row}); err != nil {
+			pw.Close()
 			fw.Close()
 			os.Remove(tempPath)
-			return nil, fmt.Errorf("write event %d: %w", i, err)
+			return nil, fmt.Errorf("write: %w", err)
 		}
 	}
 
-	if err := pw.WriteStop(); err != nil {
+	if err := pw.Close(); err != nil {
 		fw.Close()
 		os.Remove(tempPath)
-		return nil, fmt.Errorf("write stop: %w", err)
+		return nil, fmt.Errorf("close writer: %w", err)
 	}
 
 	if err := fw.Sync(); err != nil {
@@ -116,27 +108,23 @@ func (w *ParquetWriter) WriteBatch(ctx context.Context, events []*storage.Event,
 	}
 	fw.Close()
 
-	// Compute SHA-256
 	hash, err := fileSHA256(tempPath)
 	if err != nil {
 		os.Remove(tempPath)
 		return nil, fmt.Errorf("sha256: %w", err)
 	}
 
-	// Read file info
 	info, err := os.Stat(tempPath)
 	if err != nil {
 		os.Remove(tempPath)
 		return nil, fmt.Errorf("stat: %w", err)
 	}
 
-	// Atomic rename
 	if err := os.Rename(tempPath, finalPath); err != nil {
 		os.Remove(tempPath)
 		return nil, fmt.Errorf("rename: %w", err)
 	}
 
-	// Gather min/max IDs and timestamps
 	minID := parqEvents[0].ID
 	maxID := parqEvents[len(parqEvents)-1].ID
 	minTS := parqEvents[0].TimestampUs
@@ -157,7 +145,11 @@ func (w *ParquetWriter) WriteBatch(ctx context.Context, events []*storage.Event,
 	return result, nil
 }
 
-// eventToParquet converts a storage.Event to a Parquet-compatible struct.
+// Close releases any resources held by the writer.
+func (w *ParquetWriter) Close() error {
+	return nil
+}
+
 func eventToParquet(e *storage.Event) TraceEventParquet {
 	return TraceEventParquet{
 		ID:          e.ID,
@@ -179,7 +171,23 @@ func eventToParquet(e *storage.Event) TraceEventParquet {
 	}
 }
 
-// fileSHA256 computes the SHA-256 hash of a file.
+func parquetCompression(codec string) compress.Codec {
+	switch codec {
+	case "snappy":
+		return &pqsnappy.Codec{}
+	case "gzip":
+		return &pqgzip.Codec{}
+	case "lz4raw", "lz4":
+		return &pqlz4.Codec{}
+	case "brotli":
+		return &pqbrotli.Codec{}
+	case "uncompressed", "none":
+		return nil
+	default:
+		return &pqzstd.Codec{}
+	}
+}
+
 func fileSHA256(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -189,7 +197,6 @@ func fileSHA256(path string) (string, error) {
 	return hex.EncodeToString(h[:]), nil
 }
 
-// uncompressedSize estimates the uncompressed size of the event batch.
 func uncompressedSize(events []TraceEventParquet) int64 {
 	var size int64
 	for _, e := range events {
@@ -200,10 +207,4 @@ func uncompressedSize(events []TraceEventParquet) int64 {
 			len(e.UserName) + len(e.Hostname) + len(e.DataRaw))
 	}
 	return size
-}
-
-// Close releases any resources held by the writer.
-func (w *ParquetWriter) Close() error {
-	w.accumulated = nil
-	return nil
 }

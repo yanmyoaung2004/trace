@@ -3,14 +3,17 @@ package cold
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
-	"github.com/xitongsys/parquet-go-source/local"
-	"github.com/xitongsys/parquet-go/reader"
+	pq "github.com/parquet-go/parquet-go"
+
 	"github.com/yanmyoaung2004/trace/internal/storage"
 	"github.com/yanmyoaung2004/trace/internal/storage/parquet"
 )
+
+var parquetMagic = []byte("PAR1")
 
 // ParquetReader is a pure-Go cold reader that evaluates field = value AND
 // ts BETWEEN predicates with row-group pruning. It is the default reader
@@ -37,73 +40,76 @@ func (r *ParquetReader) QueryFiles(ctx context.Context, files []storage.FileInfo
 			break
 		}
 
-		// Check file existence
 		if _, err := os.Stat(fi.Path); os.IsNotExist(err) {
 			warnings = append(warnings, fmt.Sprintf("file not found: %s", fi.Path))
 			continue
 		}
 
-		pf, err := local.NewLocalFileReader(fi.Path)
+		f, err := os.Open(fi.Path)
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("open %s: %v", fi.Path, err))
-			continue
-		}
-		fr, err := reader.NewParquetReader(pf, &parquet.TraceEventParquet{}, 1_000_000)
-		if err != nil {
-			pf.Close()
 			warnings = append(warnings, fmt.Sprintf("open %s: %v", fi.Path, err))
 			continue
 		}
 
-			// Read all rows
-		rows, err := fr.ReadByNumber(int(fr.GetNumRows()))
+		// Validate parquet magic header before opening reader
+		// (pq.NewGenericReader panics on invalid files)
+		if !isValidParquet(f) {
+			f.Close()
+			warnings = append(warnings, fmt.Sprintf("invalid parquet file: %s", fi.Path))
+			continue
+		}
+		// Re-open after checking magic (we consumed bytes from the reader)
+		f.Close()
+		f, err = os.Open(fi.Path)
 		if err != nil {
-			fr.ReadStop()
+			warnings = append(warnings, fmt.Sprintf("re-open %s: %v", fi.Path, err))
+			continue
+		}
+
+		pf := pq.NewGenericReader[parquet.TraceEventParquet](f)
+
+		rows := make([]parquet.TraceEventParquet, pf.NumRows())
+		n, err := pf.Read(rows)
+		if err != nil && err != io.EOF {
 			pf.Close()
+			f.Close()
 			warnings = append(warnings, fmt.Sprintf("read %s: %v", fi.Path, err))
 			continue
 		}
-		fr.ReadStop()
+		rows = rows[:n]
 		pf.Close()
+		f.Close()
 
-		// Convert and filter
 		for _, row := range rows {
-			pe, ok := row.(parquet.TraceEventParquet)
-			if !ok {
+			if q.SinceUs > 0 && row.TimestampUs < q.SinceUs {
+				continue
+			}
+			if q.UntilUs > 0 && row.TimestampUs >= q.UntilUs {
+				continue
+			}
+			if q.MinSeverity > 0 && int(row.Severity) < q.MinSeverity {
+				continue
+			}
+			if len(q.AgentIDs) > 0 && !contains(q.AgentIDs, row.AgentID) {
+				continue
+			}
+			if len(q.EventTypes) > 0 && !contains(q.EventTypes, row.EventType) {
+				continue
+			}
+			if q.MinID != "" && row.ID <= q.MinID {
+				continue
+			}
+			if q.MaxID != "" && row.ID > q.MaxID {
+				continue
+			}
+			if q.Cursor != "" && row.ID <= q.Cursor {
 				continue
 			}
 
-			// Apply filters
-			if q.SinceUs > 0 && pe.TimestampUs < q.SinceUs {
-				continue
-			}
-			if q.UntilUs > 0 && pe.TimestampUs >= q.UntilUs {
-				continue
-			}
-			if q.MinSeverity > 0 && int(pe.Severity) < q.MinSeverity {
-				continue
-			}
-			if len(q.AgentIDs) > 0 && !contains(q.AgentIDs, pe.AgentID) {
-				continue
-			}
-			if len(q.EventTypes) > 0 && !contains(q.EventTypes, pe.EventType) {
-				continue
-			}
-			if q.MinID != "" && pe.ID <= q.MinID {
-				continue
-			}
-			if q.MaxID != "" && pe.ID > q.MaxID {
-				continue
-			}
-			if q.Cursor != "" && pe.ID <= q.Cursor {
-				continue
-			}
-
-			allEvents = append(allEvents, parquetToEvent(pe))
+			allEvents = append(allEvents, parquetToEvent(row))
 		}
 	}
 
-	// Sort and dedup by ID
 	result := &storage.Result{}
 	if len(allEvents) > 0 {
 		deduped := storage.MergeSortDedupByID(allEvents)
@@ -143,7 +149,6 @@ func parquetToEvent(pe parquet.TraceEventParquet) *storage.Event {
 	}
 }
 
-// contains checks if a string slice contains a value (case-insensitive for agents).
 func contains(slice []string, val string) bool {
 	for _, s := range slice {
 		if strings.EqualFold(s, val) {
@@ -151,4 +156,15 @@ func contains(slice []string, val string) bool {
 		}
 	}
 	return false
+}
+
+// isValidParquet checks if the reader contains a valid parquet file by reading
+// the 4-byte magic header. The reader position is advanced, so callers should
+// re-open the file after this check.
+func isValidParquet(r io.ReadSeeker) bool {
+	magic := make([]byte, 4)
+	if _, err := r.Read(magic); err != nil {
+		return false
+	}
+	return string(magic) == string(parquetMagic)
 }
