@@ -1,8 +1,65 @@
 package metrics
 
 import (
+	"fmt"
 	"sync/atomic"
 )
+
+// promDesc returns the metric name, help, and type for a snapshot key.
+var promMetrics = []struct {
+	key  string
+	name string
+	help string
+}{
+	{"events_enqueued", "trace_tse_events_enqueued_total", "Total events enqueued"},
+	{"events_dropped", "trace_tse_events_dropped_total", "Total events dropped"},
+	{"events_written", "trace_tse_events_written_total", "Total events written to hot store"},
+	{"events_flushed", "trace_tse_events_flushed_total", "Total events flushed to cold storage"},
+	{"events_read", "trace_tse_events_read_total", "Total events read via queries"},
+	{"batches_written", "trace_tse_batches_written_total", "Total batches written"},
+	{"batches_flushed", "trace_tse_batches_flushed_total", "Total batches flushed"},
+	{"queue_depth", "trace_tse_queue_depth", "Current queue depth"},
+	{"watermark_age_sec", "trace_tse_watermark_age_seconds", "Seconds since last watermark advance"},
+	{"parquet_files_created", "trace_tse_parquet_files_created_total", "Total parquet files created"},
+	{"parquet_files_deleted", "trace_tse_parquet_files_deleted_total", "Total parquet files deleted"},
+	{"parquet_bytes_written", "trace_tse_parquet_bytes_written_total", "Total bytes written to parquet files"},
+	{"hot_table_count", "trace_tse_hot_table_count", "Current number of hot SQLite tables"},
+	{"cold_file_count", "trace_tse_cold_file_count", "Current number of cold parquet files"},
+	{"flush_errors", "trace_tse_flush_errors_total", "Total flush errors"},
+	{"query_errors", "trace_tse_query_errors_total", "Total query errors"},
+}
+
+// PrometheusText returns all metrics in Prometheus exposition format.
+func PrometheusText() string {
+	snap := Global.Snapshot()
+	var buf []byte
+
+	for _, pm := range promMetrics {
+		val, ok := snap[pm.key]
+		if !ok {
+			continue
+		}
+		buf = append(buf, "# HELP "...)
+		buf = append(buf, pm.name...)
+		buf = append(buf, ' ')
+		buf = append(buf, pm.help...)
+		buf = append(buf, '\n')
+		buf = append(buf, "# TYPE "...)
+		buf = append(buf, pm.name...)
+		buf = append(buf, " gauge\n"...)
+		buf = append(buf, pm.name...)
+		buf = append(buf, ' ')
+		switch v := val.(type) {
+		case int64:
+			buf = append(buf, fmt.Sprintf("%d", v)...)
+		case uint64:
+			buf = append(buf, fmt.Sprintf("%d", v)...)
+		}
+		buf = append(buf, '\n')
+	}
+
+	return string(buf)
+}
 
 // Metrics holds the key operational counters for the TSE.
 // These can be exported via Prometheus or the /metrics endpoint.

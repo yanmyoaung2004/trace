@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -84,6 +85,31 @@ func TestMetrics_Global(t *testing.T) {
 		t.Errorf("Global snapshot events_enqueued = %d, want 42", snap["events_enqueued"])
 	}
 	Global.EventsEnqueued.Store(0)
+}
+
+func TestPrometheusText(t *testing.T) {
+	defer func() {
+		Global.EventsEnqueued.Store(0)
+		Global.EventsFlushed.Store(0)
+		Global.HotTableCount.Store(0)
+	}()
+	Global.EventsEnqueued.Store(42)
+	Global.EventsFlushed.Store(10)
+	Global.HotTableCount.Store(3)
+
+	text := PrometheusText()
+	if text == "" {
+		t.Fatal("expected non-empty prometheus text")
+	}
+	if !strings.Contains(text, "trace_tse_events_enqueued_total") {
+		t.Error("expected events_enqueued metric")
+	}
+	if !strings.Contains(text, "# HELP") {
+		t.Error("expected HELP lines")
+	}
+	if !strings.Contains(text, "# TYPE") {
+		t.Error("expected TYPE lines")
+	}
 }
 
 func TestMetrics_ZeroInit(t *testing.T) {

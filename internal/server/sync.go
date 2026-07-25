@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/yanmyoaung2004/trace/internal/investigation"
+	"github.com/yanmyoaung2004/trace/internal/storage/metrics"
 )
 
 type SyncHandler struct {
@@ -800,6 +801,13 @@ type ServeOptions struct {
 
 func ServeHTTP(opts ServeOptions, mgr *ServerManager, dashboard DashboardDataProvider) (*http.Server, error) {
 	mux := http.NewServeMux()
+
+	// TSE Prometheus metrics
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(metrics.PrometheusText()))
+	})
 
 	sync := NewSyncHandler(mgr).WithLogDir(opts.LogDir)
 	sync.RegisterRoutes(mux)
