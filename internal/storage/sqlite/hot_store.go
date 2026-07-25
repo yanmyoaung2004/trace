@@ -79,6 +79,15 @@ func (s *SQLiteHotStore) WriteBatch(ctx context.Context, events []*storage.Event
 		return nil
 	}
 
+	// Check disk space before accepting new events
+	if storage.StoragePathFunc != nil {
+		if du, err := storage.CheckDisk(storage.StoragePathFunc()); err == nil {
+			if storage.IsDiskFull(du) {
+				return storage.ErrDiskFull
+			}
+		}
+	}
+
 	// Determine which hourly table this batch belongs to
 	tableName := hourlyTableName(events[0].Timestamp, s.tableFmt)
 

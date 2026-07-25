@@ -110,7 +110,8 @@ func initTSE(cfg *config.TSEConfig) (*TSE, error) {
 		log.Printf("[tse] disk check unavailable: %v", err)
 	}
 
-	// Register disk check for Prometheus /metrics
+	// Register disk check for write rejection and Prometheus metrics
+	storage.StoragePathFunc = func() string { return storagePath }
 	metrics.SetDiskChecker(func() *metrics.DiskInfo {
 		du, err := storage.CheckDisk(storagePath)
 		if err != nil {

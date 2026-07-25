@@ -1,5 +1,14 @@
 package storage
 
+import "fmt"
+
+// ErrDiskFull is returned when the storage volume has exceeded the maximum
+// allowed disk usage ratio (DiskFullRatio = 95%).
+var ErrDiskFull = fmt.Errorf("disk full: cannot accept more events")
+
+// StoragePathFunc is set by the caller to provide the storage path for disk checks.
+var StoragePathFunc func() string
+
 const (
 	// DiskWarnRatio is the usage ratio above which a warning is logged.
 	DiskWarnRatio = 0.85
