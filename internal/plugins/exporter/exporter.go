@@ -105,14 +105,19 @@ a:hover { text-decoration: underline; }
 	for rows.Next() {
 		var id, status, intent, createdAt string
 		rows.Scan(&id, &status, &intent, &createdAt)
+		shortID := id
+		if len(id) > 12 {
+			shortID = id[:12]
+		}
 		fmt.Fprintf(&b, `<tr><td><a href="/investigation/%s">%s</a></td><td class="status-%s">%s</td><td>%s</td><td>%s</td></tr>`,
-			html.EscapeString(id), html.EscapeString(id[:12]), status, html.EscapeString(status), html.EscapeString(intent), html.EscapeString(createdAt))
+			html.EscapeString(id), html.EscapeString(shortID), status, html.EscapeString(status), html.EscapeString(intent), html.EscapeString(createdAt))
 	}
 
 	b.WriteString(`</tbody></table></body></html>`)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(b.String()))
 }
+
 
 func (a *Agent) detailHandler(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/investigation/")
@@ -135,7 +140,7 @@ func (a *Agent) detailHandler(w http.ResponseWriter, r *http.Request) {
 
 	var b strings.Builder
 	b.WriteString(`<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>Investigation — ` + html.EscapeString(id[:12]) + `</title>
+	<title>Investigation — ` + html.EscapeString(shortID(id)) + `</title>
 <style>
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 960px; margin: 40px auto; padding: 0 20px; background: #0d1117; color: #c9d1d9; }
 h1 { color: #58a6ff; }
@@ -172,4 +177,11 @@ a { color: #58a6ff; }
 	b.WriteString(`</body></html>`)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(b.String()))
+}
+
+func shortID(id string) string {
+	if len(id) > 12 {
+		return id[:12]
+	}
+	return id
 }
