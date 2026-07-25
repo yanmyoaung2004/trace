@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	_ "github.com/marcboeker/go-duckdb"
+
 	"github.com/yanmyoaung2004/trace/internal/storage"
 )
 
@@ -81,14 +82,28 @@ func (d *DuckDBAnalytics) QueryFiles(ctx context.Context, files []storage.FileIn
 
 	result := &storage.Result{}
 	for rows.Next() {
-		var e storage.Event
+		var (
+			e               storage.Event
+			processName, cmdline, sha256, destIP, srcIP, userName, hostname sql.NullString
+			parentPid       sql.NullInt64
+		)
 		if err := rows.Scan(
 			&e.ID, &e.TenantID, &e.AgentID, &e.Timestamp, &e.IngestedAt,
 			&e.EventType, &e.Severity,
-			&e.ProcessName, &e.Cmdline, &e.ParentPID, &e.SHA256,
-			&e.DestIP, &e.SrcIP, &e.UserName, &e.Hostname, &e.DataRaw,
+			&processName, &cmdline, &parentPid, &sha256,
+			&destIP, &srcIP, &userName, &hostname, &e.DataRaw,
 		); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
+		}
+		e.ProcessName = processName.String
+		e.Cmdline = cmdline.String
+		e.SHA256 = sha256.String
+		e.DestIP = destIP.String
+		e.SrcIP = srcIP.String
+		e.UserName = userName.String
+		e.Hostname = hostname.String
+		if parentPid.Valid {
+			e.ParentPID = int(parentPid.Int64)
 		}
 		result.Events = append(result.Events, &e)
 	}
