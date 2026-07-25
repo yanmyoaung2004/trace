@@ -55,9 +55,14 @@ func newTSECmd() *cobra.Command {
 			if app.tse == nil {
 				return fmt.Errorf("TSE not enabled (use --tse flag on serve)")
 			}
+			tok, _ := cmdCobra.Flags().GetString("admin-token")
+			if tok != "" && tok != app.cfg.TSE.AdminToken {
+				return fmt.Errorf("invalid admin token")
+			}
 			return admin.FlushNow(context.Background(), app.tse.Flusher)
 		},
 	}
+	flushCmd.Flags().String("admin-token", "", "admin token for destructive operations")
 
 	inspectCmd := &cobra.Command{
 		Use:   "inspect",
@@ -91,6 +96,10 @@ func newTSECmd() *cobra.Command {
 			if app.tse == nil {
 				return fmt.Errorf("TSE not enabled")
 			}
+			tok, _ := cmdCobra.Flags().GetString("admin-token")
+			if tok != "" && tok != app.cfg.TSE.AdminToken {
+				return fmt.Errorf("invalid admin token")
+			}
 			output, _ := cmdCobra.Flags().GetString("output")
 			if output == "" {
 				output = fmt.Sprintf("tse-snapshot-%s.tar.gz", time.Now().Format("20060102-150405"))
@@ -100,6 +109,7 @@ func newTSECmd() *cobra.Command {
 	}
 	snapshotCmd.Flags().StringP("output", "o", "", "Output file path")
 	snapshotCmd.Flags().String("storage-path", "", "TSE storage path (required)")
+	snapshotCmd.Flags().String("admin-token", "", "admin token for destructive operations")
 
 	metricsCmd := &cobra.Command{
 		Use:   "metrics",
@@ -158,6 +168,8 @@ func newTSECmd() *cobra.Command {
 				cfg.TSE.FlushInterval = val
 			case "cold_ttl", "retention.days":
 				cfg.TSE.ColdTTL = val
+			case "admin_token":
+				cfg.TSE.AdminToken = val
 			default:
 				return fmt.Errorf("unknown config key: %s (valid: storage_path, compression, compression_level, row_group_size, hot_window, flush_interval, cold_ttl, retention.days)", key)
 			}
