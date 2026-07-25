@@ -10,6 +10,7 @@ import (
 	"github.com/yanmyoaung2004/trace/internal/storage"
 	"github.com/yanmyoaung2004/trace/internal/storage/cold"
 	"github.com/yanmyoaung2004/trace/internal/storage/manifest"
+	"github.com/yanmyoaung2004/trace/internal/storage/metrics"
 	"github.com/yanmyoaung2004/trace/internal/storage/sqlite"
 )
 
@@ -35,6 +36,7 @@ func NewRouter(hot *sqlite.SQLiteHotStore, cr cold.ColdReader, m *manifest.Manif
 
 // Query executes a query across both hot and cold tiers, merging results.
 func (r *Router) Query(ctx context.Context, q storage.Query) (*storage.Result, error) {
+	start := time.Now()
 	q = q.ApplyDefaults()
 	wm, err := r.manifest.Watermark(ctx)
 	if err != nil {
@@ -145,8 +147,11 @@ func (r *Router) Query(ctx context.Context, q storage.Query) (*storage.Result, e
 
 	result.Total = len(result.Events)
 
+	elapsed := time.Since(start)
+	metrics.Global.EventsRead.Add(int64(len(result.Events)))
 	if hadError {
-		log.Printf("[router] query returned with errors: %v", result.Warnings)
+		metrics.Global.QueryErrors.Add(1)
+		log.Printf("[tse] query errors=%d events=%d took=%v", len(result.Warnings), len(result.Events), elapsed.Round(time.Millisecond))
 	}
 
 	return &result, nil

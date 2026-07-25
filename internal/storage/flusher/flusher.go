@@ -104,6 +104,7 @@ func (f *Flusher) Watermark(ctx context.Context) (*storage.Watermark, error) {
 func (f *Flusher) flush(ctx context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	start := time.Now()
 	// 1. Read watermark
 	wm, err := f.manifest.Watermark(ctx)
 	if err != nil {
@@ -181,9 +182,9 @@ func (f *Flusher) flush(ctx context.Context) error {
 			return fmt.Errorf("manifest tx: %w", err)
 		}
 
-		log.Printf("[flusher] committed %s: %d events, %s (%s -> %s)",
+		log.Printf("[tse] flush committed %s events=%d size=%s ids=%s..%s took=%v",
 			partitionKey, fileResult.RowCount, formatSize(fileResult.CompressedSize),
-			fileResult.MinEventID[:8], fileResult.MaxEventID[:8])
+			fileResult.MinEventID[:8], fileResult.MaxEventID[:8], time.Since(start).Round(time.Millisecond))
 	}
 
 	return nil

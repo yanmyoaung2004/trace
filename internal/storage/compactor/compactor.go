@@ -171,7 +171,7 @@ func (c *Compactor) compactGroup(ctx context.Context, tenantID, date string, fil
 		return nil
 	})
 
-	log.Printf("[compactor] compacted %s/%s: %d files -> 1 daily (%d events, %s)",
+	log.Printf("[tse] compacted %s/%s files=%d events=%d size=%s",
 		tenantID, date, len(files), fileResult.RowCount, formatBytes(fileResult.CompressedSize))
 	return nil
 }
