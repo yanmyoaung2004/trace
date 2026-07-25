@@ -33,6 +33,10 @@ type Event struct {
 	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
+// DefaultMaxLimit is the maximum number of events a single query can return.
+// This prevents OOM from unbounded queries across millions of events.
+const DefaultMaxLimit = 100_000
+
 // Query defines a storage-level query over events.
 type Query struct {
 	TenantID    string
@@ -43,9 +47,17 @@ type Query struct {
 	MaxID       string
 	SinceUs     int64        // epoch microseconds
 	UntilUs     int64
-	Limit       int
+	Limit       int          // max rows to return (capped to DefaultMaxLimit)
 	Cursor      string       // UUIDv7 continuation token for pagination
 	OrderAsc    bool
+}
+
+// ApplyDefaults sets safe defaults for the query (limit, etc.).
+func (q Query) ApplyDefaults() Query {
+	if q.Limit <= 0 || q.Limit > DefaultMaxLimit {
+		q.Limit = DefaultMaxLimit
+	}
+	return q
 }
 
 // Result holds query results with partial-failure warnings.

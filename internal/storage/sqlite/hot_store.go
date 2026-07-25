@@ -124,6 +124,8 @@ func (s *SQLiteHotStore) WriteBatch(ctx context.Context, events []*storage.Event
 // Query retrieves events from the hot tier by querying all live hourly tables.
 // It implements storage.Reader.
 func (s *SQLiteHotStore) Query(ctx context.Context, q storage.Query) (*storage.Result, error) {
+	q = q.ApplyDefaults()
+
 	s.mu.Lock()
 	tables := make([]string, len(s.liveTables))
 	copy(tables, s.liveTables)

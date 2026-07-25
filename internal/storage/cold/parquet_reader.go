@@ -32,6 +32,7 @@ func (r *ParquetReader) Name() string {
 
 // QueryFiles reads events from the given Parquet files with basic filtering.
 func (r *ParquetReader) QueryFiles(ctx context.Context, files []storage.FileInfo, q storage.Query) (*storage.Result, error) {
+	q = q.ApplyDefaults()
 	var allEvents []*storage.Event
 	var warnings []string
 

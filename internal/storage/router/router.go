@@ -35,6 +35,7 @@ func NewRouter(hot *sqlite.SQLiteHotStore, cr cold.ColdReader, m *manifest.Manif
 
 // Query executes a query across both hot and cold tiers, merging results.
 func (r *Router) Query(ctx context.Context, q storage.Query) (*storage.Result, error) {
+	q = q.ApplyDefaults()
 	wm, err := r.manifest.Watermark(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("watermark: %w", err)
