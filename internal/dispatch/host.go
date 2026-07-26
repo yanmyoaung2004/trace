@@ -3,12 +3,16 @@ package dispatch
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/yanmyoaung2004/trace/internal/agent"
@@ -98,9 +102,11 @@ func (a *Agent) planInvestigation(ctx context.Context, input agent.Input) (agent
 				availablePlaybooks = append(availablePlaybooks, pb.Name)
 			}
 
-			llmCtx, llmCancel := context.WithTimeout(ctx, 25*time.Second)
-			llmName, llmParams, llmErr := a.planner.Plan(llmCtx, intent, availablePlaybooks)
-			llmCancel()
+			llmName, llmParams, llmErr := a.planner.Plan(ctx, intent, availablePlaybooks)
+
+			if llmErr != nil {
+				log.Printf("[dispatch] LLM plan failed: %v (falling back to heuristic)", llmErr)
+			}
 
 			if llmErr == nil && llmName != "" {
 				if pb := a.playbooks.Get(llmName); pb != nil {
@@ -157,26 +163,86 @@ func (a *Agent) calculateConfidence(_ context.Context, input agent.Input) (agent
 	}, nil
 }
 
+type llmCacheEntry struct {
+	playbook   string
+	parameters map[string]any
+	timestamp  time.Time
+}
+
 type LLMPlanner struct {
 	Provider string
 	URL      string
 	APIKey   string
 	Model    string
 	client   *http.Client
+
+	// cache
+	cache     map[string]*llmCacheEntry
+	cacheMu   sync.Mutex
+	cacheSize int
 }
+
+const maxCacheSize = 100
+const cacheTTL = 10 * time.Minute
 
 func NewLLMPlanner(provider, url, apiKey string) *LLMPlanner {
 	return &LLMPlanner{
-		Provider: provider,
-		URL:      url,
-		APIKey:   apiKey,
-		client:   &http.Client{Timeout: 30 * time.Second},
+		Provider:  provider,
+		URL:       url,
+		APIKey:    apiKey,
+		client:    &http.Client{Timeout: 30 * time.Second},
+		cache:     make(map[string]*llmCacheEntry),
+		cacheSize: maxCacheSize,
 	}
 }
 
 func (lp *LLMPlanner) WithModel(model string) *LLMPlanner {
 	lp.Model = model
 	return lp
+}
+
+// cacheKey generates a hash of the intent for cache lookup.
+func cacheKey(intent string, playbooks []string) string {
+	h := sha256.Sum256([]byte(intent + strings.Join(playbooks, ",")))
+	return hex.EncodeToString(h[:16])
+}
+
+// getCached returns a cached LLM response if available and fresh.
+func (lp *LLMPlanner) getCached(key string) (string, map[string]any, bool) {
+	lp.cacheMu.Lock()
+	defer lp.cacheMu.Unlock()
+	entry, ok := lp.cache[key]
+	if !ok {
+		return "", nil, false
+	}
+	if time.Since(entry.timestamp) > cacheTTL {
+		delete(lp.cache, key)
+		return "", nil, false
+	}
+	return entry.playbook, entry.parameters, true
+}
+
+// setCached stores an LLM response in the cache.
+func (lp *LLMPlanner) setCached(key, playbook string, params map[string]any) {
+	lp.cacheMu.Lock()
+	defer lp.cacheMu.Unlock()
+	if len(lp.cache) >= lp.cacheSize {
+		// Evict oldest entry
+		var oldestKey string
+		var oldestTime time.Time
+		for k, v := range lp.cache {
+			if oldestKey == "" || v.timestamp.Before(oldestTime) {
+				oldestKey = k
+				oldestTime = v.timestamp
+			}
+		}
+		delete(lp.cache, oldestKey)
+	}
+	lp.cache[key] = &llmCacheEntry{
+		playbook:   playbook,
+		parameters: params,
+		timestamp:  time.Now(),
+	}
 }
 
 type openAIChoice struct {
@@ -200,11 +266,51 @@ func (lp *LLMPlanner) Plan(ctx context.Context, intent string, availablePlaybook
 		return "", nil, fmt.Errorf("LLM planner not configured (set TRACE_LLM_URL)")
 	}
 
+	// Check cache
+	key := cacheKey(intent, availablePlaybooks)
+	if cachedPb, cachedParams, ok := lp.getCached(key); ok {
+		log.Printf("[llm] cache hit for intent %q", intent[:min(len(intent), 60)])
+		return cachedPb, cachedParams, nil
+	}
+
+	// Build prompt
 	prompt := fmt.Sprintf(`You are a cybersecurity investigation planner. Given the user's intent, select the best playbook from: %s.
 Return ONLY valid JSON: {"playbook": "name", "parameters": {"key": "value"}}
 If no playbook matches, return {"playbook": "", "parameters": {}}.
 Intent: %s`, strings.Join(availablePlaybooks, ", "), intent)
 
+	// Make LLM call with retry (10s timeout per attempt, isolated from caller)
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-time.After(500 * time.Millisecond):
+			case <-ctx.Done():
+				return "", nil, ctx.Err()
+			}
+		}
+
+		llmCtx, llmCancel := context.WithTimeout(ctx, 10*time.Second)
+		pbName, params, err := lp.callLLM(llmCtx, prompt)
+		llmCancel()
+
+		if err != nil {
+			lastErr = err
+			log.Printf("[llm] attempt %d failed: %v", attempt+1, err)
+			continue
+		}
+
+		// Cache and return
+		lp.setCached(key, pbName, params)
+		return pbName, params, nil
+	}
+
+	log.Printf("[llm] all attempts failed for intent %q: %v (falling back to heuristic)", intent[:min(len(intent), 60)], lastErr)
+	return "", nil, lastErr
+}
+
+// callLLM makes a single LLM API call and parses the response.
+func (lp *LLMPlanner) callLLM(ctx context.Context, prompt string) (string, map[string]any, error) {
 	var payload []byte
 	var err error
 
