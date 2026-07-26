@@ -79,9 +79,9 @@
 | Category | Score |
 |----------|:-----:|
 | Storage (TSE) | **8.9** |
-| Detection & Response | **7.4** |
+| Detection & Response | **7.7** |
 | Infrastructure | **7.9** |
 | UI/CLI | **7.0** |
 | Data Management | **7.8** |
 | Cross-Cutting | **8.8** |
-| **System-wide** | **7.9** |
+| **System-wide** | **8.0** |
