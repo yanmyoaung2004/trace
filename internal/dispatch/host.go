@@ -185,6 +185,11 @@ type LLMPlanner struct {
 const maxCacheSize = 100
 const cacheTTL = 10 * time.Minute
 
+// currentPromptVersion is incremented whenever the LLM prompt template changes.
+// This invalidates old cached responses so users don't get stale results
+// from a previous prompt version.
+const currentPromptVersion = 1
+
 func NewLLMPlanner(provider, url, apiKey string) *LLMPlanner {
 	return &LLMPlanner{
 		Provider:  provider,
@@ -201,9 +206,11 @@ func (lp *LLMPlanner) WithModel(model string) *LLMPlanner {
 	return lp
 }
 
-// cacheKey generates a hash of the intent for cache lookup.
+// cacheKey generates a hash of the intent + playbooks + prompt version for cache lookup.
+// Includes promptVersion so that prompt template changes invalidate old cache entries.
 func cacheKey(intent string, playbooks []string) string {
-	h := sha256.Sum256([]byte(intent + strings.Join(playbooks, ",")))
+	version := fmt.Sprintf("v%d", currentPromptVersion)
+	h := sha256.Sum256([]byte(version + intent + strings.Join(playbooks, ",")))
 	return hex.EncodeToString(h[:16])
 }
 
