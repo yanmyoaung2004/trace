@@ -159,6 +159,12 @@ func (t *TSE) StopTSE() {
 	if t == nil {
 		return
 	}
+	// Signal flusher to stop and wait for in-flight flush to complete
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer stopCancel()
+	if err := t.Flusher.Stop(stopCtx); err != nil {
+		log.Printf("[tse] flusher stop: %v (forcing close)", err)
+	}
 	t.Cancel()
 	t.Hot.Close()
 	t.Manifest.Close()

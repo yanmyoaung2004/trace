@@ -41,8 +41,11 @@ type Flusher struct {
 	errWindow   time.Time
 
 	// AlertFunc is called when alert threshold is exceeded.
-	// Can be set by the server to route alerts through notifier channels.
 	AlertFunc func(message string)
+
+	// shutdown signaling
+	stopCh chan struct{}
+	doneCh chan struct{}
 }
 
 // NewFlusher creates a watermark-driven flusher.
@@ -72,12 +75,15 @@ func NewFlusher(
 		targetSize: targetSize,
 		batchLimit: batchLimit,
 		outputDir:  outputDir,
+		stopCh:     make(chan struct{}),
+		doneCh:     make(chan struct{}),
 	}
 }
 
 // Run starts the flusher loop. It blocks until the context is cancelled.
 func (f *Flusher) Run(ctx context.Context) error {
 	log.Printf("[flusher] started (interval=%v, target=%dMB)", f.interval, f.targetSize>>20)
+	defer close(f.doneCh)
 
 	ticker := time.NewTicker(f.interval)
 	defer ticker.Stop()
@@ -86,6 +92,8 @@ func (f *Flusher) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-f.stopCh:
+			return nil
 		case <-ticker.C:
 			if err := f.flush(ctx); err != nil {
 				metrics.Global.FlushErrors.Add(1)
@@ -93,6 +101,18 @@ func (f *Flusher) Run(ctx context.Context) error {
 				f.trackError(ctx)
 			}
 		}
+	}
+}
+
+// Stop signals the flusher to stop after the current flush completes.
+// It blocks until the Run loop exits or the context is cancelled.
+func (f *Flusher) Stop(ctx context.Context) error {
+	close(f.stopCh)
+	select {
+	case <-f.doneCh:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
