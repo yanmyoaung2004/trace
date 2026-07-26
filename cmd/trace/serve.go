@@ -44,6 +44,9 @@ Examples:
 			tseEnabled, _ := cmd.Flags().GetBool("tse")
 			if tseEnabled {
 				app.cfg.TSE.Enabled = true
+				if role, _ := cmd.Flags().GetString("tse-node-role"); role != "" {
+					app.cfg.TSE.NodeRole = role
+				}
 				if sp, _ := cmd.Flags().GetString("tse-storage-path"); sp != "" {
 					app.cfg.TSE.StoragePath = sp
 				}
@@ -274,6 +277,7 @@ Examples:
 
 	cmd.Flags().Bool("siem", false, "enable SIEM log monitoring")
 	cmd.Flags().Bool("tse", false, "enable Trace Storage Engine (columnar event store)")
+	cmd.Flags().String("tse-node-role", "auto", "TSE node role: leader, follower, or auto (default)")
 	cmd.Flags().String("tse-storage-path", "", "TSE data directory")
 	cmd.Flags().String("tse-compression", "zstd", "Parquet compression (zstd, snappy, gzip, lz4, none)")
 	cmd.Flags().Int("tse-compression-level", 0, "Parquet compression level (0=default)")

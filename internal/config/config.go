@@ -56,6 +56,7 @@ type SIEMConfig struct {
 
 type TSEConfig struct {
 	Enabled          bool   `json:"tse_enabled"`
+	NodeRole         string `json:"tse_node_role,omitempty"`
 	StoragePath      string `json:"tse_storage_path"`
 	Compression      string `json:"tse_compression"`
 	CompressionLevel int    `json:"tse_compression_level"`

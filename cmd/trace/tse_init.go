@@ -45,6 +45,7 @@ type TSE struct {
 	Reader   cold.ColdReader
 	Queue    *queue.IngestQueue
 	Writer   *batch.WriterGoroutine
+	Leader   *storage.LeaderElector // nil when no S3 configured
 	Ctx      context.Context
 	Cancel   context.CancelFunc
 }
@@ -155,6 +156,19 @@ func initTSE(cfg *config.TSEConfig) (*TSE, error) {
 		log.Printf("[tse] disk check unavailable: %v", err)
 	}
 
+	// Leader elector (S3-based, for multi-node active-passive)
+	var leader *storage.LeaderElector
+	if s3Client != nil {
+		role := storage.NodeRoleAuto
+		switch cfg.NodeRole {
+		case "leader":
+			role = storage.NodeRoleLeader
+		case "follower":
+			role = storage.NodeRoleFollower
+		}
+		leader = storage.NewLeaderElector(s3Client, role)
+	}
+
 	// Register disk check for write rejection and Prometheus metrics
 	storage.StoragePathFunc = func() string { return storagePath }
 	metrics.SetDiskChecker(func() *metrics.DiskInfo {
@@ -185,19 +199,34 @@ func initTSE(cfg *config.TSEConfig) (*TSE, error) {
 		Router:   r,
 		Reader:   cr,
 		Queue:    q,
+		Leader:   leader,
 		Ctx:      ctx,
 		Cancel:   cancel,
 	}, nil
 }
 
-// StartTSE starts the TSE background tasks (flusher, GC).
+// StartTSE starts the TSE background tasks (flusher, GC, leader election).
 func (t *TSE) StartTSE() {
 	if t == nil {
 		return
 	}
-	go t.Flusher.Run(t.Ctx)
+
+	// Leader election (multi-node mode)
+	if t.Leader != nil {
+		go t.Leader.Run(t.Ctx)
+		log.Printf("[tse] leader election started (role=%v)", t.Leader.NodeID())
+	}
+
+	// Flusher — only runs on the leader in multi-node mode
+	if t.Leader == nil || t.Leader.IsLeader() {
+		go t.Flusher.Run(t.Ctx)
+		log.Printf("[tse] flusher started (leader=%v, s3=%v)", t.Leader != nil, t.Leader != nil)
+	} else {
+		log.Printf("[tse] flusher not started (follower mode)")
+	}
+
 	go t.GC.Run(t.Ctx)
-	log.Printf("[tse] flusher+GC started")
+	log.Printf("[tse] GC started")
 }
 
 // StopTSE gracefully shuts down the TSE pipeline.
