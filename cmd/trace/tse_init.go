@@ -101,8 +101,14 @@ func initTSE(cfg *config.TSEConfig) (*TSE, error) {
 	}
 
 	// Cold reader — DuckDB (CGO) or pure Go (auto-selected)
+	defaultReader := cold.NewDefaultReader()
+	if s3Client != nil {
+		if pr, ok := defaultReader.(*cold.ParquetReader); ok {
+			pr.SetS3(s3Client)
+		}
+	}
 	cr := cold.NewReaderPool(cold.DefaultMaxConcurrent)
-	cr.SetReader(cold.NewDefaultReader())
+	cr.SetReader(defaultReader)
 
 	// Router
 	r := router.NewRouter(hot, cr, m)

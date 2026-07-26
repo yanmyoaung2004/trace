@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	pq "github.com/parquet-go/parquet-go"
@@ -26,13 +27,18 @@ const (
 	colSeverity    = 6
 )
 
-// ParquetReader is a pure-Go cold reader with row-group pruning.
-// It evaluates field = value AND ts BETWEEN predicates, skipping
-// non-matching row groups using parquet column statistics.
-type ParquetReader struct{}
+// ParquetReader is a pure-Go cold reader with row-group pruning and S3 support.
+type ParquetReader struct {
+	s3 *storage.S3Client // set when S3 cold storage is enabled
+}
 
 func NewParquetReader() *ParquetReader {
 	return &ParquetReader{}
+}
+
+// SetS3 attaches an S3 client so the reader can download files from s3:// paths.
+func (r *ParquetReader) SetS3(s3 *storage.S3Client) {
+	r.s3 = s3
 }
 
 func (r *ParquetReader) Name() string {
@@ -49,12 +55,35 @@ func (r *ParquetReader) QueryFiles(ctx context.Context, files []storage.FileInfo
 		if ctx.Err() != nil {
 			break
 		}
-		if _, err := os.Stat(fi.Path); os.IsNotExist(err) {
-			warnings = append(warnings, fmt.Sprintf("file not found: %s", fi.Path))
+
+		// Resolve path — download from S3 if needed
+		filePath := fi.Path
+		if storage.IsS3Path(filePath) {
+			if r.s3 == nil {
+				warnings = append(warnings, fmt.Sprintf("S3 not configured, can't read %s", filePath))
+				continue
+			}
+			_, s3Key := storage.ParseS3Path(filePath)
+			data, err := r.s3.Download(s3Key)
+			if err != nil {
+				warnings = append(warnings, fmt.Sprintf("s3 download %s: %v", filePath, err))
+				continue
+			}
+			tmpFile := filepath.Join(os.TempDir(), "trace-s3-"+fmt.Sprintf("%x", len(data))+".parquet")
+			if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+				warnings = append(warnings, fmt.Sprintf("s3 temp write: %v", err))
+				continue
+			}
+			defer os.Remove(tmpFile)
+			filePath = tmpFile
+		}
+
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			warnings = append(warnings, fmt.Sprintf("file not found: %s", filePath))
 			continue
 		}
 
-		f, err := os.Open(fi.Path)
+		f, err := os.Open(filePath)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("open %s: %v", fi.Path, err))
 			continue
