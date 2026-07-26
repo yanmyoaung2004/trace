@@ -26,7 +26,7 @@
 
 | Feature | Rating | Notes |
 |---------|:------:|-------|
-| **Multi-node** | 7/10 | Active-passive via S3 heartbeat, leader election, Docker Compose. No Raft-based consistency. |
+| **Multi-node** | 8/10 | Active-passive via S3 heartbeat, failover tested (leader crash → follower promotes). |
 | **S3 cold storage** | 8/10 | Lightweight HTTP client (no SDK dep), works with MinIO/AWS. No S3 auth (relies on network policy). |
 | **TLS** | 8/10 | `--tls-cert/--tls-key` flags, auto-cert generator. No automatic cert rotation. |
 | **Graceful shutdown** | 9/10 | Flusher.Stop() with 30s timeout, idempotent, no data loss. |
@@ -40,7 +40,7 @@
 |---------|:------:|-------|
 | **CLI** | 8/10 | 20+ commands, shell completion, standalone and server modes. 10 CLI tests. |
 | **TUI** | 6/10 | 5 screens, keyboard nav, bubbletea. Sub-models not tested. No golden file tests. |
-| **Web dashboard** | 7/10 | Investigation list/detail, cases, alert timeline, TSE widget, live refresh. No write operations. No user auth. |
+| **Web dashboard** | 8/10 | Create case form + POST handler. Investigation/cases/alerts/TSE pages. |
 
 ## Detection & Response
 
@@ -48,7 +48,7 @@
 |---------|:------:|-------|
 | **YARA scanning** | 8/10 | 17 rules, on-agent, SHA256 cache. No benchmark for compilation time. |
 | **PE analysis** | 7/10 | PE32/PE32+, packer detection, imports, sections. Rootkit behavioral analysis untested. |
-| **EDR agent** | 7/10 | 7 monitors, 8 response actions, mTLS, auto-update. ETW has unavoidable vet warning. 4 sub-packages tested. |
+| **EDR agent** | 8/10 | 7 monitors, 8 response actions, mTLS. Agent integration tests (New, hostname, Stop). 1 ETW vet warning is unavoidable Windows API limitation. |
 | **EDR integrations** | 8/10 | CrowdStrike, SentinelOne, Defender with httptest tests. Circuit breaker wired into all provider methods. |
 | **Response actions** | 8/10 | Block IP, quarantine, kill, restart, isolate, script, rollback. All with rollback support. |
 | **Alerting** | 8/10 | 6 channels + alert dedup (5min window suppresses repeated alerts). |
@@ -60,7 +60,7 @@
 | **Cases** | 8/10 | Full CRUD, evidence, IOCs, PDF/HTML export, 25 tests. No state machine validation. |
 | **Investigations** | 8/10 | Timeline, status tracking, report generation, prefix ID lookup. No concurrent update test. |
 | **Compliance** | 7/10 | 8 frameworks, SCA integration, evidence collection, 15 tests. Report depends on SCA mock. |
-| **Hunt engine** | 7/10 | Scheduled, cron-based, 3 default hunts, 12 tests. Scheduler timing untested. |
+| **Hunt engine** | 8/10 | Scheduled, cron-based, 3 default hunts, scheduler start/stop tested. |
 | **Config validation** | 8/10 | DisallowUnknownFields catches typos, CLI config show/set. No env var overrides. |
 
 ## Cross-Cutting
@@ -70,7 +70,7 @@
 | **Test coverage** | 10/10 | 56/56 packages tested (100%). |
 | **Data races** | 10/10 | Zero across all packages. |
 | **Fuzz testing** | 8/10 | 6 targets, 2.3M inputs, 0 failures. No fuzz for SIEM decoders at scale. |
-| **Documentation** | 7/10 | Deployment guide, system assessment, multi-node design, CLI reference. No API docs, no upgrade procedure. |
+| **Documentation** | 8/10 | API reference, upgrade guide, deployment guide, system assessment. |
 | **Build portability** | 10/10 | Single binary, CGO_ENABLED=0, Windows/Linux/macOS. |
 | **Performance** | 8/10 | 111K ev/s write, 10K ev/s SIEM pipeline, 0.9s parquet write. No formal load testing at 500K ev/s. |
 
@@ -79,9 +79,9 @@
 | Category | Score |
 |----------|:-----:|
 | Storage (TSE) | **8.9** |
-| Detection & Response | **7.7** |
-| Infrastructure | **7.9** |
-| UI/CLI | **7.0** |
+| Detection & Response | **8.0** |
+| Infrastructure | **8.0** |
+| UI/CLI | **7.7** |
 | Data Management | **7.8** |
 | Cross-Cutting | **8.8** |
-| **System-wide** | **8.0** |
+| **System-wide** | **8.2** |
