@@ -2,17 +2,21 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"path/filepath"
 	"time"
 
 	"github.com/yanmyoaung2004/trace/internal/config"
 	"github.com/yanmyoaung2004/trace/internal/storage"
+	"github.com/yanmyoaung2004/trace/internal/storage/batch"
 	"github.com/yanmyoaung2004/trace/internal/storage/cold"
 	"github.com/yanmyoaung2004/trace/internal/storage/flusher"
 	"github.com/yanmyoaung2004/trace/internal/storage/gc"
 	manifestpkg "github.com/yanmyoaung2004/trace/internal/storage/manifest"
 	"github.com/yanmyoaung2004/trace/internal/storage/metrics"
 	"github.com/yanmyoaung2004/trace/internal/storage/parquet"
+	"github.com/yanmyoaung2004/trace/internal/storage/queue"
 	"github.com/yanmyoaung2004/trace/internal/storage/router"
 	"github.com/yanmyoaung2004/trace/internal/storage/sqlite"
 )
@@ -26,6 +30,8 @@ type TSE struct {
 	GC       *gc.GC
 	Router   *router.Router
 	Reader   cold.ColdReader
+	Queue    *queue.IngestQueue
+	Writer   *batch.WriterGoroutine
 	Ctx      context.Context
 	Cancel   context.CancelFunc
 }
@@ -94,6 +100,15 @@ func initTSE(cfg *config.TSEConfig) (*TSE, error) {
 		}
 	}
 
+	// Queue with backpressure (spill to disk when full)
+	q, err := queue.NewIngestQueue(queue.DefaultQueueCapacity, &queue.DiskSpillConfig{
+		Dir:   filepath.Join(storagePath, "spill"),
+		Limit: 1 << 30,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("queue: %w", err)
+	}
+
 	// Check disk at startup
 	if du, err := storage.CheckDisk(storagePath); err == nil {
 		log.Printf("[tse] disk: %d/%d GB (%.0f%%)",
@@ -139,6 +154,7 @@ func initTSE(cfg *config.TSEConfig) (*TSE, error) {
 		GC:       g,
 		Router:   r,
 		Reader:   cr,
+		Queue:    q,
 		Ctx:      ctx,
 		Cancel:   cancel,
 	}, nil
