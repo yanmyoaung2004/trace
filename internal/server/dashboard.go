@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/yanmyoaung2004/trace/internal/locale"
+	"github.com/yanmyoaung2004/trace/internal/storage/metrics"
 )
 
 type DashboardDataProvider interface {
@@ -39,7 +40,9 @@ func (dh *DashboardHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/investigations/", dh.detail)
 	mux.HandleFunc("/correlations", dh.correlations)
 	mux.HandleFunc("/cases", dh.cases)
+	mux.HandleFunc("/alerts", dh.alerts)
 	mux.HandleFunc("/api/live", dh.liveData)
+	mux.HandleFunc("/api/tse", dh.tseStatus)
 }
 
 const pageStyle = `
@@ -183,7 +186,7 @@ func (dh *DashboardHandler) index(w http.ResponseWriter, r *http.Request) {
 <h1>` + locale.T("dashboard_title") + `</h1>
 <div class="header-right">
 <span class="auto-refresh"><span class="dot"></span>` + locale.T("dashboard_auto_refresh") + `</span>
-<div class="nav"><a href="/" class="active">` + locale.T("dashboard_investigations") + `</a><a href="/correlations">` + locale.T("dashboard_correlations") + `</a></div>
+<div class="nav"><a href="/" class="active">` + locale.T("dashboard_investigations") + `</a><a href="/correlations">` + locale.T("dashboard_correlations") + `</a><a href="/cases">Cases</a><a href="/alerts">Alerts</a></div>
 </div></div>
 
 <div class="stats">
@@ -192,6 +195,28 @@ func (dh *DashboardHandler) index(w http.ResponseWriter, r *http.Request) {
 <div class="stat"><div class="stat-value">` + fmt.Sprintf("%d", len(nodes)) + `</div><div class="stat-label">` + locale.T("dashboard_nodes") + `</div></div>
 <div class="stat"><div class="stat-value">` + fmt.Sprintf("%d", len(corrs)) + `</div><div class="stat-label">Cross-node IOCs</div></div>
 <div class="stat"><div class="stat-value" style="color:` + statusColor(complCount, failCount, runCount) + `">` + fmt.Sprintf("%d", complCount) + ` ✓ / ` + fmt.Sprintf("%d", failCount) + ` ✗</div><div class="stat-label">` + locale.T("dashboard_completed") + ` / ` + locale.T("dashboard_failed") + `</div></div>
+</div>
+
+<div class="card" id="tse-card" style="margin-bottom:16px">
+<h2 style="margin:0 0 8px">Trace Storage Engine</h2>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px" id="tse-stats">
+  <div><div style="font-size:1.25rem;font-weight:700" id="tse-events">—</div><div class="stat-label">Events written</div></div>
+  <div><div style="font-size:1.25rem;font-weight:700" id="tse-flushed">—</div><div class="stat-label">Events flushed</div></div>
+  <div><div style="font-size:1.25rem;font-weight:700" id="tse-queue">—</div><div class="stat-label">Queue depth</div></div>
+  <div><div style="font-size:1.25rem;font-weight:700" id="tse-files">—</div><div class="stat-label">Parquet files</div></div>
+</div>
+<script>
+setInterval(async function(){
+  try {
+    var r = await fetch('/api/tse');
+    var d = await r.json();
+    document.getElementById('tse-events').textContent = (d.events_written || 0).toLocaleString();
+    document.getElementById('tse-flushed').textContent = (d.events_flushed || 0).toLocaleString();
+    document.getElementById('tse-queue').textContent = (d.queue_depth || 0).toLocaleString();
+    document.getElementById('tse-files').textContent = (d.parquet_files_created || 0).toLocaleString();
+  } catch(e) {}
+}, 5000);
+</script>
 </div>
 
 <form class="search-box" action="/" method="get">
@@ -501,6 +526,69 @@ func (dh *DashboardHandler) cases(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(b.String()))
 }
 
+func (dh *DashboardHandler) alerts(w http.ResponseWriter, r *http.Request) {
+	if dh.db == nil {
+		http.Error(w, "database not available", http.StatusNotFound)
+		return
+	}
+
+	sevFilter := r.URL.Query().Get("severity")
+
+	query := `SELECT id, title, severity, source, created_at FROM alerts`
+	var args []any
+	if sevFilter != "" {
+		query += ` WHERE severity >= ?`
+		args = append(args, sevFilter)
+	}
+	query += ` ORDER BY created_at DESC LIMIT 100`
+
+	rows, err := dh.db.Query(query, args...)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var b strings.Builder
+	b.WriteString(`<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Alerts — Trace Server</title>
+<style>` + pageStyle + `</style></head><body>
+<div class="header"><h1>SIEM Alerts</h1>
+<div class="nav"><a href="/">` + locale.T("dashboard_investigations") + `</a><a href="/correlations">Correlations</a><a href="/cases">Cases</a><a href="/alerts" class="active">Alerts</a></div></div>
+
+<div class="filters">
+<a href="/alerts" class="filter-btn` + filterClass("", sevFilter) + `">All</a>
+<a href="/alerts?severity=7" class="filter-btn` + filterClass("7", sevFilter) + `">Critical</a>
+<a href="/alerts?severity=4" class="filter-btn` + filterClass("4", sevFilter) + `">High</a>
+</div>
+
+<table><thead><tr><th>Time</th><th>Severity</th><th>Title</th><th>Source</th></tr></thead><tbody>`)
+
+	hasRows := false
+	for rows.Next() {
+		hasRows = true
+		var id, title, source, created string
+		var severity int
+		rows.Scan(&id, &title, &severity, &source, &created)
+
+		sevClass := "pending"
+		sevLabel := "info"
+		if severity >= 7 { sevClass = "failed"; sevLabel = "CRITICAL" }
+		if severity >= 4 && severity < 7 { sevClass = "running"; sevLabel = "HIGH" }
+
+		fmt.Fprintf(&b, `<tr><td style="white-space:nowrap;color:var(--muted)">%s</td><td><span class="badge badge-%s">%s</span></td><td>%s</td><td style="color:var(--muted)">%s</td></tr>`,
+			created[:19], sevClass, sevLabel, html.EscapeString(title), html.EscapeString(source))
+	}
+
+	if !hasRows {
+		b.WriteString(`<tr><td colspan="4"><div class="empty-state"><p>No alerts. Alerts are created when SIEM rules fire.</p></div></td></tr>`)
+	}
+
+	b.WriteString(`</tbody></table></body></html>`)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write([]byte(b.String()))
+}
+
 func confBar(pct float64, count int) string {
 	return fmt.Sprintf(`<div class="stat-bar"><div class="stat-bar-fill" style="width:%.0f%%;background:var(--accent)"></div></div>`, pct)
 }
@@ -535,6 +623,25 @@ func statusColor(compl, fail, run int) string {
 		return "var(--warning)"
 	}
 	return "var(--success)"
+}
+
+func (dh *DashboardHandler) tseStatus(w http.ResponseWriter, r *http.Request) {
+	snap := metrics.Global.Snapshot()
+	data := map[string]any{
+		"events_enqueued":       snap["events_enqueued"],
+		"events_written":        snap["events_written"],
+		"events_flushed":        snap["events_flushed"],
+		"events_dropped":        snap["events_dropped"],
+		"queue_depth":           snap["queue_depth"],
+		"watermark_age_sec":     snap["watermark_age_sec"],
+		"parquet_files_created": snap["parquet_files_created"],
+		"parquet_bytes_written": snap["parquet_bytes_written"],
+		"hot_table_count":       snap["hot_table_count"],
+		"cold_file_count":       snap["cold_file_count"],
+		"flush_errors":          snap["flush_errors"],
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(data)
 }
 
 func init() {
