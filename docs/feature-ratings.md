@@ -1,0 +1,87 @@
+# Feature Ratings
+
+## Core Engine
+
+| Feature | Rating | Notes |
+|---------|:------:|-------|
+| **SIEM detection engine** | 9/10 | 464 rules with MITRE mapping, surgeata decoder, K8s audit, EVTX. No raw syslog decoder test. |
+| **Log decoders** | 8/10 | 9 built-in + 1,567 Wazuh decoder definitions. No perf benchmark for 10K+ EPS. |
+| **Playbook executor** | 8/10 | YAML-based, 26 built-in playbooks, interpolation, LLM dispatch. LLM calls have no timeout. |
+| **LLM dispatch** | 6/10 | Works with OpenAI, Anthropic, Ollama. No timeout, no caching, fragile if LLM errors. |
+
+## Storage (TSE)
+
+| Feature | Rating | Notes |
+|---------|:------:|-------|
+| **SQLite hot tier** | 9/10 | 111K ev/s, synchronous=FULL, WAL mode, hourly partitioning. No row checksums (acceptable). |
+| **Parquet cold tier** | 9/10 | ZSTD compression, SHA-256, row-group pruning (ts/severity/agent_id), S3 support. Schema version hardcoded to 1. |
+| **Flusher** | 9/10 | Exactly-once semantics, watermark-driven, crash-proven, graceful shutdown. No backpressure when disk is slow. |
+| **Crash recovery** | 9/10 | Verified at 500 events, 4 scenarios, 0 data loss. Only tested at 500 events, not 500K. |
+| **DuckDB analytics** | 8/10 | Auto-selected when CGO available, 5-10x faster. Requires GCC on target machine. |
+| **Router** | 9/10 | Hot/cold transparent routing, UUIDv7 dedup, 10min overlap window. |
+| **Retention/GC** | 9/10 | Configurable TTL, grace period, periodic orphan cleanup, TTL enforcement. |
+| **Manifest** | 10/10 | Complete file lifecycle (writing→committed→superseded→expired→deleted). Atomic transactions. |
+
+## Infrastructure
+
+| Feature | Rating | Notes |
+|---------|:------:|-------|
+| **Multi-node** | 7/10 | Active-passive via S3 heartbeat, leader election, Docker Compose. No Raft-based consistency. |
+| **S3 cold storage** | 8/10 | Lightweight HTTP client (no SDK dep), works with MinIO/AWS. No S3 auth (relies on network policy). |
+| **TLS** | 8/10 | `--tls-cert/--tls-key` flags, auto-cert generator. No automatic cert rotation. |
+| **Graceful shutdown** | 9/10 | Flusher.Stop() with 30s timeout, idempotent, no data loss. |
+| **Disk monitoring** | 8/10 | Cross-platform, warn at 85%, reject at 95%. No Prometheus alert integration. |
+| **Prometheus metrics** | 8/10 | 16 TSE counters + disk metrics at /metrics. No histograms, no query latency distribution. |
+| **Rate limiting** | 7/10 | Queue wired with spill-to-disk, drop counters. Not yet the default write path for SIEM events. |
+
+## UI/CLI
+
+| Feature | Rating | Notes |
+|---------|:------:|-------|
+| **CLI** | 8/10 | 20+ commands, shell completion, standalone and server modes. 10 CLI tests. |
+| **TUI** | 6/10 | 5 screens, keyboard nav, bubbletea. Sub-models not tested. No golden file tests. |
+| **Web dashboard** | 7/10 | Investigation list/detail, cases, alert timeline, TSE widget, live refresh. No write operations. No user auth. |
+
+## Detection & Response
+
+| Feature | Rating | Notes |
+|---------|:------:|-------|
+| **YARA scanning** | 8/10 | 17 rules, on-agent, SHA256 cache. No benchmark for compilation time. |
+| **PE analysis** | 7/10 | PE32/PE32+, packer detection, imports, sections. Rootkit behavioral analysis untested. |
+| **EDR agent** | 7/10 | 7 monitors, 8 response actions, mTLS, auto-update. ETW has unavoidable vet warning. 4 sub-packages tested. |
+| **EDR integrations** | 7/10 | CrowdStrike, SentinelOne, Defender with httptest tests. Circuit breaker tested at unit level but not wired. |
+| **Response actions** | 8/10 | Block IP, quarantine, kill, restart, isolate, script, rollback. All with rollback support. |
+| **Alerting** | 7/10 | 6 channels (Slack/Discord/Telegram/email/PagerDuty/webhook), flush error threshold. No alert dedup. |
+
+## Data Management
+
+| Feature | Rating | Notes |
+|---------|:------:|-------|
+| **Cases** | 8/10 | Full CRUD, evidence, IOCs, PDF/HTML export, 25 tests. No state machine validation. |
+| **Investigations** | 8/10 | Timeline, status tracking, report generation, prefix ID lookup. No concurrent update test. |
+| **Compliance** | 7/10 | 8 frameworks, SCA integration, evidence collection, 15 tests. Report depends on SCA mock. |
+| **Hunt engine** | 7/10 | Scheduled, cron-based, 3 default hunts, 12 tests. Scheduler timing untested. |
+| **Config validation** | 8/10 | DisallowUnknownFields catches typos, CLI config show/set. No env var overrides. |
+
+## Cross-Cutting
+
+| Feature | Rating | Notes |
+|---------|:------:|-------|
+| **Test coverage** | 10/10 | 56/56 packages tested (100%). |
+| **Data races** | 10/10 | Zero across all packages. |
+| **Fuzz testing** | 8/10 | 6 targets, 2.3M inputs, 0 failures. No fuzz for SIEM decoders at scale. |
+| **Documentation** | 7/10 | Deployment guide, system assessment, multi-node design, CLI reference. No API docs, no upgrade procedure. |
+| **Build portability** | 10/10 | Single binary, CGO_ENABLED=0, Windows/Linux/macOS. |
+| **Performance** | 8/10 | 111K ev/s write, 10K ev/s SIEM pipeline, 0.9s parquet write. No formal load testing at 500K ev/s. |
+
+## Overall Score
+
+| Category | Score |
+|----------|:-----:|
+| Storage (TSE) | **8.9** |
+| Detection & Response | **7.4** |
+| Infrastructure | **7.9** |
+| UI/CLI | **7.0** |
+| Data Management | **7.8** |
+| Cross-Cutting | **8.8** |
+| **System-wide** | **7.9** |
