@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -52,6 +53,33 @@ type Engine struct {
 
 	filePositions map[string]int64
 	posMu         sync.Mutex
+
+	alertDedup *alertDedup
+}
+
+// alertDedup prevents firing the same alert within a 5-minute window.
+type alertDedup struct {
+	mu     sync.Mutex
+	recent map[string]time.Time
+}
+
+func newAlertDedup() *alertDedup {
+	return &alertDedup{recent: make(map[string]time.Time)}
+}
+
+func (ad *alertDedup) shouldSend(key string) bool {
+	ad.mu.Lock()
+	defer ad.mu.Unlock()
+	if last, ok := ad.recent[key]; ok && time.Since(last) < 5*time.Minute {
+		return false
+	}
+	ad.recent[key] = time.Now()
+	for k, v := range ad.recent {
+		if time.Since(v) > 5*time.Minute {
+			delete(ad.recent, k)
+		}
+	}
+	return true
 }
 
 func New(cfg SIEMConfig) *Engine {
@@ -63,6 +91,7 @@ func New(cfg SIEMConfig) *Engine {
 		alertCh:       make(chan *Alert, 1000),
 		closeCh:       make(chan struct{}),
 		filePositions: make(map[string]int64),
+		alertDedup:    newAlertDedup(),
 	}
 
 	e.ruleEngine.LoadDefault()
@@ -130,6 +159,12 @@ func (e *Engine) dispatchAlerts(ctx context.Context) {
 		case alert := <-e.alertCh:
 			alertJSON, _ := json.Marshal(alert)
 			log.Printf("SIEM ALERT: [%d] %s — %s", alert.Severity, alert.Title, string(alertJSON))
+
+			// Dedup: suppress repeated alerts within 5 minutes
+			dedupKey := fmt.Sprintf("%s|%s", alert.Title, alert.RuleID)
+			if !e.alertDedup.shouldSend(dedupKey) {
+				continue
+			}
 
 			if e.alertFn != nil {
 				e.alertFn(alert)
