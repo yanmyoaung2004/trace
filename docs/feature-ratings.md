@@ -6,8 +6,8 @@
 |---------|:------:|-------|
 | **SIEM detection engine** | 9/10 | 464 rules with MITRE mapping, surgeata decoder, K8s audit, EVTX. No raw syslog decoder test. |
 | **Log decoders** | 8/10 | 9 built-in + 1,567 Wazuh decoder definitions. No perf benchmark for 10K+ EPS. |
-| **Playbook executor** | 8/10 | YAML-based, 26 built-in playbooks, interpolation, LLM dispatch. LLM calls have no timeout. |
-| **LLM dispatch** | 6/10 | Works with OpenAI, Anthropic, Ollama. No timeout, no caching, fragile if LLM errors. |
+| **Playbook executor** | 8/10 | YAML-based, 26 built-in playbooks, interpolation, LLM dispatch. |
+| **LLM dispatch** | 10/10 | LRU + SQLite persistent cache (survives restarts, 24h TTL), prompt version key invalidation, 10s timeout isolation per attempt, provider chaining (primary → fallback, tried in order), 2x retry per provider, ProgressFunc callback for stage reporting, atomic cost counters (TotalCalls/CacheHits/TotalFailures), JSON parse errors logged with raw response. Always falls back to rule-based heuristic. |
 
 ## Storage (TSE)
 
