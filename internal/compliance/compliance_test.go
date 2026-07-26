@@ -129,6 +129,39 @@ func TestGenerateReport_HIPAA(t *testing.T) {
 	}
 }
 
+func TestGenerateReport_NIST(t *testing.T) {
+	e := NewReportEngine(&mockSCA{})
+	report, err := e.GenerateReport(context.Background(), ReportOptions{Framework: "nist_sp_800-53"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report == nil {
+		t.Fatal("expected report")
+	}
+}
+
+func TestGenerateReport_SOC2(t *testing.T) {
+	e := NewReportEngine(&mockSCA{})
+	report, err := e.GenerateReport(context.Background(), ReportOptions{Framework: "soc_2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report == nil {
+		t.Fatal("expected report")
+	}
+}
+
+func TestGenerateReport_CIS(t *testing.T) {
+	e := NewReportEngine(&mockSCA{})
+	report, err := e.GenerateReport(context.Background(), ReportOptions{Framework: "cis_csc_v8"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report == nil {
+		t.Fatal("expected report")
+	}
+}
+
 func TestGenerateReport_ISO27001(t *testing.T) {
 	e := NewReportEngine(&mockSCA{})
 	report, err := e.GenerateReport(context.Background(), ReportOptions{Framework: "iso_27001-2013"})
