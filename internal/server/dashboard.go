@@ -136,6 +136,27 @@ code { background: var(--surface); padding: 2px 6px; border-radius: 4px; font-si
 @media (max-width: 768px) { .stats { grid-template-columns: repeat(2, 1fr); } body { padding: 12px; } .tl-time { min-width: 100px; } }
 `
 
+func navHTML(active string) string {
+	items := []struct {
+		path string
+		label string
+	}{
+		{"/", "Dashboard"},
+		{"/correlations", "Correlations"},
+		{"/cases", "Cases"},
+		{"/alerts", "Alerts"},
+	}
+	var b strings.Builder
+	for _, item := range items {
+		cls := ""
+		if item.path == active {
+			cls = ` class="active"`
+		}
+		fmt.Fprintf(&b, `<a href="%s"%s>%s</a>`, item.path, cls, item.label)
+	}
+	return b.String()
+}
+
 func (dh *DashboardHandler) index(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		dh.detail(w, r)
@@ -186,7 +207,7 @@ func (dh *DashboardHandler) index(w http.ResponseWriter, r *http.Request) {
 <h1>` + locale.T("dashboard_title") + `</h1>
 <div class="header-right">
 <span class="auto-refresh"><span class="dot"></span>` + locale.T("dashboard_auto_refresh") + `</span>
-<div class="nav"><a href="/" class="active">` + locale.T("dashboard_investigations") + `</a><a href="/correlations">` + locale.T("dashboard_correlations") + `</a><a href="/cases">Cases</a><a href="/alerts">Alerts</a></div>
+<div class="nav">` + navHTML("/") + `</div>
 </div></div>
 
 <div class="stats">
@@ -428,7 +449,7 @@ func (dh *DashboardHandler) correlations(w http.ResponseWriter, r *http.Request)
 <title>Correlations — Trace Server</title>
 <style>` + pageStyle + `</style></head><body>
 <div class="header"><h1>Cross-Node IOC Correlations</h1>
-<div class="nav"><a href="/">Dashboard</a><a href="/correlations" class="active">Correlations</a></div></div>
+<div class="nav">` + navHTML("/correlations") + `</div></div>
 
 <div class="stats">
 <div class="stat"><div class="stat-value" style="color:var(--danger)">` + fmt.Sprintf("%d", highCount) + `</div><div class="stat-label">High Confidence (3+ nodes)</div></div>
@@ -492,7 +513,7 @@ func (dh *DashboardHandler) cases(w http.ResponseWriter, r *http.Request) {
 <title>Cases — Trace Server</title>
 <style>` + pageStyle + `</style></head><body>
 <div class="header"><h1>Security Cases</h1>
-<div class="nav"><a href="/">` + locale.T("dashboard_investigations") + `</a><a href="/correlations">` + locale.T("dashboard_correlations") + `</a><a href="/cases" class="active">Cases</a></div></div>
+<div class="nav">` + navHTML("/cases") + `</div></div>
 
 <table><thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Severity</th><th>Assignee</th><th>Created</th></tr></thead><tbody>`)
 
@@ -554,7 +575,7 @@ func (dh *DashboardHandler) alerts(w http.ResponseWriter, r *http.Request) {
 <title>Alerts — Trace Server</title>
 <style>` + pageStyle + `</style></head><body>
 <div class="header"><h1>SIEM Alerts</h1>
-<div class="nav"><a href="/">` + locale.T("dashboard_investigations") + `</a><a href="/correlations">Correlations</a><a href="/cases">Cases</a><a href="/alerts" class="active">Alerts</a></div></div>
+<div class="nav">` + navHTML("/alerts") + `</div></div>
 
 <div class="filters">
 <a href="/alerts" class="filter-btn` + filterClass("", sevFilter) + `">All</a>
