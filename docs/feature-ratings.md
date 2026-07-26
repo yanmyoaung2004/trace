@@ -49,9 +49,9 @@
 | **YARA scanning** | 8/10 | 17 rules, on-agent, SHA256 cache. No benchmark for compilation time. |
 | **PE analysis** | 7/10 | PE32/PE32+, packer detection, imports, sections. Rootkit behavioral analysis untested. |
 | **EDR agent** | 7/10 | 7 monitors, 8 response actions, mTLS, auto-update. ETW has unavoidable vet warning. 4 sub-packages tested. |
-| **EDR integrations** | 7/10 | CrowdStrike, SentinelOne, Defender with httptest tests. Circuit breaker tested at unit level but not wired. |
+| **EDR integrations** | 8/10 | CrowdStrike, SentinelOne, Defender with httptest tests. Circuit breaker wired into all provider methods. |
 | **Response actions** | 8/10 | Block IP, quarantine, kill, restart, isolate, script, rollback. All with rollback support. |
-| **Alerting** | 7/10 | 6 channels (Slack/Discord/Telegram/email/PagerDuty/webhook), flush error threshold. No alert dedup. |
+| **Alerting** | 8/10 | 6 channels + alert dedup (5min window suppresses repeated alerts). |
 
 ## Data Management
 
