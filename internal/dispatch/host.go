@@ -178,6 +178,11 @@ type LLMProvider struct {
 	Model  string
 }
 
+// ProgressFunc is called during Plan() to report progress stages to the caller.
+// stage is one of: "cache_hit", "calling", "retry", "fallback", "failed"
+// detail provides additional context (provider name, attempt number, etc.)
+type ProgressFunc func(stage, detail string)
+
 type LLMPlanner struct {
 	providers []*LLMProvider // tried in order; primary is first
 	client    *http.Client
@@ -191,6 +196,20 @@ type LLMPlanner struct {
 	TotalCalls    atomic.Int64
 	CacheHits     atomic.Int64
 	TotalFailures atomic.Int64
+
+	// progress reporting
+	progressFn ProgressFunc
+}
+
+// SetProgressFunc registers a callback called during Plan() to report progress.
+func (lp *LLMPlanner) SetProgressFunc(fn ProgressFunc) {
+	lp.progressFn = fn
+}
+
+func (lp *LLMPlanner) reportProgress(stage, detail string) {
+	if lp.progressFn != nil {
+		lp.progressFn(stage, detail)
+	}
 }
 
 const maxCacheSize = 100
@@ -308,6 +327,7 @@ func (lp *LLMPlanner) Plan(ctx context.Context, intent string, availablePlaybook
 	key := cacheKey(intent, availablePlaybooks)
 	if cachedPb, cachedParams, ok := lp.getCached(key); ok {
 		lp.CacheHits.Add(1)
+		lp.reportProgress("cache_hit", "")
 		log.Printf("[llm] cache hit for intent %q", intent[:min(len(intent), 60)])
 		return cachedPb, cachedParams, nil
 	}
@@ -322,10 +342,12 @@ Intent: %s`, strings.Join(availablePlaybooks, ", "), intent)
 	var lastErr error
 	for pi, p := range lp.providers {
 		if pi > 0 {
+			lp.reportProgress("fallback", p.Name)
 			log.Printf("[llm] primary provider failed, trying fallback %s", p.Name)
 		}
 		for attempt := 0; attempt < 2; attempt++ {
 			lp.TotalCalls.Add(1)
+			lp.reportProgress("calling", fmt.Sprintf("%s (attempt %d)", p.Name, attempt+1))
 
 			llmCtx, llmCancel := context.WithTimeout(ctx, 10*time.Second)
 			pbName, params, err := lp.callLLM(llmCtx, prompt, p)
@@ -337,6 +359,7 @@ Intent: %s`, strings.Join(availablePlaybooks, ", "), intent)
 			}
 
 			lastErr = err
+			lp.reportProgress("retry", fmt.Sprintf("%s attempt %d: %v", p.Name, attempt+1, err))
 			log.Printf("[llm] provider=%s attempt %d failed: %v", p.Name, attempt+1, err)
 		}
 
@@ -354,6 +377,7 @@ Intent: %s`, strings.Join(availablePlaybooks, ", "), intent)
 	}
 
 	lp.TotalFailures.Add(1)
+	lp.reportProgress("failed", lastErr.Error())
 	log.Printf("[llm] all providers failed for intent %q: %v (falling back to heuristic)", intent[:min(len(intent), 60)], lastErr)
 	return "", nil, lastErr
 }
