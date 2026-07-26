@@ -26,6 +26,9 @@ type S3Client struct {
 	client *http.Client
 }
 
+// GetBucket returns the configured bucket name.
+func (s *S3Client) GetBucket() string { return s.cfg.Bucket }
+
 // NewS3Client creates an S3 client from config.
 func NewS3Client(cfg S3Config) *S3Client {
 	return &S3Client{
