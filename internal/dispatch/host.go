@@ -358,6 +358,11 @@ func (lp *LLMPlanner) callLLM(ctx context.Context, prompt string) (string, map[s
 
 	content := lp.extractContent(respBody)
 	if content == "" {
+		snippet := string(respBody)
+		if len(snippet) > 500 {
+			snippet = snippet[:500]
+		}
+		log.Printf("[llm] empty content from provider=%s (raw: %s)", lp.Provider, snippet)
 		return "", nil, fmt.Errorf("llm returned empty response")
 	}
 
@@ -372,10 +377,16 @@ func (lp *LLMPlanner) callLLM(ctx context.Context, prompt string) (string, map[s
 		Parameters map[string]any `json:"parameters"`
 	}
 	if err := json.Unmarshal([]byte(content), &result); err != nil {
+		snippet := content
+		if len(snippet) > 500 {
+			snippet = snippet[:500]
+		}
+		log.Printf("[llm] json parse error for provider=%s: %v (content: %s)", lp.Provider, err, snippet)
 		return "", nil, fmt.Errorf("parse llm response: %w", err)
 	}
 
 	if result.Playbook == "" {
+		log.Printf("[llm] empty playbook from provider=%s (content: %s)", lp.Provider, content[:min(len(content), 200)])
 		return "", nil, fmt.Errorf("llm didn't select a playbook")
 	}
 
