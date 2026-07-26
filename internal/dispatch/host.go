@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/yanmyoaung2004/trace/internal/agent"
@@ -180,6 +181,11 @@ type LLMPlanner struct {
 	cache     map[string]*llmCacheEntry
 	cacheMu   sync.Mutex
 	cacheSize int
+
+	// counters (for cost tracking)
+	TotalCalls    atomic.Int64
+	CacheHits     atomic.Int64
+	TotalFailures atomic.Int64
 }
 
 const maxCacheSize = 100
@@ -204,6 +210,16 @@ func NewLLMPlanner(provider, url, apiKey string) *LLMPlanner {
 func (lp *LLMPlanner) WithModel(model string) *LLMPlanner {
 	lp.Model = model
 	return lp
+}
+
+// Stats returns operational counters for monitoring LLM usage and cost.
+func (lp *LLMPlanner) Stats() map[string]any {
+	return map[string]any{
+		"total_calls":    lp.TotalCalls.Load(),
+		"cache_hits":     lp.CacheHits.Load(),
+		"total_failures": lp.TotalFailures.Load(),
+		"cache_size":     len(lp.cache),
+	}
 }
 
 // cacheKey generates a hash of the intent + playbooks + prompt version for cache lookup.
@@ -276,6 +292,7 @@ func (lp *LLMPlanner) Plan(ctx context.Context, intent string, availablePlaybook
 	// Check cache
 	key := cacheKey(intent, availablePlaybooks)
 	if cachedPb, cachedParams, ok := lp.getCached(key); ok {
+		lp.CacheHits.Add(1)
 		log.Printf("[llm] cache hit for intent %q", intent[:min(len(intent), 60)])
 		return cachedPb, cachedParams, nil
 	}
@@ -289,6 +306,8 @@ Intent: %s`, strings.Join(availablePlaybooks, ", "), intent)
 	// Make LLM call with retry (10s timeout per attempt, isolated from caller)
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
+		lp.TotalCalls.Add(1)
+
 		if attempt > 0 {
 			select {
 			case <-time.After(500 * time.Millisecond):
@@ -312,6 +331,7 @@ Intent: %s`, strings.Join(availablePlaybooks, ", "), intent)
 		return pbName, params, nil
 	}
 
+	lp.TotalFailures.Add(1)
 	log.Printf("[llm] all attempts failed for intent %q: %v (falling back to heuristic)", intent[:min(len(intent), 60)], lastErr)
 	return "", nil, lastErr
 }
