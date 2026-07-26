@@ -64,6 +64,12 @@ type TSEConfig struct {
 	FlushInterval    string `json:"tse_flush_interval"`
 	ColdTTL          string `json:"tse_cold_ttl"`
 	AdminToken       string `json:"tse_admin_token,omitempty"`
+	S3Bucket         string `json:"tse_s3_bucket,omitempty"`
+	S3Endpoint       string `json:"tse_s3_endpoint,omitempty"`
+	S3Region         string `json:"tse_s3_region,omitempty"`
+	S3UseSSL         bool   `json:"tse_s3_usessl"`
+	S3AccessKey      string `json:"tse_s3_access_key,omitempty"`
+	S3SecretKey      string `json:"tse_s3_secret_key,omitempty"`
 }
 
 type TLSConfig struct {

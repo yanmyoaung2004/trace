@@ -170,6 +170,12 @@ func newTSECmd() *cobra.Command {
 				cfg.TSE.ColdTTL = val
 			case "admin_token":
 				cfg.TSE.AdminToken = val
+			case "s3_bucket":
+				cfg.TSE.S3Bucket = val
+			case "s3_endpoint":
+				cfg.TSE.S3Endpoint = val
+			case "s3_region":
+				cfg.TSE.S3Region = val
 			default:
 				return fmt.Errorf("unknown config key: %s (valid: storage_path, compression, compression_level, row_group_size, hot_window, flush_interval, cold_ttl, retention.days)", key)
 			}
