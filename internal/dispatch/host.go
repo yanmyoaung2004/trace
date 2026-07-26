@@ -170,12 +170,17 @@ type llmCacheEntry struct {
 	timestamp  time.Time
 }
 
+// LLMProvider holds the configuration for a single LLM provider.
+type LLMProvider struct {
+	Name   string // "openai", "anthropic", "ollama"
+	URL    string
+	APIKey string
+	Model  string
+}
+
 type LLMPlanner struct {
-	Provider string
-	URL      string
-	APIKey   string
-	Model    string
-	client   *http.Client
+	providers []*LLMProvider // tried in order; primary is first
+	client    *http.Client
 
 	// cache
 	cache     map[string]*llmCacheEntry
@@ -196,11 +201,11 @@ const cacheTTL = 10 * time.Minute
 // from a previous prompt version.
 const currentPromptVersion = 1
 
+// NewLLMPlanner creates a planner with a single primary provider.
+// Use AddProvider to add fallback providers.
 func NewLLMPlanner(provider, url, apiKey string) *LLMPlanner {
 	return &LLMPlanner{
-		Provider:  provider,
-		URL:       url,
-		APIKey:    apiKey,
+		providers: []*LLMProvider{{Name: provider, URL: url, APIKey: apiKey}},
 		client:    &http.Client{Timeout: 30 * time.Second},
 		cache:     make(map[string]*llmCacheEntry),
 		cacheSize: maxCacheSize,
@@ -208,7 +213,17 @@ func NewLLMPlanner(provider, url, apiKey string) *LLMPlanner {
 }
 
 func (lp *LLMPlanner) WithModel(model string) *LLMPlanner {
-	lp.Model = model
+	if len(lp.providers) > 0 {
+		lp.providers[0].Model = model
+	}
+	return lp
+}
+
+// AddProvider adds a fallback provider tried after the primary.
+func (lp *LLMPlanner) AddProvider(name, url, apiKey, model string) *LLMPlanner {
+	lp.providers = append(lp.providers, &LLMProvider{
+		Name: name, URL: url, APIKey: apiKey, Model: model,
+	})
 	return lp
 }
 
@@ -285,7 +300,7 @@ type anthropicResp struct {
 }
 
 func (lp *LLMPlanner) Plan(ctx context.Context, intent string, availablePlaybooks []string) (string, map[string]any, error) {
-	if lp.URL == "" {
+	if len(lp.providers) == 0 || lp.providers[0].URL == "" {
 		return "", nil, fmt.Errorf("LLM planner not configured (set TRACE_LLM_URL)")
 	}
 
@@ -303,71 +318,78 @@ Return ONLY valid JSON: {"playbook": "name", "parameters": {"key": "value"}}
 If no playbook matches, return {"playbook": "", "parameters": {}}.
 Intent: %s`, strings.Join(availablePlaybooks, ", "), intent)
 
-	// Make LLM call with retry (10s timeout per attempt, isolated from caller)
+	// Try each provider in order, with retries per provider
 	var lastErr error
-	for attempt := 0; attempt < 2; attempt++ {
-		lp.TotalCalls.Add(1)
+	for pi, p := range lp.providers {
+		if pi > 0 {
+			log.Printf("[llm] primary provider failed, trying fallback %s", p.Name)
+		}
+		for attempt := 0; attempt < 2; attempt++ {
+			lp.TotalCalls.Add(1)
 
-		if attempt > 0 {
-			select {
-			case <-time.After(500 * time.Millisecond):
-			case <-ctx.Done():
-				return "", nil, ctx.Err()
+			llmCtx, llmCancel := context.WithTimeout(ctx, 10*time.Second)
+			pbName, params, err := lp.callLLM(llmCtx, prompt, p)
+			llmCancel()
+
+			if err == nil {
+				lp.setCached(key, pbName, params)
+				return pbName, params, nil
 			}
+
+			lastErr = err
+			log.Printf("[llm] provider=%s attempt %d failed: %v", p.Name, attempt+1, err)
 		}
 
-		llmCtx, llmCancel := context.WithTimeout(ctx, 10*time.Second)
-		pbName, params, err := lp.callLLM(llmCtx, prompt)
-		llmCancel()
-
-		if err != nil {
-			lastErr = err
-			log.Printf("[llm] attempt %d failed: %v", attempt+1, err)
+		// If there's another provider to try, skip the retry delay — move to next provider
+		if pi+1 < len(lp.providers) {
 			continue
 		}
 
-		// Cache and return
-		lp.setCached(key, pbName, params)
-		return pbName, params, nil
+		// Last provider: retry with delay
+		select {
+		case <-time.After(500 * time.Millisecond):
+		case <-ctx.Done():
+			return "", nil, ctx.Err()
+		}
 	}
 
 	lp.TotalFailures.Add(1)
-	log.Printf("[llm] all attempts failed for intent %q: %v (falling back to heuristic)", intent[:min(len(intent), 60)], lastErr)
+	log.Printf("[llm] all providers failed for intent %q: %v (falling back to heuristic)", intent[:min(len(intent), 60)], lastErr)
 	return "", nil, lastErr
 }
 
-// callLLM makes a single LLM API call and parses the response.
-func (lp *LLMPlanner) callLLM(ctx context.Context, prompt string) (string, map[string]any, error) {
+// callLLM makes a single LLM API call to the given provider and parses the response.
+func (lp *LLMPlanner) callLLM(ctx context.Context, prompt string, p *LLMProvider) (string, map[string]any, error) {
 	var payload []byte
 	var err error
 
-	switch lp.Provider {
+	switch p.Name {
 	case "anthropic":
-		payload, err = lp.buildAnthropicPayload(prompt)
+		payload, err = lp.buildAnthropicPayload(p, prompt)
 	case "ollama":
-		payload, err = lp.buildOllamaPayload(prompt)
+		payload, err = lp.buildOllamaPayload(p, prompt)
 	default:
-		payload, err = lp.buildOpenAIPayload(prompt)
+		payload, err = lp.buildOpenAIPayload(p, prompt)
 	}
 	if err != nil {
 		return "", nil, fmt.Errorf("build payload: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", lp.URL, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, "POST", p.URL, bytes.NewReader(payload))
 	if err != nil {
 		return "", nil, fmt.Errorf("create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 
-	switch lp.Provider {
+	switch p.Name {
 	case "anthropic":
-		req.Header.Set("x-api-key", lp.APIKey)
+		req.Header.Set("x-api-key", p.APIKey)
 		req.Header.Set("anthropic-version", "2023-06-01")
 	case "ollama":
 	default:
-		if lp.APIKey != "" {
-			req.Header.Set("Authorization", "Bearer "+lp.APIKey)
+		if p.APIKey != "" {
+			req.Header.Set("Authorization", "Bearer "+p.APIKey)
 		}
 	}
 
@@ -389,7 +411,7 @@ func (lp *LLMPlanner) callLLM(ctx context.Context, prompt string) (string, map[s
 		if len(snippet) > 500 {
 			snippet = snippet[:500]
 		}
-		log.Printf("[llm] empty content from provider=%s (raw: %s)", lp.Provider, snippet)
+		log.Printf("[llm] empty content from provider=%s (raw: %s)", p.Name, snippet)
 		return "", nil, fmt.Errorf("llm returned empty response")
 	}
 
@@ -408,20 +430,20 @@ func (lp *LLMPlanner) callLLM(ctx context.Context, prompt string) (string, map[s
 		if len(snippet) > 500 {
 			snippet = snippet[:500]
 		}
-		log.Printf("[llm] json parse error for provider=%s: %v (content: %s)", lp.Provider, err, snippet)
+		log.Printf("[llm] json parse error for provider=%s: %v (content: %s)", p.Name, err, snippet)
 		return "", nil, fmt.Errorf("parse llm response: %w", err)
 	}
 
 	if result.Playbook == "" {
-		log.Printf("[llm] empty playbook from provider=%s (content: %s)", lp.Provider, content[:min(len(content), 200)])
+		log.Printf("[llm] empty playbook from provider=%s (content: %s)", p.Name, content[:min(len(content), 200)])
 		return "", nil, fmt.Errorf("llm didn't select a playbook")
 	}
 
 	return result.Playbook, result.Parameters, nil
 }
 
-func (lp *LLMPlanner) buildOpenAIPayload(prompt string) ([]byte, error) {
-	model := lp.Model
+func (lp *LLMPlanner) buildOpenAIPayload(p *LLMProvider, prompt string) ([]byte, error) {
+	model := p.Model
 	if model == "" {
 		model = "gpt-4"
 	}
@@ -437,8 +459,8 @@ func (lp *LLMPlanner) buildOpenAIPayload(prompt string) ([]byte, error) {
 	return json.Marshal(body)
 }
 
-func (lp *LLMPlanner) buildAnthropicPayload(prompt string) ([]byte, error) {
-	model := lp.Model
+func (lp *LLMPlanner) buildAnthropicPayload(p *LLMProvider, prompt string) ([]byte, error) {
+	model := p.Model
 	if model == "" {
 		model = "claude-3-haiku-20240307"
 	}
@@ -452,8 +474,8 @@ func (lp *LLMPlanner) buildAnthropicPayload(prompt string) ([]byte, error) {
 	return json.Marshal(body)
 }
 
-func (lp *LLMPlanner) buildOllamaPayload(prompt string) ([]byte, error) {
-	model := lp.Model
+func (lp *LLMPlanner) buildOllamaPayload(p *LLMProvider, prompt string) ([]byte, error) {
+	model := p.Model
 	if model == "" {
 		model = "llama3"
 	}
