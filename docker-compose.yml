@@ -1,50 +1,77 @@
-version: "3.9"
+version: "3.8"
 
 services:
-  server:
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    environment:
+      MINIO_ROOT_USER: trace
+      MINIO_ROOT_PASSWORD: tracetrace
+      MINIO_DOMAIN: minio
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  createbuckets:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set myminio http://minio:9000 trace tracetrace;
+      mc mb myminio/trace-events --ignore-existing;
+      echo 'Bucket created';
+      "
+
+  trace-leader:
     build: .
+    depends_on:
+      minio:
+        condition: service_healthy
+      createbuckets:
+        condition: service_started
     ports:
       - "8080:8080"
+    command: >
+      server --http-addr :8080
+      --tse --tse-node-role leader
+      --tse-s3-bucket trace-events
+      --tse-s3-endpoint minio:9000
+      --tse-s3-region us-east-1
     volumes:
-      - trace_data:/home/trace/.trace
+      - trace-leader-data:/root/.trace
     environment:
-      - TRACE_VT_API_KEY=${TRACE_VT_API_KEY:-}
-      - TRACE_LLM_API_KEY=${TRACE_LLM_API_KEY:-}
-      - TRACE_LLM_URL=${TRACE_LLM_URL:-}
-    command: ["server", "--http-addr", ":8080"]
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "trace", "version"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
+      TRACE_DB_PATH: /root/.trace/trace.db
 
-  edge:
+  trace-follower:
     build: .
     depends_on:
-      - server
+      minio:
+        condition: service_healthy
+      createbuckets:
+        condition: service_started
+    ports:
+      - "8081:8080"
+    command: >
+      server --http-addr :8080
+      --tse --tse-node-role follower
+      --tse-s3-bucket trace-events
+      --tse-s3-endpoint minio:9000
+      --tse-s3-region us-east-1
     volumes:
-      - trace_edge_data:/home/trace/.trace
-      - ./logs:/logs:ro
+      - trace-follower-data:/root/.trace
     environment:
-      - TRACE_VT_API_KEY=${TRACE_VT_API_KEY:-}
-    command: ["serve", "--server-addr", "http://server:8080", "--siem", "--log-dir", "/logs"]
-    restart: unless-stopped
-    profiles:
-      - edge
-
-  edge2:
-    build: .
-    depends_on:
-      - server
-    volumes:
-      - trace_edge2_data:/home/trace/.trace
-    command: ["serve", "--server-addr", "http://server:8080"]
-    restart: unless-stopped
-    profiles:
-      - edge2
+      TRACE_DB_PATH: /root/.trace/trace.db
 
 volumes:
-  trace_data:
-  trace_edge_data:
-  trace_edge2_data:
+  minio-data:
+  trace-leader-data:
+  trace-follower-data:
