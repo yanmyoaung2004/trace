@@ -51,6 +51,30 @@ trace tse config set storage_path /mnt/large-disk/tse
 trace tse config show
 ```
 
+## S3 Cold Storage
+
+Instead of storing Parquet files locally, write them to S3/MinIO:
+
+```bash
+trace serve --tse \
+  --tse-s3-bucket trace-events \
+  --tse-s3-endpoint minio:9000 \
+  --tse-s3-region us-east-1
+
+# Or set in ~/.trace/config.json:
+#   "tse_s3_bucket": "trace-events",
+#   "tse_s3_endpoint": "minio:9000",
+#   "tse_s3_region": "us-east-1"
+```
+
+The S3 client is a lightweight HTTP client (no AWS SDK dependency). Works with MinIO, AWS S3, or any S3-compatible storage.
+
+**How it works:**
+1. ParquetWriter writes to local temp file (fast)
+2. Uploads to `s3://bucket/events/{tenant}/{date}/{hour}/part-*.parquet`
+3. Manifest stores the `s3://` path
+4. Cold reader downloads from S3 to temp on first read, caches locally
+
 ## Storage Layout
 
 ```
@@ -60,10 +84,11 @@ trace tse config show
   tse/
     hot.db             # Recent events (SQLite WAL)
     manifest.db         # Parquet file catalog + watermark
-    events/             # Parquet files (cold storage)
+    events/             # Parquet files (local, or s3:// remote)
       {tenant}/{date}/{hour}/
         part-*.parquet
     temp/               # Temp files during parquet writes
+    spill/              # Queue spill-over when backlogged
 ```
 
 ## Disk Requirements
