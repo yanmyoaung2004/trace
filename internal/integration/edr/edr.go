@@ -273,7 +273,7 @@ func (e *EDRClient) GetAgentInfo(ctx context.Context, hostname string) (*AgentIn
 }
 
 func (e *EDRClient) getCSAgent(ctx context.Context, hostname string) (*AgentInfo, error) {
-	data, err := e.doRequest(ctx, "GET", fmt.Sprintf("/sensors/queries/devices/v1?filter=hostname:'%s'", hostname), nil)
+	data, err := e.doRequestWithCircuit(ctx, "GET", fmt.Sprintf("/sensors/queries/devices/v1?filter=hostname:'%s'", hostname), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +285,7 @@ func (e *EDRClient) getCSAgent(ctx context.Context, hostname string) (*AgentInfo
 		return nil, fmt.Errorf("host %q not found", hostname)
 	}
 
-	data, err = e.doRequest(ctx, "GET", fmt.Sprintf("/sensors/entities/devices/v1?ids=%s", strings.Join(resp.Resources, ",")), nil)
+	data, err = e.doRequestWithCircuit(ctx, "GET", fmt.Sprintf("/sensors/entities/devices/v1?ids=%s", strings.Join(resp.Resources, ",")), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -317,7 +317,7 @@ func (e *EDRClient) getCSAgent(ctx context.Context, hostname string) (*AgentInfo
 }
 
 func (e *EDRClient) getS1Agent(ctx context.Context, hostname string) (*AgentInfo, error) {
-	data, err := e.doRequest(ctx, "GET", fmt.Sprintf("/web/api/v2.1/agents?hostname=%s", hostname), nil)
+	data, err := e.doRequestWithCircuit(ctx, "GET", fmt.Sprintf("/web/api/v2.1/agents?hostname=%s", hostname), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -347,7 +347,7 @@ func (e *EDRClient) getS1Agent(ctx context.Context, hostname string) (*AgentInfo
 }
 
 func (e *EDRClient) getMDEAgent(ctx context.Context, hostname string) (*AgentInfo, error) {
-	data, err := e.doRequest(ctx, "GET", fmt.Sprintf("/api/machines?$filter=computerDnsName eq '%s'", hostname), nil)
+	data, err := e.doRequestWithCircuit(ctx, "GET", fmt.Sprintf("/api/machines?$filter=computerDnsName eq '%s'", hostname), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -383,7 +383,7 @@ func (e *EDRClient) getMDEAgent(ctx context.Context, hostname string) (*AgentInf
 func (e *EDRClient) IsolateHost(ctx context.Context, agentID string) (string, error) {
 	switch e.config.Provider {
 	case "crowdstrike":
-		data, err := e.doRequest(ctx, "POST", "/sensors/entities/devices-actions/v1?action_name=contain", map[string]any{"ids": []string{agentID}})
+		data, err := e.doRequestWithCircuit(ctx, "POST", "/sensors/entities/devices-actions/v1?action_name=contain", map[string]any{"ids": []string{agentID}})
 		if err != nil {
 			return "", err
 		}
@@ -399,7 +399,7 @@ func (e *EDRClient) IsolateHost(ctx context.Context, agentID string) (string, er
 		return "submitted", nil
 
 	case "sentinelone":
-		data, err := e.doRequest(ctx, "POST", "/web/api/v2.1/agents/actions/disconnect", map[string]any{"filter": map[string]any{"ids": []string{agentID}}})
+		data, err := e.doRequestWithCircuit(ctx, "POST", "/web/api/v2.1/agents/actions/disconnect", map[string]any{"filter": map[string]any{"ids": []string{agentID}}})
 		if err != nil {
 			return "", err
 		}
@@ -412,7 +412,7 @@ func (e *EDRClient) IsolateHost(ctx context.Context, agentID string) (string, er
 		return fmt.Sprintf("isolated (affected: %d)", resp.Data.Affected), nil
 
 	case "mde":
-		data, err := e.doRequest(ctx, "POST", fmt.Sprintf("/api/machines/%s/isolate", agentID), map[string]any{"comment": "Isolated by Trace", "isolationType": "Full"})
+		data, err := e.doRequestWithCircuit(ctx, "POST", fmt.Sprintf("/api/machines/%s/isolate", agentID), map[string]any{"comment": "Isolated by Trace", "isolationType": "Full"})
 		if err != nil {
 			return "", err
 		}
@@ -428,10 +428,10 @@ func (e *EDRClient) IsolateHost(ctx context.Context, agentID string) (string, er
 func (e *EDRClient) ReleaseHost(ctx context.Context, agentID string) (string, error) {
 	switch e.config.Provider {
 	case "crowdstrike":
-		_, err := e.doRequest(ctx, "POST", "/sensors/entities/devices-actions/v1?action_name=lift_containment", map[string]any{"ids": []string{agentID}})
+		_, err := e.doRequestWithCircuit(ctx, "POST", "/sensors/entities/devices-actions/v1?action_name=lift_containment", map[string]any{"ids": []string{agentID}})
 		return "released", err
 	case "sentinelone":
-		data, err := e.doRequest(ctx, "POST", "/web/api/v2.1/agents/actions/connect", map[string]any{"filter": map[string]any{"ids": []string{agentID}}})
+		data, err := e.doRequestWithCircuit(ctx, "POST", "/web/api/v2.1/agents/actions/connect", map[string]any{"filter": map[string]any{"ids": []string{agentID}}})
 		if err != nil {
 			return "", err
 		}
@@ -443,7 +443,7 @@ func (e *EDRClient) ReleaseHost(ctx context.Context, agentID string) (string, er
 		json.Unmarshal(data, &resp)
 		return fmt.Sprintf("released (affected: %d)", resp.Data.Affected), nil
 	case "mde":
-		data, err := e.doRequest(ctx, "POST", fmt.Sprintf("/api/machines/%s/unisolate", agentID), map[string]any{"comment": "Released by Trace"})
+		data, err := e.doRequestWithCircuit(ctx, "POST", fmt.Sprintf("/api/machines/%s/unisolate", agentID), map[string]any{"comment": "Released by Trace"})
 		if err != nil {
 			return "", err
 		}
@@ -459,19 +459,19 @@ func (e *EDRClient) ReleaseHost(ctx context.Context, agentID string) (string, er
 func (e *EDRClient) KillProcess(ctx context.Context, agentID string, pid int) error {
 	switch e.config.Provider {
 	case "crowdstrike":
-		_, err := e.doRequest(ctx, "POST", "/sensors/entities/devices-actions/v1?action_name=kill", map[string]any{
+		_, err := e.doRequestWithCircuit(ctx, "POST", "/sensors/entities/devices-actions/v1?action_name=kill", map[string]any{
 			"ids": []string{agentID},
 			"pid": pid,
 		})
 		return err
 	case "sentinelone":
-		_, err := e.doRequest(ctx, "POST", "/web/api/v2.1/remote-commands/kill-process", map[string]any{
+		_, err := e.doRequestWithCircuit(ctx, "POST", "/web/api/v2.1/remote-commands/kill-process", map[string]any{
 			"filter": map[string]any{"ids": []string{agentID}},
 			"data":   map[string]any{"pid": pid},
 		})
 		return err
 	case "mde":
-		_, err := e.doRequest(ctx, "POST", fmt.Sprintf("/api/machines/%s/stopProcess", agentID), map[string]any{
+		_, err := e.doRequestWithCircuit(ctx, "POST", fmt.Sprintf("/api/machines/%s/stopProcess", agentID), map[string]any{
 			"comment": "Killed by Trace",
 			"pid":     pid,
 		})
@@ -483,7 +483,7 @@ func (e *EDRClient) KillProcess(ctx context.Context, agentID string, pid int) er
 func (e *EDRClient) ScanHost(ctx context.Context, agentID string) (string, error) {
 	switch e.config.Provider {
 	case "crowdstrike":
-		data, err := e.doRequest(ctx, "POST", "/sensors/entities/devices-actions/v1?action_name=scan", map[string]any{
+		data, err := e.doRequestWithCircuit(ctx, "POST", "/sensors/entities/devices-actions/v1?action_name=scan", map[string]any{
 			"ids": []string{agentID},
 		})
 		if err != nil {
@@ -500,7 +500,7 @@ func (e *EDRClient) ScanHost(ctx context.Context, agentID string) (string, error
 		}
 		return "scan_submitted", nil
 	case "sentinelone":
-		data, err := e.doRequest(ctx, "POST", "/web/api/v2.1/remote-commands/initiate-scan", map[string]any{
+		data, err := e.doRequestWithCircuit(ctx, "POST", "/web/api/v2.1/remote-commands/initiate-scan", map[string]any{
 			"filter": map[string]any{"ids": []string{agentID}},
 		})
 		if err != nil {
@@ -514,7 +514,7 @@ func (e *EDRClient) ScanHost(ctx context.Context, agentID string) (string, error
 		json.Unmarshal(data, &resp)
 		return fmt.Sprintf("scan_submitted (affected: %d)", resp.Data.Affected), nil
 	case "mde":
-		data, err := e.doRequest(ctx, "POST", fmt.Sprintf("/api/machines/%s/runAntiVirusScan", agentID), map[string]any{
+		data, err := e.doRequestWithCircuit(ctx, "POST", fmt.Sprintf("/api/machines/%s/runAntiVirusScan", agentID), map[string]any{
 			"comment": "Scan triggered by Trace",
 		})
 		if err != nil {
@@ -532,7 +532,7 @@ func (e *EDRClient) ScanHost(ctx context.Context, agentID string) (string, error
 func (e *EDRClient) RunScript(ctx context.Context, agentID, script string) (string, error) {
 	switch e.config.Provider {
 	case "crowdstrike":
-		data, err := e.doRequest(ctx, "POST", "/sensors/entities/devices-actions/v1?action_name=runscript", map[string]any{
+		data, err := e.doRequestWithCircuit(ctx, "POST", "/sensors/entities/devices-actions/v1?action_name=runscript", map[string]any{
 			"ids":     []string{agentID},
 			"content": script,
 		})
@@ -550,7 +550,7 @@ func (e *EDRClient) RunScript(ctx context.Context, agentID, script string) (stri
 		}
 		return "script_submitted", nil
 	case "sentinelone":
-		data, err := e.doRequest(ctx, "POST", "/web/api/v2.1/remote-commands/run-script", map[string]any{
+		data, err := e.doRequestWithCircuit(ctx, "POST", "/web/api/v2.1/remote-commands/run-script", map[string]any{
 			"filter": map[string]any{"ids": []string{agentID}},
 			"data":   map[string]any{"script": script},
 		})
@@ -565,7 +565,7 @@ func (e *EDRClient) RunScript(ctx context.Context, agentID, script string) (stri
 		json.Unmarshal(data, &resp)
 		return fmt.Sprintf("script_submitted (affected: %d)", resp.Data.Affected), nil
 	case "mde":
-		_, err := e.doRequest(ctx, "POST", fmt.Sprintf("/api/machines/%s/runScript", agentID), map[string]any{
+		_, err := e.doRequestWithCircuit(ctx, "POST", fmt.Sprintf("/api/machines/%s/runScript", agentID), map[string]any{
 			"script":  script,
 			"comment": "Script run by Trace",
 		})
