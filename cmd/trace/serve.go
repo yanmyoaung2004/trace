@@ -56,6 +56,18 @@ Examples:
 				if s, _ := cmd.Flags().GetInt("tse-row-group-size"); s > 0 {
 					app.cfg.TSE.RowGroupSize = s
 				}
+				if b, _ := cmd.Flags().GetString("tse-s3-bucket"); b != "" {
+					app.cfg.TSE.S3Bucket = b
+				}
+				if e, _ := cmd.Flags().GetString("tse-s3-endpoint"); e != "" {
+					app.cfg.TSE.S3Endpoint = e
+				}
+				if r, _ := cmd.Flags().GetString("tse-s3-region"); r != "" {
+					app.cfg.TSE.S3Region = r
+				}
+				if ssl, _ := cmd.Flags().GetBool("tse-s3-ssl"); ssl {
+					app.cfg.TSE.S3UseSSL = true
+				}
 				tse, err := initTSE(&app.cfg.TSE)
 				if err != nil {
 					return fmt.Errorf("init TSE: %w", err)
@@ -266,6 +278,10 @@ Examples:
 	cmd.Flags().String("tse-compression", "zstd", "Parquet compression (zstd, snappy, gzip, lz4, none)")
 	cmd.Flags().Int("tse-compression-level", 0, "Parquet compression level (0=default)")
 	cmd.Flags().Int("tse-row-group-size", 0, "Parquet row group size (default 1,000,000)")
+	cmd.Flags().String("tse-s3-bucket", "", "S3 bucket for Parquet files (enables S3 cold storage)")
+	cmd.Flags().String("tse-s3-endpoint", "", "S3/MinIO endpoint (e.g. minio:9000)")
+	cmd.Flags().String("tse-s3-region", "", "S3 region (e.g. us-east-1)")
+	cmd.Flags().Bool("tse-s3-ssl", false, "Use HTTPS for S3 connections")
 	cmd.Flags().String("syslog-addr", "", "syslog listener address (e.g. :514)")
 	cmd.Flags().StringSlice("log-dir", nil, "directories to watch for log files")
 	cmd.Flags().String("export", "", "start HTML report server on given address (e.g. :8080)")

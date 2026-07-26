@@ -21,6 +21,19 @@ import (
 	"github.com/yanmyoaung2004/trace/internal/storage/sqlite"
 )
 
+// s3ConfigFromCfg builds an S3 config from TSE config.
+func s3ConfigFromCfg(cfg *config.TSEConfig) *storage.S3Config {
+	if cfg.S3Bucket == "" {
+		return nil
+	}
+	return &storage.S3Config{
+		Bucket:   cfg.S3Bucket,
+		Endpoint: cfg.S3Endpoint,
+		Region:   cfg.S3Region,
+		UseSSL:   cfg.S3UseSSL,
+	}
+}
+
 // TSE holds the initialized Trace Storage Engine components.
 type TSE struct {
 	Hot      *sqlite.SQLiteHotStore
@@ -63,6 +76,13 @@ func initTSE(cfg *config.TSEConfig) (*TSE, error) {
 		return nil, err
 	}
 
+	// S3 config
+	s3Cfg := s3ConfigFromCfg(cfg)
+	var s3Client *storage.S3Client
+	if s3Cfg != nil {
+		s3Client = storage.NewS3Client(*s3Cfg)
+	}
+
 	// Parquet writer
 	parquetOpts := parquet.DefaultParquetOptions()
 	if cfg.Compression != "" {
@@ -75,6 +95,10 @@ func initTSE(cfg *config.TSEConfig) (*TSE, error) {
 		parquetOpts.RowGroupSize = cfg.RowGroupSize
 	}
 	pw := parquet.NewParquetWriter(tempDir, eventsDir, parquetOpts)
+	if s3Client != nil {
+		pw.SetS3(s3Client)
+		log.Printf("[tse] S3 cold storage enabled: s3://%s/%s", cfg.S3Bucket, eventsDir)
+	}
 
 	// Cold reader — DuckDB (CGO) or pure Go (auto-selected)
 	cr := cold.NewReaderPool(cold.DefaultMaxConcurrent)

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	pq "github.com/parquet-go/parquet-go"
@@ -23,11 +24,13 @@ import (
 
 // ParquetWriter writes events to Parquet v2 files with ZSTD compression.
 // It implements the "write to temp → fsync → atomic rename → manifest commit" pattern.
+// When S3 is configured, files are uploaded after local write.
 type ParquetWriter struct {
 	opts       ParquetOptions
 	tempDir    string
 	outputDir  string
 	targetSize int64
+	s3         *storage.S3Client // set when S3 storage is enabled
 }
 
 // NewParquetWriter creates a Parquet writer.
@@ -142,7 +145,26 @@ func (w *ParquetWriter) WriteBatch(ctx context.Context, events []*storage.Event,
 		MaxEventID:       maxID,
 	}
 
+	// Upload to S3 if configured
+	if w.s3 != nil {
+		s3Key := strings.TrimPrefix(finalPath, w.outputDir+"/")
+		data, err := os.ReadFile(finalPath)
+		if err != nil {
+			return nil, fmt.Errorf("read for s3 upload: %w", err)
+		}
+		if err := w.s3.Upload(s3Key, data); err != nil {
+			return nil, fmt.Errorf("s3 upload: %w", err)
+		}
+		result.Path = fmt.Sprintf("s3://%s/%s", w.s3.GetBucket(), s3Key)
+	}
+
 	return result, nil
+}
+
+// SetS3 attaches an S3 client to the writer. When set, every parquet file
+// is uploaded to S3 after local write, and the manifest path uses s3://.
+func (w *ParquetWriter) SetS3(s3 *storage.S3Client) {
+	w.s3 = s3
 }
 
 // Close releases any resources held by the writer.
