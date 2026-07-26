@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/yanmyoaung2004/trace/internal/agent"
 	"github.com/yanmyoaung2004/trace/internal/playbook"
+	_ "modernc.org/sqlite"
 )
 
 type Agent struct {
@@ -199,11 +201,61 @@ type LLMPlanner struct {
 
 	// progress reporting
 	progressFn ProgressFunc
+
+	// persistent cache (optional SQLite)
+	cacheDB *sql.DB
 }
 
 // SetProgressFunc registers a callback called during Plan() to report progress.
 func (lp *LLMPlanner) SetProgressFunc(fn ProgressFunc) {
 	lp.progressFn = fn
+}
+
+// WithCacheDB attaches a SQLite database for persistent LLM response caching.
+// The cache survives restarts. Entries are evicted based on TTL (10min in-memory, 24h in SQLite).
+func (lp *LLMPlanner) WithCacheDB(db *sql.DB) *LLMPlanner {
+	lp.cacheDB = db
+	lp.initCacheTable()
+	return lp
+}
+
+func (lp *LLMPlanner) initCacheTable() {
+	if lp.cacheDB == nil {
+		return
+	}
+	lp.cacheDB.Exec(`CREATE TABLE IF NOT EXISTS llm_cache (
+		key TEXT PRIMARY KEY,
+		playbook TEXT NOT NULL,
+		params TEXT NOT NULL DEFAULT '{}',
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	)`)
+}
+
+func (lp *LLMPlanner) cacheGetFromDB(key string) (string, map[string]any, bool) {
+	if lp.cacheDB == nil {
+		return "", nil, false
+	}
+	var playbook, paramsJSON string
+	err := lp.cacheDB.QueryRow(
+		`SELECT playbook, params FROM llm_cache WHERE key = ? AND created_at > datetime('now', '-24 hours')`, key,
+	).Scan(&playbook, &paramsJSON)
+	if err != nil {
+		return "", nil, false
+	}
+	var params map[string]any
+	json.Unmarshal([]byte(paramsJSON), &params)
+	return playbook, params, true
+}
+
+func (lp *LLMPlanner) cacheSetToDB(key, playbook string, params map[string]any) {
+	if lp.cacheDB == nil {
+		return
+	}
+	paramsJSON, _ := json.Marshal(params)
+	lp.cacheDB.Exec(
+		`INSERT OR REPLACE INTO llm_cache (key, playbook, params, created_at) VALUES (?, ?, ?, datetime('now'))`,
+		key, playbook, string(paramsJSON),
+	)
 }
 
 func (lp *LLMPlanner) reportProgress(stage, detail string) {
@@ -265,26 +317,41 @@ func cacheKey(intent string, playbooks []string) string {
 }
 
 // getCached returns a cached LLM response if available and fresh.
+// Checks in-memory cache first, then SQLite cache if configured.
 func (lp *LLMPlanner) getCached(key string) (string, map[string]any, bool) {
 	lp.cacheMu.Lock()
 	defer lp.cacheMu.Unlock()
+
+	// Check in-memory cache first
 	entry, ok := lp.cache[key]
-	if !ok {
-		return "", nil, false
+	if ok {
+		if time.Since(entry.timestamp) > cacheTTL {
+			delete(lp.cache, key)
+		} else {
+			return entry.playbook, entry.parameters, true
+		}
 	}
-	if time.Since(entry.timestamp) > cacheTTL {
-		delete(lp.cache, key)
-		return "", nil, false
+
+	// Check SQLite cache on miss (loads into in-memory cache)
+	if pb, params, ok := lp.cacheGetFromDB(key); ok {
+		lp.cache[key] = &llmCacheEntry{
+			playbook:   pb,
+			parameters: params,
+			timestamp:  time.Now(),
+		}
+		return pb, params, true
 	}
-	return entry.playbook, entry.parameters, true
+
+	return "", nil, false
 }
 
-// setCached stores an LLM response in the cache.
+// setCached stores an LLM response in both in-memory and SQLite caches.
 func (lp *LLMPlanner) setCached(key, playbook string, params map[string]any) {
 	lp.cacheMu.Lock()
 	defer lp.cacheMu.Unlock()
+
+	// In-memory cache
 	if len(lp.cache) >= lp.cacheSize {
-		// Evict oldest entry
 		var oldestKey string
 		var oldestTime time.Time
 		for k, v := range lp.cache {
@@ -300,6 +367,9 @@ func (lp *LLMPlanner) setCached(key, playbook string, params map[string]any) {
 		parameters: params,
 		timestamp:  time.Now(),
 	}
+
+	// SQLite cache (async, non-blocking)
+	lp.cacheSetToDB(key, playbook, params)
 }
 
 type openAIChoice struct {
