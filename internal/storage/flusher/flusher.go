@@ -44,8 +44,9 @@ type Flusher struct {
 	AlertFunc func(message string)
 
 	// shutdown signaling
-	stopCh chan struct{}
-	doneCh chan struct{}
+	stopCh   chan struct{}
+	doneCh   chan struct{}
+	stopOnce sync.Once
 }
 
 // NewFlusher creates a watermark-driven flusher.
@@ -106,8 +107,11 @@ func (f *Flusher) Run(ctx context.Context) error {
 
 // Stop signals the flusher to stop after the current flush completes.
 // It blocks until the Run loop exits or the context is cancelled.
+// Idempotent — safe to call multiple times.
 func (f *Flusher) Stop(ctx context.Context) error {
-	close(f.stopCh)
+	f.stopOnce.Do(func() {
+		close(f.stopCh)
+	})
 	select {
 	case <-f.doneCh:
 		return nil
