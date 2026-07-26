@@ -269,6 +269,9 @@ Examples:
 	cmd.Flags().String("syslog-addr", "", "syslog listener address (e.g. :514)")
 	cmd.Flags().StringSlice("log-dir", nil, "directories to watch for log files")
 	cmd.Flags().String("export", "", "start HTML report server on given address (e.g. :8080)")
+	cmd.Flags().String("tls-cert", "", "TLS certificate file")
+	cmd.Flags().String("tls-key", "", "TLS private key file")
+	cmd.Flags().Bool("tls-auto", false, "auto-generate self-signed TLS certificate")
 	cmd.Flags().String("server-addr", "", "address of central server for edge sync (e.g. http://localhost:8080)")
 	return cmd
 }

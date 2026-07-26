@@ -108,6 +108,21 @@ trace-agent --install
 trace-agent --uninstall
 ```
 
+## TLS / HTTPS
+
+```bash
+# Using existing certificate
+trace server --http-addr :443 --tls-cert /etc/certs/cert.pem --tls-key /etc/certs/key.pem
+
+# Generate self-signed cert (for testing)
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
+  -days 365 -nodes -keyout key.pem -out cert.pem \
+  -subj "/CN=localhost"
+trace server --tls-cert cert.pem --tls-key key.pem
+```
+
+The `trace server` command automatically uses HTTPS when `--tls-cert` and `--tls-key` are provided. Without these flags, it falls back to plain HTTP.
+
 ## Monitoring
 
 | Endpoint | Description |
