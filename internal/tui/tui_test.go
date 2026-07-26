@@ -1,11 +1,14 @@
 package tui
 
 import (
+	"errors"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/yanmyoaung2004/trace/internal/playbook"
 )
+
+var errTest = errors.New("test error")
 
 type mockApp struct{}
 
@@ -25,6 +28,8 @@ func (m *mockApp) ListInvestigations(status string) ([]InvBrief, error)   { retu
 func (m *mockApp) SiemAlerts(count int) ([]string, error)        { return nil, nil }
 func (m *mockApp) ConfigValue(key string) string                 { return "" }
 
+// --- Root model tests ---
+
 func TestNewProgram(t *testing.T) {
 	p := NewProgram(&mockApp{})
 	if p == nil {
@@ -42,37 +47,27 @@ func TestRootModelInit(t *testing.T) {
 
 func TestRootModelTabNavigation(t *testing.T) {
 	m := newRootModel(&mockApp{})
-
-	// Tab should cycle through screens
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
-	newModel, ok := updated.(*rootModel)
-	if !ok {
-		t.Fatal("expected rootModel")
+	nm, _ := updated.(*rootModel)
+	if nm.active != investigationsScreen {
+		t.Errorf("after tab: active = %v, want investigationsScreen", nm.active)
 	}
-	if newModel.active != investigationsScreen {
-		t.Errorf("after tab: active = %v, want investigationsScreen", newModel.active)
-	}
-
-	// Shift+tab should go back
-	updated, _ = newModel.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
-	newModel = updated.(*rootModel)
-	if newModel.active != dashboardScreen {
-		t.Errorf("after shift+tab: active = %v, want dashboardScreen", newModel.active)
+	updated, _ = nm.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	nm = updated.(*rootModel)
+	if nm.active != dashboardScreen {
+		t.Errorf("after shift+tab: active = %v, want dashboardScreen", nm.active)
 	}
 }
 
 func TestRootModelWindowSize(t *testing.T) {
 	m := newRootModel(&mockApp{})
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	newModel, ok := updated.(*rootModel)
-	if !ok {
-		t.Fatal("expected rootModel")
+	nm, _ := updated.(*rootModel)
+	if nm.width != 120 {
+		t.Errorf("width = %d", nm.width)
 	}
-	if newModel.width != 120 {
-		t.Errorf("width = %d, want 120", newModel.width)
-	}
-	if newModel.height != 40 {
-		t.Errorf("height = %d, want 40", newModel.height)
+	if nm.height != 40 {
+		t.Errorf("height = %d", nm.height)
 	}
 }
 
@@ -88,7 +83,205 @@ func TestRootModelView(t *testing.T) {
 	m := newRootModel(&mockApp{})
 	m.width = 80
 	m.height = 24
+	v := m.View()
+	if v == "" {
+		t.Error("expected non-empty view")
+	}
+}
 
+// --- Dashboard sub-model tests ---
+
+func TestDashboardModel_Init(t *testing.T) {
+	m := newDashboardModel(&mockApp{})
+	cmd := m.Init()
+	if cmd == nil {
+		t.Error("expected non-nil cmd from Init")
+	}
+}
+
+func TestDashboardModel_Load(t *testing.T) {
+	m := newDashboardModel(&mockApp{})
+	updated, cmd := m.Update(dashboardLoaded{invs: nil})
+	dm, ok := updated.(*dashboardModel)
+	if !ok {
+		t.Fatal("expected dashboardModel")
+	}
+	if dm.loading {
+		t.Error("expected loading=false after load")
+	}
+	if cmd != nil {
+		t.Error("expected nil cmd after load")
+	}
+}
+
+func TestDashboardModel_LoadError(t *testing.T) {
+	m := newDashboardModel(&mockApp{})
+	updated, _ := m.Update(dashboardLoaded{err: errTest})
+	dm, _ := updated.(*dashboardModel)
+	if dm.err == nil {
+		t.Error("expected error to be set")
+	}
+}
+
+func TestDashboardModel_Reload(t *testing.T) {
+	m := newDashboardModel(&mockApp{})
+	m.loading = false
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	dm, _ := updated.(*dashboardModel)
+	if !dm.loading {
+		t.Error("expected loading=true after reload key")
+	}
+	if cmd == nil {
+		t.Error("expected non-nil cmd after reload")
+	}
+}
+
+func TestDashboardModel_WindowSize(t *testing.T) {
+	m := newDashboardModel(&mockApp{})
+	m.Update(tea.WindowSizeMsg{Width: 100})
+	if m.width != 100 {
+		t.Errorf("width = %d", m.width)
+	}
+}
+
+func TestDashboardModel_View(t *testing.T) {
+	m := newDashboardModel(&mockApp{})
+	m.loading = false
+	m.width = 80
+	v := m.View()
+	if v == "" {
+		t.Error("expected non-empty view")
+	}
+}
+
+func TestDashboardModel_ViewLoading(t *testing.T) {
+	m := newDashboardModel(&mockApp{})
+	m.loading = true
+	v := m.View()
+	if v == "" {
+		t.Error("expected non-empty loading view")
+	}
+}
+
+// --- Cases sub-model tests ---
+
+func TestCasesModel_Init(t *testing.T) {
+	m := newCasesModel(&mockApp{})
+	cmd := m.Init()
+	if cmd == nil {
+		t.Error("expected non-nil cmd")
+	}
+}
+
+func TestCasesModel_Load(t *testing.T) {
+	m := newCasesModel(&mockApp{})
+	updated, _ := m.Update(casesLoaded{cases: nil})
+	cm, ok := updated.(*casesModel)
+	if !ok {
+		t.Fatal("expected casesModel")
+	}
+	if cm.loading {
+		t.Error("expected loading=false after load")
+	}
+}
+
+func TestCasesModel_Navigation(t *testing.T) {
+	m := newCasesModel(&mockApp{})
+	m.loading = false
+	m.cases = []Case{{ID: "case-1", Title: "Test Case"}}
+
+	// Down arrow
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	cm, _ := updated.(*casesModel)
+	if cm.cursor != 0 {
+		t.Errorf("cursor = %d (wrapped to 0 since only 1 item)", cm.cursor)
+	}
+}
+
+func TestCasesModel_View(t *testing.T) {
+	m := newCasesModel(&mockApp{})
+	m.loading = false
+	m.width = 80
+	v := m.View()
+	if v == "" {
+		t.Error("expected non-empty view")
+	}
+}
+
+// --- Investigations sub-model tests ---
+
+func TestInvestigationsModel_Init(t *testing.T) {
+	m := newInvestigationsModel(&mockApp{})
+	cmd := m.Init()
+	if cmd == nil {
+		t.Error("expected non-nil cmd")
+	}
+}
+
+func TestInvestigationsModel_Load(t *testing.T) {
+	m := newInvestigationsModel(&mockApp{})
+	updated, _ := m.Update(invsLoaded{invs: nil})
+	im, ok := updated.(*investigationsModel)
+	if !ok {
+		t.Fatal("expected investigationsModel")
+	}
+	if im.loading {
+		t.Error("expected loading=false after load")
+	}
+}
+
+func TestInvestigationsModel_View(t *testing.T) {
+	m := newInvestigationsModel(&mockApp{})
+	m.loading = false
+	m.width = 80
+	v := m.View()
+	if v == "" {
+		t.Error("expected non-empty view")
+	}
+}
+
+// --- SIEM sub-model tests ---
+
+func TestSiemModel_Init(t *testing.T) {
+	m := newSiemModel(&mockApp{})
+	cmd := m.Init()
+	if cmd == nil {
+		t.Error("expected non-nil cmd")
+	}
+}
+
+func TestSiemModel_Load(t *testing.T) {
+	m := newSiemModel(&mockApp{})
+	updated, _ := m.Update(siemLoaded{})
+	sm, ok := updated.(*siemModel)
+	if !ok {
+		t.Fatal("expected siemModel")
+	}
+	if sm.loading {
+		t.Error("expected loading=false after load")
+	}
+}
+
+func TestSiemModel_View(t *testing.T) {
+	m := newSiemModel(&mockApp{})
+	m.loading = false
+	m.width = 80
+	v := m.View()
+	if v == "" {
+		t.Error("expected non-empty view")
+	}
+}
+
+// --- Config sub-model tests ---
+
+func TestConfigModel_Init(t *testing.T) {
+	m := newConfigModel(&mockApp{})
+	_ = m.Init() // config model doesn't load data, no cmd expected
+}
+
+func TestConfigModel_View(t *testing.T) {
+	m := newConfigModel(&mockApp{})
+	m.width = 80
 	v := m.View()
 	if v == "" {
 		t.Error("expected non-empty view")
