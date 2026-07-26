@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/yanmyoaung2004/trace/internal/locale"
 	"github.com/yanmyoaung2004/trace/internal/storage/metrics"
 )
@@ -501,6 +502,31 @@ func (dh *DashboardHandler) cases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Handle POST: create a new case
+	if r.Method == "POST" {
+		title := r.FormValue("title")
+		severity := r.FormValue("severity")
+		description := r.FormValue("description")
+		if title == "" {
+			title = "Untitled Case"
+		}
+		if severity == "" {
+			severity = "medium"
+		}
+		now := time.Now().UTC().Format(time.RFC3339)
+		id := uuid.New().String()
+
+		_, err := dh.db.Exec(
+			`INSERT INTO cases (id, title, description, status, severity, created_at, updated_at) VALUES (?, ?, ?, 'open', ?, ?, ?)`,
+			id, title, description, severity, now, now)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Redirect(w, r, "/cases", http.StatusSeeOther)
+		return
+	}
+
 	rows, err := dh.db.Query(`SELECT id, title, description, status, severity, assignee, created_at FROM cases ORDER BY created_at DESC LIMIT 50`)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -514,6 +540,30 @@ func (dh *DashboardHandler) cases(w http.ResponseWriter, r *http.Request) {
 <style>` + pageStyle + `</style></head><body>
 <div class="header"><h1>Security Cases</h1>
 <div class="nav">` + navHTML("/cases") + `</div></div>
+
+<div class="card" style="margin-bottom:16px">
+<h2 style="margin:0 0 12px">Create Case</h2>
+<form method="POST" action="/cases">
+<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
+<div style="flex:2;min-width:200px">
+<label class="stat-label" for="title">Title</label>
+<input type="text" name="title" id="title" placeholder="Investigation summary" style="width:100%;padding:9px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--ink);font-size:.875rem">
+</div>
+<div style="flex:0 0 120px">
+<label class="stat-label" for="severity">Severity</label>
+<select name="severity" id="severity" style="width:100%;padding:9px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--ink);font-size:.875rem">
+<option value="low">Low</option>
+<option value="medium" selected>Medium</option>
+<option value="high">High</option>
+<option value="critical">Critical</option>
+</select>
+</div>
+<div>
+<button type="submit" style="padding:9px 20px;background:var(--primary);color:var(--ink);border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:.875rem">Create</button>
+</div>
+</div>
+</form>
+</div>
 
 <table><thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Severity</th><th>Assignee</th><th>Created</th></tr></thead><tbody>`)
 
