@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -32,6 +33,7 @@ type LeaderElector struct {
 	failoverTimeout   time.Duration
 	stopCh            chan struct{}
 	doneCh            chan struct{}
+	mu                sync.RWMutex
 	isLeader          bool
 }
 
@@ -52,7 +54,11 @@ func NewLeaderElector(s3 *S3Client, role NodeRole) *LeaderElector {
 }
 
 // IsLeader returns true if this node is currently the leader.
-func (l *LeaderElector) IsLeader() bool { return l.isLeader }
+func (l *LeaderElector) IsLeader() bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.isLeader
+}
 
 // NodeID returns this node's unique identifier.
 func (l *LeaderElector) NodeID() string { return l.nodeID }
@@ -143,6 +149,8 @@ func (l *LeaderElector) checkLeader(ctx context.Context) {
 
 // promote makes this node the leader.
 func (l *LeaderElector) promote(ctx context.Context) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	if l.isLeader {
 		return
 	}
