@@ -228,6 +228,9 @@ func AnalyzePE(path string) (*PEMetadata, error) {
 }
 
 func parsePESections(data []byte) ([]PESectionInfo, error) {
+	if len(data) < 64 {
+		return nil, fmt.Errorf("data too short for DOS header")
+	}
 	eLfanew := int64(binary.LittleEndian.Uint32(data[60:64]))
 	if len(data) < 64 || data[0] != 'M' || data[1] != 'Z' || eLfanew+4 >= int64(len(data)) || data[eLfanew] != 'P' || data[eLfanew+1] != 'E' {
 		return nil, fmt.Errorf("not a PE file")
@@ -271,6 +274,9 @@ func parsePESections(data []byte) ([]PESectionInfo, error) {
 }
 
 func parsePEImportTable(data []byte) ([]string, error) {
+	if len(data) < 64 {
+		return nil, fmt.Errorf("data too short")
+	}
 	eLfanew := int64(binary.LittleEndian.Uint32(data[60:64]))
 	if len(data) < 256 || data[0] != 'M' || data[1] != 'Z' || eLfanew+4 >= int64(len(data)) || data[eLfanew] != 'P' || data[eLfanew+1] != 'E' {
 		return nil, fmt.Errorf("not a PE file")
