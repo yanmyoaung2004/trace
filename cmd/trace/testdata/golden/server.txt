@@ -1,19 +1,17 @@
 Start Trace in central server mode with web dashboard and sync API.
 Edge nodes connect to this server to push investigations and receive cross-node correlation.
 
-Examples:
-  trace server
-  trace server --http-addr :9090
-  trace server --config server-config.json
+Use --tse-storage-path to enable long-term storage of EDR agent events in TSE.
 
 Usage:
   trace server [flags]
 
 Flags:
-  -h, --help               help for server
-      --http-addr string   HTTP API + dashboard address (default ":8080")
-      --tls-cert string    TLS certificate file path
-      --tls-key string     TLS private key file path
+  -h, --help                      help for server
+      --http-addr string          HTTP API + dashboard address (default ":8080")
+      --tls-cert string           TLS certificate file path
+      --tls-key string            TLS private key file path
+      --tse-storage-path string   TSE storage path (enables long-term event storage)
 
 Global Flags:
   -c, --config string   path to config file

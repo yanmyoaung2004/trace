@@ -6,10 +6,13 @@ Usage:
 
 Available Commands:
   admin       Administrative commands (org and user management)
+  agent       Manage EDR agents and view status
   approval    Manage HITL approval requests
+  build       Build artifacts (agent binaries for distribution)
   case        Manage security cases
   completion  Generate the autocompletion script for the specified shell
   compliance  Run compliance scans and generate audit-ready reports (GDPR, HIPAA, PCI, NIST, ISO 27001, SOC 2)
+  demo        Start a demo environment (server + agent + test data)
   edr         Manage EDR agents and dispatch remote actions
   genkey      Generate a self-signed TLS certificate and key
   help        Help about any command
