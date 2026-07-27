@@ -212,28 +212,24 @@ func (e *ReportEngine) parseSCAResults(output map[string]any) error {
 
 	for _, r := range resultsRaw {
 		if m, ok := r.(map[string]any); ok {
-			complianceRaw, _ := m["compliance"].(map[string]any)
-			for fw, ids := range complianceRaw {
+			checkPass, _ := m["status"].(string)
+			checkTitle, _ := m["title"].(string)
+			checkID := int(toFloat64(m["id"]))
+
+			for fw, ids := range extractCompliance(m) {
 				fwName := strings.ReplaceAll(fw, "_", "-")
 				if _, exists := Frameworks[fw]; !exists {
 					continue
 				}
 				_ = fwName
-				checkPass, _ := m["status"].(string)
-				checkTitle, _ := m["title"].(string)
-				checkID := int(toFloat64(m["id"]))
 
-				if idsList, ok := ids.([]any); ok {
-					for _, idVal := range idsList {
-						if idStr, ok := idVal.(string); ok {
-							key := fw + ":" + idStr
-							if _, exists := e.scaResults[key]; !exists {
-								e.scaResults[key] = map[string]string{
-									"status": checkPass,
-									"title":  checkTitle,
-									"check":  fmt.Sprintf("%d", checkID),
-								}
-							}
+				for _, idStr := range ids {
+					key := fw + ":" + idStr
+					if _, exists := e.scaResults[key]; !exists {
+						e.scaResults[key] = map[string]string{
+							"status": checkPass,
+							"title":  checkTitle,
+							"check":  fmt.Sprintf("%d", checkID),
 						}
 					}
 				}
@@ -241,6 +237,38 @@ func (e *ReportEngine) parseSCAResults(output map[string]any) error {
 		}
 	}
 	return nil
+}
+
+// extractCompliance returns control IDs per framework, handling both map[string]any and map[string][]string.
+func extractCompliance(m map[string]any) map[string][]string {
+	raw, ok := m["compliance"]
+	if !ok {
+		return nil
+	}
+
+	out := make(map[string][]string)
+
+	switch v := raw.(type) {
+	case map[string]any:
+		for fw, ids := range v {
+			switch idsVal := ids.(type) {
+			case []any:
+				for _, id := range idsVal {
+					if s, ok := id.(string); ok {
+						out[fw] = append(out[fw], s)
+					}
+				}
+			case []string:
+				out[fw] = append(out[fw], idsVal...)
+			}
+		}
+	case map[string][]string:
+		for fw, ids := range v {
+			out[fw] = append(out[fw], ids...)
+		}
+	}
+
+	return out
 }
 
 func (e *ReportEngine) mergeScanResults(report *Report) {
@@ -263,6 +291,23 @@ func (e *ReportEngine) mergeScanResults(report *Report) {
 				report.Results[i].Status = "fail"
 			}
 		}
+	}
+
+	// Recalculate report-level counts after merging SCA results
+	report.Passed = 0
+	report.Failed = 0
+	report.NotCovered = 0
+	for _, cr := range report.Results {
+		if cr.Total == 0 {
+			report.NotCovered++
+		} else if cr.Failed == 0 && cr.Passed > 0 {
+			report.Passed++
+		} else {
+			report.Failed++
+		}
+	}
+	if report.Total > 0 {
+		report.Score = float64(report.Passed) / float64(report.Total) * 100
 	}
 }
 

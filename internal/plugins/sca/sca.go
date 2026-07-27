@@ -127,12 +127,20 @@ func (a *Agent) runPolicyDirect(ctx context.Context, policyData, policyName stri
 
 	return agent.Output{
 		"policy":   policyID,
-		"results":  results,
+		"results":  toAnySlice(results),
 		"pass":     passCount,
 		"fail":     failCount,
 		"total":    len(policy.Checks),
 		"score":    fmt.Sprintf("%.1f%%", float64(passCount)/float64(len(policy.Checks))*100),
 	}, nil
+}
+
+func toAnySlice[T any](s []T) []any {
+	out := make([]any, len(s))
+	for i, v := range s {
+		out[i] = v
+	}
+	return out
 }
 
 func (a *Agent) listPolicies() (agent.Output, error) {
@@ -228,7 +236,7 @@ func (a *Agent) runPolicy(ctx context.Context, input agent.Input) (agent.Output,
 
 	return agent.Output{
 		"policy":   policyID,
-		"results":  results,
+		"results":  toAnySlice(results),
 		"pass":     passCount,
 		"fail":     failCount,
 		"total":    len(policy.Checks),
