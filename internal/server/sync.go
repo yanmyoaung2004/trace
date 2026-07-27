@@ -7,9 +7,12 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +25,7 @@ import (
 type SyncHandler struct {
 	manager  *ServerManager
 	logDir   string
+	updateDir string
 }
 
 func NewSyncHandler(mgr *ServerManager) *SyncHandler {
@@ -30,6 +34,11 @@ func NewSyncHandler(mgr *ServerManager) *SyncHandler {
 
 func (h *SyncHandler) WithLogDir(dir string) *SyncHandler {
 	h.logDir = dir
+	return h
+}
+
+func (h *SyncHandler) WithUpdateDir(dir string) *SyncHandler {
+	h.updateDir = dir
 	return h
 }
 
@@ -117,6 +126,8 @@ func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/edr/agents", readOnly(h.handleEDRAgentsList))
 	mux.HandleFunc("/api/v1/edr/agents/", readOnly(h.handleEDRAgentByID))
 	mux.HandleFunc("/api/v1/edr/vulns", agentProtected(h.handleEDRVulns))
+	mux.HandleFunc("/api/v1/edr/update/check", agentProtected(h.handleEDRUpdateCheck))
+	mux.HandleFunc("/api/v1/edr/update/download", h.handleEDRUpdateDownload)
 	mux.HandleFunc("/api/v1/compliance/snapshot", protected(h.handleComplianceSnapshot))
 	mux.HandleFunc("/api/v1/admin/orgs", adminOnly(h.handleOrgs))
 	mux.HandleFunc("/api/v1/admin/users", adminOnly(h.handleAdminUsers))
@@ -1056,6 +1067,117 @@ func (h *SyncHandler) handleEDRVulns(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"vulns": vulns})
+}
+
+func (h *SyncHandler) handleEDRUpdateCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		writeError(w, http.StatusMethodNotAllowed, "GET required")
+		return
+	}
+
+	agentVer := r.URL.Query().Get("version")
+	if agentVer == "" {
+		writeError(w, http.StatusBadRequest, "version required")
+		return
+	}
+
+	if h.updateDir == "" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// Read available version from the update directory
+	entries, err := os.ReadDir(h.updateDir)
+	if err != nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// Find the latest version available
+	var latestVer string
+	var latestFile string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if ver, ok := extractAgentVersion(name); ok {
+			if ver > latestVer {
+				latestVer = ver
+				latestFile = name
+			}
+		}
+	}
+
+	if latestVer == "" || latestVer <= agentVer {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	binPath := filepath.Join(h.updateDir, latestFile)
+	data, err := os.ReadFile(binPath)
+	if err != nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	sha := sha256.Sum256(data)
+	downloadURL := fmt.Sprintf("%s/api/v1/edr/update/download?file=%s", serverBaseURL(r), latestFile)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"version":      latestVer,
+		"download_url": downloadURL,
+		"sha256":       hex.EncodeToString(sha[:]),
+		"required":     false,
+	})
+}
+
+func (h *SyncHandler) handleEDRUpdateDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		writeError(w, http.StatusMethodNotAllowed, "GET required")
+		return
+	}
+
+	fileName := r.URL.Query().Get("file")
+	if fileName == "" {
+		writeError(w, http.StatusBadRequest, "file required")
+		return
+	}
+
+	if h.updateDir == "" {
+		writeError(w, http.StatusNotFound, "no update directory configured")
+		return
+	}
+
+	binPath := filepath.Join(h.updateDir, filepath.Clean(fileName))
+	if !strings.HasPrefix(binPath, filepath.Clean(h.updateDir)) {
+		writeError(w, http.StatusForbidden, "invalid path")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	http.ServeFile(w, r, binPath)
+}
+
+func serverBaseURL(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	return fmt.Sprintf("%s://%s", scheme, r.Host)
+}
+
+func extractAgentVersion(name string) (string, bool) {
+	// Patterns: trace-agent-v1.2.3-linux-amd64, trace-agent-v1.2.3.exe, trace-agent-v1.2.3
+	var ver string
+	n := name
+	if len(n) > 4 && n[len(n)-4:] == ".exe" {
+		n = n[:len(n)-4]
+	}
+	_, err := fmt.Sscanf(n, "trace-agent-v%s", &ver)
+	if err != nil {
+		return "", false
+	}
+	return ver, true
 }
 
 func init() {

@@ -18,7 +18,11 @@ import (
 	"github.com/yanmyoaung2004/trace/internal/edr_agent/queue"
 	"github.com/yanmyoaung2004/trace/internal/edr_agent/response"
 	"github.com/yanmyoaung2004/trace/internal/edr_agent/transport"
+	"github.com/yanmyoaung2004/trace/internal/edr_agent/updater"
 )
+
+// Version is set at build time via -ldflags.
+var Version = "0.1.1"
 
 func generateAPIKey() string {
 	b := make([]byte, 32)
@@ -59,6 +63,7 @@ type Agent struct {
 	procTree   *monitor.ProcessTree
 	correlator *monitor.Correlator
 	dedup      *monitor.Deduplicator
+	updater    *updater.Updater
 
 	stats      AgentStats
 }
@@ -116,6 +121,7 @@ func New(cfg *Config) *Agent {
 		yara:     monitor.NewYaraMatcher(),
 		procTree: monitor.NewProcessTree(filepath.Join(cfg.DataDir, "tree")),
 		dedup:    monitor.NewDeduplicator(filepath.Join(cfg.DataDir, "dedup")),
+		updater:  updater.New(cfg.ServerURL, apiKey, Version, cfg.DataDir),
 	}
 
 	if cfg.AgentID != "" {
@@ -233,6 +239,7 @@ func (a *Agent) Start(ctx context.Context) error {
 		}
 	}
 
+	go a.updateLoop(ctx)
 	go a.loop(ctx)
 	go a.batcher(ctx, a.serverCh)
 	go a.actionPoller(ctx)
@@ -450,6 +457,35 @@ func (a *Agent) sendHeartbeat(ctx context.Context) {
 		return
 	}
 	a.stats.HeartbeatsSent++
+}
+
+func (a *Agent) updateLoop(ctx context.Context) {
+	ticker := time.NewTicker(6 * time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-a.done:
+			return
+		case <-ticker.C:
+			info, err := a.updater.Check(ctx)
+			if err != nil {
+				log.Printf("[trace-agent] update check failed: %v", err)
+				continue
+			}
+			if info == nil {
+				continue
+			}
+			log.Printf("[trace-agent] update available: %s", info.Version)
+			if err := a.updater.Apply(ctx, info); err != nil {
+				log.Printf("[trace-agent] update apply failed: %v", err)
+				continue
+			}
+			log.Printf("[trace-agent] updated to %s — restart agent", info.Version)
+		}
+	}
 }
 
 func (a *Agent) batcher(ctx context.Context, ch <-chan *monitor.Event) {
