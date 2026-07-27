@@ -59,7 +59,7 @@
 |---------|:------:|-------|
 | **Cases** | 8/10 | Full CRUD, evidence, IOCs, PDF/HTML export, 25 tests. No state machine validation. |
 | **Investigations** | 8/10 | Timeline, status tracking, report generation, prefix ID lookup. No concurrent update test. |
-| **Compliance** | 7/10 | 8 frameworks, SCA integration, evidence collection, 15 tests. Report depends on SCA mock. |
+| **Compliance** | 9/10 | 8 frameworks, SCA integration, manual assessments, evidence collection, 29 tests with real mock SCA data. SCA parse/merge bugs fixed ([]any casting, report-level score recalculation). Flow-through tests: manual assessment → report → score. All-pass/all-fail edge cases. All 4 renderers tested (text/md/html/JSON). Score tracking verified. |
 | **Hunt engine** | 8/10 | Scheduled, cron-based, 3 default hunts, scheduler start/stop tested. |
 | **Config validation** | 8/10 | DisallowUnknownFields catches typos, CLI config show/set. No env var overrides. |
 
@@ -82,6 +82,6 @@
 | Detection & Response | **8.0** |
 | Infrastructure | **8.1** |
 | UI/CLI | **10.0** |
-| Data Management | **7.8** |
+| Data Management | **8.2** |
 | Cross-Cutting | **8.8** |
-| **System-wide** | **8.6** |
+| **System-wide** | **8.7** |
