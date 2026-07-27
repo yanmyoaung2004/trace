@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -347,11 +348,19 @@ func (h *SyncHandler) handleEDRRegister(w http.ResponseWriter, r *http.Request) 
 		ip = r.RemoteAddr
 	}
 
-	// Hash the agent API key
+	// Hash the agent API key — generate one if not provided (auto-enrollment)
 	apiKeyHash := ""
+	returnedKey := ""
 	if req.APIKey != "" {
 		h := sha256.Sum256([]byte(req.APIKey))
 		apiKeyHash = hex.EncodeToString(h[:])
+	} else {
+		keyBytes := make([]byte, 32)
+		if _, err := rand.Read(keyBytes); err == nil {
+			returnedKey = hex.EncodeToString(keyBytes)
+			h := sha256.Sum256([]byte(returnedKey))
+			apiKeyHash = hex.EncodeToString(h[:])
+		}
 	}
 
 	_, err := h.manager.db.ExecContext(r.Context(),
@@ -365,7 +374,12 @@ func (h *SyncHandler) handleEDRRegister(w http.ResponseWriter, r *http.Request) 
 	}
 
 	log.Printf("[edr] agent registered: %s (%s/%s)", req.Hostname, req.Platform, req.Arch)
-	writeJSON(w, http.StatusOK, map[string]string{"agent_id": id, "status": "registered"})
+
+	resp := map[string]string{"agent_id": id, "status": "registered"}
+	if returnedKey != "" {
+		resp["api_key"] = returnedKey
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *SyncHandler) handleEDRHeartbeat(w http.ResponseWriter, r *http.Request) {

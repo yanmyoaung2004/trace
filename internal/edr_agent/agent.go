@@ -2,6 +2,8 @@ package edr_agent
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -17,6 +19,12 @@ import (
 	"github.com/yanmyoaung2004/trace/internal/edr_agent/response"
 	"github.com/yanmyoaung2004/trace/internal/edr_agent/transport"
 )
+
+func generateAPIKey() string {
+	b := make([]byte, 32)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}
 
 type Agent struct {
 	config *Config
@@ -74,11 +82,18 @@ func New(cfg *Config) *Agent {
 		hostname = cfg.Hostname
 	}
 
+	// Auto-generate API key for first-time enrollment
+	apiKey := cfg.APIKey
+	if apiKey == "" {
+		apiKey = generateAPIKey()
+		cfg.APIKey = apiKey
+	}
+
 	eventCh := make(chan *monitor.Event, cfg.EventQueueSize)
 
 	client := transport.NewClient(&transport.Config{
 		ServerURL:    cfg.ServerURL,
-		APIKey:       cfg.APIKey,
+		APIKey:       apiKey,
 		AgentID:      cfg.AgentID,
 		TLSCertFile:  cfg.TLSCertFile,
 		TLSKeyFile:   cfg.TLSKeyFile,
@@ -339,8 +354,12 @@ func (a *Agent) register(ctx context.Context) error {
 	a.agentID = resp.AgentID
 	a.client.SetAgentID(resp.AgentID)
 
+	// Save agent_id and any auto-generated API key to config
 	cfgPath := filepath.Join(a.config.DataDir, "agent.json")
 	meta := map[string]string{"agent_id": a.agentID}
+	if resp.APIKey != "" {
+		meta["api_key"] = resp.APIKey
+	}
 	if data, err := json.Marshal(meta); err == nil {
 		os.MkdirAll(a.config.DataDir, 0700)
 		os.WriteFile(cfgPath, data, 0600)

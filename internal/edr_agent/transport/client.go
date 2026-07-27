@@ -58,6 +58,7 @@ type RegisterRequest struct {
 type RegisterResponse struct {
 	AgentID string `json:"agent_id"`
 	Status  string `json:"status"`
+	APIKey  string `json:"api_key,omitempty"`
 	Message string `json:"message,omitempty"`
 }
 
