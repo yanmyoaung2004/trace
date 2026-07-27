@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -32,7 +34,6 @@ func main() {
 		showStatus   = flag.Bool("status", false, "Show agent status")
 		verbose      = flag.Bool("verbose", false, "Enable verbose logging")
 	)
-	_ = showStatus
 	flag.Parse()
 
 	if *showVersion {
@@ -114,7 +115,37 @@ func readAgentStatus(cfg *edr_agent.Config) (string, error) {
 	b.WriteString(fmt.Sprintf("PID:          %d\n", os.Getpid()))
 	b.WriteString("Status:       see server for live status\n")
 
+	// Try heartbeat check with server
+	if hbStatus, err := tryHeartbeatCheck(cfg, meta.AgentID); err == nil {
+		b.WriteString(fmt.Sprintf("Server:       %s\n", hbStatus))
+	}
+
 	return b.String(), nil
+}
+
+func tryHeartbeatCheck(cfg *edr_agent.Config, agentID string) (string, error) {
+	if agentID == "" {
+		return "", fmt.Errorf("no agent id")
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	body, _ := json.Marshal(map[string]string{"agent_id": agentID, "hostname": cfg.Hostname})
+	req, err := http.NewRequest("POST", cfg.ServerURL+"/api/v1/edr/heartbeat", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if cfg.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "unreachable", nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 200 {
+		return "connected", nil
+	}
+	return fmt.Sprintf("HTTP %d", resp.StatusCode), nil
 }
 
 func loadConfig(path string) *edr_agent.Config {
