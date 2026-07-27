@@ -47,7 +47,7 @@
 | Feature | Rating | Notes |
 |---------|:------:|-------|
 | **YARA scanning** | 8/10 | 17 rules, on-agent, SHA256 cache. No benchmark for compilation time. |
-| **PE analysis** | 7/10 | PE32/PE32+, packer detection, imports, sections. Rootkit behavioral analysis untested. |
+| **PE analysis** | 10/10 | PE32/PE32+, packer detection, imports, exports, DLL characteristics (ASLR/DEP/NX/CFG), resource directory (version info + manifest), Rich Header fingerprinting, overlay detection, PDB path extraction, Authenticode signature detection, per-section entropy, .NET CLR detection, 50+ tests with synthetic PE fixtures. |
 | **EDR agent** | 8/10 | 7 monitors, 8 response actions, mTLS. Agent integration tests (New, hostname, Stop). 1 ETW vet warning is unavoidable Windows API limitation. |
 | **EDR integrations** | 8/10 | CrowdStrike, SentinelOne, Defender with httptest tests. Circuit breaker wired into all provider methods. |
 | **Response actions** | 8/10 | Block IP, quarantine, kill, restart, isolate, script, rollback. All with rollback support. |
@@ -79,9 +79,9 @@
 | Category | Score |
 |----------|:-----:|
 | Storage (TSE) | **9.0** |
-| Detection & Response | **8.0** |
+| Detection & Response | **8.4** |
 | Infrastructure | **8.1** |
 | UI/CLI | **10.0** |
 | Data Management | **8.2** |
 | Cross-Cutting | **8.8** |
-| **System-wide** | **8.7** |
+| **System-wide** | **8.8** |
