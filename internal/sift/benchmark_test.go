@@ -106,3 +106,55 @@ func BenchmarkPEAnalyze_NotPE(b *testing.B) {
 		})
 	}
 }
+
+func BenchmarkAnalyzePE_SyntheticPE32(b *testing.B) {
+	peData := testPE32(b, []peTestSection{
+		{Name: ".text", RawSize: 512, RawData: lowEntropyData(512), Flags: imgScnCntCode | imgScnMemExecute | imgScnMemRead},
+	})
+	tmpDir := b.TempDir()
+	pePath := filepath.Join(tmpDir, "bench32.exe")
+	if err := os.WriteFile(pePath, peData, 0644); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		AnalyzePE(pePath)
+	}
+}
+
+func BenchmarkAnalyzePE_SyntheticPE64(b *testing.B) {
+	peData := testPE64(b, []peTestSection{
+		{Name: ".text", RawSize: 512, RawData: lowEntropyData(512), Flags: imgScnCntCode | imgScnMemExecute | imgScnMemRead},
+	})
+	tmpDir := b.TempDir()
+	pePath := filepath.Join(tmpDir, "bench64.exe")
+	if err := os.WriteFile(pePath, peData, 0644); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		AnalyzePE(pePath)
+	}
+}
+
+func BenchmarkParsePEImportTable(b *testing.B) {
+	peData := testPE32(b, []peTestSection{
+		{Name: ".text", RawSize: 512, RawData: lowEntropyData(512), Flags: imgScnCntCode | imgScnMemExecute | imgScnMemRead},
+	})
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		parsePEImportTable(peData)
+	}
+}
+
+func BenchmarkCalculateEntropy(b *testing.B) {
+	data := highEntropyData(4096, 0xAB)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		calculateEntropy(data)
+	}
+}

@@ -11,12 +11,12 @@ import (
 
 // --- Test fixture generators ---
 
-func testPE32(t *testing.T, sections []peTestSection) []byte {
+func testPE32(t testing.TB, sections []peTestSection) []byte {
 	t.Helper()
 	return buildPE32(sections, false, 0x1000, 1700000000)
 }
 
-func testPE64(t *testing.T, sections []peTestSection) []byte {
+func testPE64(t testing.TB, sections []peTestSection) []byte {
 	t.Helper()
 	return buildPE64(sections, false, 0x1000, 1700000000)
 }
