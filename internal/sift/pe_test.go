@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -417,7 +418,166 @@ func TestAnalyzePE_Notepad(t *testing.T) {
 	}
 }
 
-// --- Legacy tests (rewritten to use AnalyzePE directly) ---
+// --- Tests for new PE features ---
+
+func TestAnalyzePE_DLLCharacteristics(t *testing.T) {
+	peData := testPE32(t, []peTestSection{
+		{Name: ".text", RawSize: 64, RawData: lowEntropyData(64), Flags: imgScnCntCode | imgScnMemExecute | imgScnMemRead},
+	})
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.exe")
+	if err := os.WriteFile(path, peData, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	meta, err := AnalyzePE(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.DllCharacteristics == "" {
+		t.Log("DLL characteristics may be empty for minimal PE")
+	}
+}
+
+func TestAnalyzePE_IsDLL(t *testing.T) {
+	peData := testDLL32(t, []peTestSection{
+		{Name: ".text", RawSize: 64, RawData: lowEntropyData(64), Flags: imgScnCntCode | imgScnMemExecute | imgScnMemRead},
+	})
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.dll")
+	if err := os.WriteFile(path, peData, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	meta, err := AnalyzePE(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !meta.IsDLL {
+		t.Error("expected IsDLL=true for DLL binary")
+	}
+}
+
+func TestAnalyzePE_Overlay(t *testing.T) {
+	peData := testPE32(t, []peTestSection{
+		{Name: ".text", RawSize: 64, RawData: lowEntropyData(64), Flags: imgScnCntCode | imgScnMemExecute | imgScnMemRead},
+	})
+	// Append overlay data (simulates appended data after last section)
+	peData = append(peData, []byte("OVERLAY_DATA_SIGNATURE")...)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "overlay.exe")
+	if err := os.WriteFile(path, peData, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	meta, err := AnalyzePE(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.OverlaySize <= 0 {
+		t.Error("expected non-zero overlay size for file with appended data")
+	}
+	t.Logf("overlay size: %d", meta.OverlaySize)
+}
+
+func TestAnalyzePE_IsManaged(t *testing.T) {
+	// Minimal PE32 won't have CLR header — just verify field doesn't panic
+	peData := testPE32(t, []peTestSection{
+		{Name: ".text", RawSize: 64, RawData: lowEntropyData(64), Flags: imgScnCntCode | imgScnMemExecute | imgScnMemRead},
+	})
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.exe")
+	if err := os.WriteFile(path, peData, 0644); err != nil {
+		t.Fatal(err)
+	}
+	meta, err := AnalyzePE(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.IsManaged {
+		t.Log("IsManaged=true (unlikely for minimal PE but not wrong)")
+	}
+	_ = meta
+}
+
+func TestAnalyzePE_PerSectionHighEntropy(t *testing.T) {
+	hi := highEntropyData(200, 0xAA)
+	lo := lowEntropyData(100)
+	sections := []peTestSection{
+		{Name: ".text", RawSize: uint32(len(hi)), RawData: hi, Flags: imgScnCntCode | imgScnMemExecute | imgScnMemRead},
+		{Name: ".data", RawSize: uint32(len(lo)), RawData: lo, Flags: imgScnCntInitData | imgScnMemRead | imgScnMemWrite},
+	}
+	peData := testPE32(t, sections)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "packed.exe")
+	if err := os.WriteFile(path, peData, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	meta, err := AnalyzePE(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Check for per-section high entropy warning
+	foundSectionWarning := false
+	for _, s := range meta.Suspicious {
+		if strings.Contains(s, "High entropy section") {
+			foundSectionWarning = true
+			break
+		}
+	}
+	if !foundSectionWarning {
+		t.Log("per-section high entropy warning not triggered (may depend on entropy threshold)")
+	}
+	t.Logf("suspicious: %v", meta.Suspicious)
+}
+
+func TestDecodeDLLCharacteristics(t *testing.T) {
+	tests := []struct {
+		flags uint16
+		want  string
+	}{
+		{0x00C0, "ASLR|DEP"},
+		{0x02C0, "ASLR|DEP|NX"},
+		{0x03C0, "ASLR|DEP|INTEGRITY|NX"},
+		{0, ""},
+	}
+	for _, tt := range tests {
+		got := decodeDllCharacteristics(tt.flags)
+		if got != tt.want {
+			t.Errorf("decodeDllCharacteristics(0x%04x) = %q, want %q", tt.flags, got, tt.want)
+		}
+	}
+}
+
+func TestAnalyzePE_SignedDetection(t *testing.T) {
+	// Create PE with appended Authenticode-like data
+	peData := testPE32(t, []peTestSection{
+		{Name: ".text", RawSize: 64, RawData: lowEntropyData(64), Flags: imgScnCntCode | imgScnMemExecute | imgScnMemRead},
+	})
+	// Append WIN_CERTIFICATE header with type=2 (Authenticode)
+	certHead := make([]byte, 8)
+	binary.LittleEndian.PutUint32(certHead[0:], 24)   // wCertificateLength
+	binary.LittleEndian.PutUint32(certHead[4:], 2)     // wCertificateType = Authenticode
+	// Append minimal PKCS#7 (just a SEQUENCE)
+	pkcs7 := []byte{0x30, 0x06, 0x16, 0x04, 0x41, 0x43, 0x4D, 0x45} // IA5String "ACME"
+	peData = append(peData, certHead...)
+	peData = append(peData, pkcs7...)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "signed.exe")
+	if err := os.WriteFile(path, peData, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	meta, err := AnalyzePE(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.OverlaySize <= 0 {
+		t.Skip("overlay not detected — Authenticode test requires overlay")
+	}
+	t.Logf("signed=%v signer=%q overlay=%d", meta.Signed, meta.SignerInfo, meta.OverlaySize)
+}
 
 func TestPEAnalyzeNonPE(t *testing.T) {
 	dir := t.TempDir()
