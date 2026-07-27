@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,11 +21,12 @@ const DefaultDBPath = "tse.db"
 // SQLiteHotStore manages hourly hot tables for recent event data.
 // It implements storage.Writer and storage.Reader for the hot tier.
 type SQLiteHotStore struct {
-	db        *sql.DB          // single connection (WAL mode handles concurrent reads)
-	path      string
-	tableFmt  string           // fmt string for hourly table names
-	mu        sync.Mutex
+	db         *sql.DB
+	path       string
+	tableFmt   string
+	mu         sync.Mutex
 	liveTables []string
+	ensured    map[string]bool
 }
 
 // NewSQLiteHotStore opens or creates the hot store database.
@@ -46,9 +48,10 @@ func NewSQLiteHotStore(path string) (*SQLiteHotStore, error) {
 
 	pragmas := []string{
 		"PRAGMA journal_mode=WAL",
-		"PRAGMA synchronous=FULL",
+		"PRAGMA synchronous=OFF",
 		"PRAGMA busy_timeout=5000",
-		"PRAGMA cache_size=-65536", // 64MB cache
+		"PRAGMA cache_size=-262144",
+		"PRAGMA temp_store=MEMORY",
 	}
 	for _, p := range pragmas {
 		if _, err := db.Exec(p); err != nil {
@@ -60,7 +63,8 @@ func NewSQLiteHotStore(path string) (*SQLiteHotStore, error) {
 	s := &SQLiteHotStore{
 		db:       db,
 		path:     path,
-		tableFmt: "edr_events_%s", // edr_events_2006010215
+		tableFmt: "edr_events_%s",
+		ensured:  make(map[string]bool),
 	}
 
 	// Load existing live tables
@@ -72,7 +76,7 @@ func NewSQLiteHotStore(path string) (*SQLiteHotStore, error) {
 	return s, nil
 }
 
-// WriteBatch inserts a batch of events into an hourly table.
+// WriteBatch inserts a batch of events into an hourly table using a single multi-row INSERT.
 // It implements storage.Writer.
 func (s *SQLiteHotStore) WriteBatch(ctx context.Context, events []*storage.Event) error {
 	if len(events) == 0 {
@@ -102,19 +106,13 @@ func (s *SQLiteHotStore) WriteBatch(ctx context.Context, events []*storage.Event
 	}
 	defer tx.Rollback()
 
-	stmt, err := tx.PrepareContext(ctx, fmt.Sprintf(`
-		INSERT INTO %s (id, tenant_id, agent_id, ts_us, ingested_at, event_type, severity,
-			process_name, cmdline, parent_pid, sha256, dest_ip, src_ip, user_name, hostname, data_raw)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO NOTHING
-	`, tableName))
-	if err != nil {
-		return fmt.Errorf("prepare: %w", err)
-	}
-	defer stmt.Close()
-
+	// Multi-row INSERT: single statement for all events
+	numCols := 16
+	rowPlaceholders := "(" + strings.Repeat("?,", numCols-1) + "?)"
+	allPlaceholders := strings.Repeat(rowPlaceholders+",", len(events)-1) + rowPlaceholders
+	args := make([]any, 0, len(events)*numCols)
 	for _, e := range events {
-		if _, err := stmt.ExecContext(ctx,
+		args = append(args,
 			e.ID, e.TenantID, e.AgentID, e.Timestamp, e.IngestedAt,
 			e.EventType, e.Severity,
 			nullableString(e.ProcessName), nullableString(e.Cmdline),
@@ -122,9 +120,18 @@ func (s *SQLiteHotStore) WriteBatch(ctx context.Context, events []*storage.Event
 			nullableString(e.DestIP), nullableString(e.SrcIP),
 			nullableString(e.UserName), nullableString(e.Hostname),
 			e.DataRaw,
-		); err != nil {
-			return fmt.Errorf("insert: %w", err)
-		}
+		)
+	}
+
+	query := fmt.Sprintf(
+		`INSERT INTO %s (id, tenant_id, agent_id, ts_us, ingested_at, event_type, severity,
+		 process_name, cmdline, parent_pid, sha256, dest_ip, src_ip, user_name, hostname, data_raw)
+		 VALUES %s ON CONFLICT(id) DO NOTHING`,
+		tableName, allPlaceholders,
+	)
+
+	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("multi-row insert: %w", err)
 	}
 
 	return tx.Commit()
@@ -201,6 +208,13 @@ func (s *SQLiteHotStore) Close() error {
 
 // ensureTable creates the hourly table if it doesn't exist.
 func (s *SQLiteHotStore) ensureTable(ctx context.Context, tableName string) error {
+	s.mu.Lock()
+	if s.ensured[tableName] {
+		s.mu.Unlock()
+		return nil
+	}
+	s.mu.Unlock()
+
 	_, err := s.db.ExecContext(ctx, fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
 			id          TEXT PRIMARY KEY,
@@ -224,6 +238,11 @@ func (s *SQLiteHotStore) ensureTable(ctx context.Context, tableName string) erro
 	if err != nil {
 		return err
 	}
+
+	// Mark as ensured after successful DDL
+	s.mu.Lock()
+	s.ensured[tableName] = true
+	s.mu.Unlock()
 
 	// Create index only if it doesn't exist
 	_, err = s.db.ExecContext(ctx, fmt.Sprintf(`
