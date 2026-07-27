@@ -19,14 +19,21 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/yanmyoaung2004/trace/internal/investigation"
+	"github.com/yanmyoaung2004/trace/internal/storage"
 	"github.com/yanmyoaung2004/trace/internal/storage/metrics"
 )
 
 type SyncHandler struct {
-	manager  *ServerManager
-	logDir   string
-	updateDir string
+	manager     *ServerManager
+	logDir      string
+	updateDir   string
 	configStore *remoteConfigStore
+	tseWriter   EventWriter
+}
+
+// EventWriter is implemented by the TSE engine for ingesting agent events.
+type EventWriter interface {
+	WriteEvents(ctx context.Context, events []*storage.Event) error
 }
 
 func NewSyncHandler(mgr *ServerManager) *SyncHandler {
@@ -45,6 +52,11 @@ func (h *SyncHandler) WithUpdateDir(dir string) *SyncHandler {
 
 func (h *SyncHandler) WithConfigStore(s *remoteConfigStore) *SyncHandler {
 	h.configStore = s
+	return h
+}
+
+func (h *SyncHandler) WithTSEWriter(w EventWriter) *SyncHandler {
+	h.tseWriter = w
 	return h
 }
 
@@ -497,6 +509,45 @@ func (h *SyncHandler) handleEDREvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"stored": stored, "received": len(body.Events)})
+
+	// Optionally write events to TSE for long-term storage
+	if h.tseWriter != nil && stored > 0 {
+		go h.writeEventsToTSE(context.Background(), body.AgentID, body.Events)
+	}
+}
+
+func (h *SyncHandler) writeEventsToTSE(ctx context.Context, agentID string, events []json.RawMessage) {
+	tseEvents := make([]*storage.Event, 0, len(events))
+	for _, raw := range events {
+		var evt struct {
+			ID        string `json:"id"`
+			Type      string `json:"type"`
+			Severity  int    `json:"severity"`
+			Timestamp string `json:"timestamp"`
+			Data      string `json:"data,omitempty"`
+		}
+		if err := json.Unmarshal(raw, &evt); err != nil || evt.ID == "" {
+			continue
+		}
+		ts := time.Now().UnixMicro()
+		if t, err := time.Parse(time.RFC3339, evt.Timestamp); err == nil {
+			ts = t.UnixMicro()
+		}
+		tseEvents = append(tseEvents, &storage.Event{
+			ID:        evt.ID,
+			TenantID:  "default",
+			AgentID:   agentID,
+			Timestamp: ts,
+			EventType: evt.Type,
+			Severity:  evt.Severity,
+			DataRaw:   []byte(evt.Data),
+		})
+	}
+	if len(tseEvents) > 0 {
+		if err := h.tseWriter.WriteEvents(ctx, tseEvents); err != nil {
+			log.Printf("[server] tse write: %v", err)
+		}
+	}
 }
 
 func (h *SyncHandler) handleEDRActionsPending(w http.ResponseWriter, r *http.Request) {
@@ -830,6 +881,7 @@ type ServeOptions struct {
 	LogDir     string
 	DataDir    string
 	DB         *sql.DB
+	TSEWriter  EventWriter
 }
 
 func ServeHTTP(opts ServeOptions, mgr *ServerManager, dashboard DashboardDataProvider) (*http.Server, error) {
@@ -855,6 +907,9 @@ func ServeHTTP(opts ServeOptions, mgr *ServerManager, dashboard DashboardDataPro
 	sync := NewSyncHandler(mgr).WithLogDir(opts.LogDir)
 	if opts.DataDir != "" {
 		sync.configStore = newRemoteConfigStore(opts.DataDir)
+	}
+	if opts.TSEWriter != nil {
+		sync.tseWriter = opts.TSEWriter
 	}
 	sync.RegisterRoutes(mux)
 

@@ -14,7 +14,7 @@ import (
 	"github.com/yanmyoaung2004/trace/internal/investigation"
 )
 
-func RunServer(cfg *config.Config, database *db.DB, invMgr *investigation.Manager) error {
+func RunServer(cfg *config.Config, database *db.DB, invMgr *investigation.Manager, tseWriter EventWriter) error {
 	mgr := NewServerManager(database)
 	if err := mgr.Migrate(); err != nil {
 		return fmt.Errorf("server migrate: %w", err)
@@ -45,6 +45,7 @@ func RunServer(cfg *config.Config, database *db.DB, invMgr *investigation.Manage
 		LogDir:     cfg.LogDir,
 		DataDir:    cfg.DataDir,
 		DB:         database.DB,
+		TSEWriter:  tseWriter,
 	}, mgr, mgr)
 	if err != nil {
 		return fmt.Errorf("start HTTP server: %w", err)
