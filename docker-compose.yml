@@ -71,6 +71,25 @@ services:
     environment:
       TRACE_DB_PATH: /root/.trace/trace.db
 
+  trace-agent:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.agent
+    depends_on:
+      trace-leader:
+        condition: service_started
+    command: >
+      --server http://trace-leader:8080
+      --verbose
+    volumes:
+      - /var/log:/var/log:ro
+      - /etc:/host/etc:ro
+    cap_add:
+      - SYS_PTRACE
+      - SYS_ADMIN
+    pid: host
+    privileged: true
+
 volumes:
   minio-data:
   trace-leader-data:

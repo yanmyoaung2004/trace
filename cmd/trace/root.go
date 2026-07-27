@@ -537,6 +537,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newTSECmd())
 	cmd.AddCommand(newAgentCmd())
 	cmd.AddCommand(newBuildCmd())
+	cmd.AddCommand(newDemoCmd())
 
 	return cmd
 }
