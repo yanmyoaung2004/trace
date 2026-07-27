@@ -1,0 +1,11 @@
+Interactive setup that creates ~/.trace/config.json with your preferences.
+You can skip any step — the tool works without external API keys.
+
+Usage:
+  trace init [flags]
+
+Flags:
+  -h, --help   help for init
+
+Global Flags:
+  -c, --config string   path to config file

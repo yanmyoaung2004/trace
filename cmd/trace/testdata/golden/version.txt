@@ -1,0 +1,10 @@
+Print version information
+
+Usage:
+  trace version [flags]
+
+Flags:
+  -h, --help   help for version
+
+Global Flags:
+  -c, --config string   path to config file

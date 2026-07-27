@@ -33,7 +33,7 @@ func newTSECmd() *cobra.Command {
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
 			sp, _ := cmdCobra.Flags().GetString("storage-path")
 			if sp != "" {
-				return tseStatusStandalone(sp)
+				return tseStatusStandalone(cmdCobra, sp)
 			}
 			if app.tse == nil {
 				return fmt.Errorf("TSE not enabled (use --tse flag on serve, or --storage-path)")
@@ -42,7 +42,7 @@ func newTSECmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Print(s)
+			outstr(cmdCobra, s)
 			return nil
 		},
 	}
@@ -70,7 +70,7 @@ func newTSECmd() *cobra.Command {
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
 			sp, _ := cmdCobra.Flags().GetString("storage-path")
 			if sp != "" {
-				return tseInspectStandalone(sp)
+				return tseInspectStandalone(cmdCobra, sp)
 			}
 			if app.tse == nil {
 				return fmt.Errorf("TSE not enabled (use --tse flag on serve, or --storage-path)")
@@ -79,7 +79,7 @@ func newTSECmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Print(s)
+			outstr(cmdCobra, s)
 			return nil
 		},
 	}
@@ -117,7 +117,7 @@ func newTSECmd() *cobra.Command {
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
 			meta := metrics.Global.Snapshot()
 			for k, v := range meta {
-				fmt.Printf("  %-25s %v\n", k, v)
+				outf(cmdCobra, "  %-25s %v\n", k, v)
 			}
 			return nil
 		},
@@ -137,7 +137,7 @@ func newTSECmd() *cobra.Command {
 				return err
 			}
 			data, _ := json.MarshalIndent(cfg.TSE, "", "  ")
-			fmt.Println(string(data))
+			outln(cmdCobra, string(data))
 			return nil
 		},
 	}
@@ -191,7 +191,7 @@ func newTSECmd() *cobra.Command {
 	return cmd
 }
 
-func tseStatusStandalone(storagePath string) error {
+func tseStatusStandalone(cmd *cobra.Command, storagePath string) error {
 	ctx := context.Background()
 	m, err := manifest.NewManifest(filepath.Join(storagePath, "manifest.db"))
 	if err != nil {
@@ -218,7 +218,7 @@ func tseStatusStandalone(storagePath string) error {
 		hot.Close()
 	}
 
-	fmt.Printf(`TSE Status:
+	outf(cmd, `TSE Status:
   Storage path: %s
   Watermark:    %s
   Hot events:   %d
@@ -227,15 +227,15 @@ func tseStatusStandalone(storagePath string) error {
   Parquet files:
 `, storagePath, wm.LastID, hotEventCount, hotTables, len(files))
 	for _, f := range files {
-		fmt.Printf("    %s  (level=%d, tenant=%s)\n", f.Path, f.Level, f.TenantID)
+		outf(cmd, "    %s  (level=%d, tenant=%s)\n", f.Path, f.Level, f.TenantID)
 	}
 	if len(files) == 0 {
-		fmt.Println("    (none)")
+		outln(cmd, "    (none)")
 	}
 	return nil
 }
 
-func tseInspectStandalone(storagePath string) error {
+func tseInspectStandalone(cmd *cobra.Command, storagePath string) error {
 	m, err := manifest.NewManifest(filepath.Join(storagePath, "manifest.db"))
 	if err != nil {
 		return fmt.Errorf("open manifest: %w", err)
@@ -246,6 +246,6 @@ func tseInspectStandalone(storagePath string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Print(s)
+	outstr(cmd, s)
 	return nil
 }

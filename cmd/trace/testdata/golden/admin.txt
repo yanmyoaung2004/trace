@@ -1,0 +1,17 @@
+Manage organizations and users. Requires admin API key.
+
+Usage:
+  trace admin [command]
+
+Available Commands:
+  org         Manage organizations
+  rotate-key  Rotate API key for a user
+  user        Manage users
+
+Flags:
+  -h, --help   help for admin
+
+Global Flags:
+  -c, --config string   path to config file
+
+Use "trace admin [command] --help" for more information about a command.

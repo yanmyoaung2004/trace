@@ -1,0 +1,34 @@
+Create, view, and manage security investigation cases with timeline, IOCs, and evidence.
+
+Examples:
+  trace case create --title "Phishing campaign" --severity high
+  trace case list
+  trace case view <id>
+  trace case note <id> "Found additional indicators"
+  trace case ioc <id> --type ip --value 10.0.0.5
+  trace case assign <id> --to analyst@example.com
+  trace case close <id> --resolution "resolved"
+
+Usage:
+  trace case [flags]
+  trace case [command]
+
+Available Commands:
+  assign      Assign a case to an analyst
+  close       Close a case
+  create      Create a new case
+  evidence    Attach evidence to a case
+  export      Export a case as JSON
+  export-pdf  Export a case as PDF
+  ioc         Add an IOC to a case
+  list        List cases
+  note        Add a note to a case
+  view        View case details
+
+Flags:
+  -h, --help   help for case
+
+Global Flags:
+  -c, --config string   path to config file
+
+Use "trace case [command] --help" for more information about a command.

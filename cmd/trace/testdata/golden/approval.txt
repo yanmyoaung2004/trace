@@ -1,0 +1,17 @@
+Manage HITL approval requests
+
+Usage:
+  trace approval [command]
+
+Available Commands:
+  approve     Approve a pending investigation step
+  deny        Deny a pending investigation step
+  pending     List investigations waiting for approval
+
+Flags:
+  -h, --help   help for approval
+
+Global Flags:
+  -c, --config string   path to config file
+
+Use "trace approval [command] --help" for more information about a command.

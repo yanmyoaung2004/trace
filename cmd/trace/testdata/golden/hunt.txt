@@ -1,0 +1,28 @@
+Create, list, and manage scheduled security investigations.
+Hunts run playbooks on a schedule to proactively find threats.
+
+Examples:
+  trace hunt create --name nightly-scan --playbook file-analysis --param path=/tmp --schedule 12h
+  trace hunt list
+  trace hunt run known-malware-scan
+  trace hunt pause known-malware-scan
+
+Usage:
+  trace hunt [flags]
+  trace hunt [command]
+
+Available Commands:
+  create      Create a new scheduled hunt
+  delete      Delete a hunt
+  list        List all scheduled hunts
+  pause       Pause a scheduled hunt
+  resume      Resume a paused hunt
+  run         Execute a hunt immediately
+
+Flags:
+  -h, --help   help for hunt
+
+Global Flags:
+  -c, --config string   path to config file
+
+Use "trace hunt [command] --help" for more information about a command.

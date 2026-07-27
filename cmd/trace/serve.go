@@ -9,10 +9,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/yanmyoaung2004/trace/internal/agent"
 	"github.com/yanmyoaung2004/trace/internal/edge"
 	"github.com/yanmyoaung2004/trace/internal/integration/notifier"
 	"github.com/yanmyoaung2004/trace/internal/siem"
+	"github.com/yanmyoaung2004/trace/internal/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -118,6 +120,22 @@ Examples:
 				engine := siem.New(siemCfg)
 				engine.OnAlert(func(alert *siem.Alert) {
 					log.Printf("[ALERT] %s (severity: %d, rule: %s)", alert.Title, alert.Severity, alert.RuleID)
+
+					// Write alert to TSE through the ingest queue (rate-limited)
+					if app.tse != nil && app.tse.Queue != nil {
+						tseEvent := &storage.Event{
+							ID:        uuid.New().String(),
+							TenantID:  "default",
+							AgentID:   "siem",
+							Timestamp: alert.CreatedAt.UnixMicro(),
+							EventType: fmt.Sprintf("alert:%s", alert.RuleID),
+							Severity:  alert.Severity,
+							Hostname:  alert.Source,
+						}
+						if tseErr := app.tse.WriteEvents(ctx, []*storage.Event{tseEvent}); tseErr != nil {
+							log.Printf("[siem] tse write: %v", tseErr)
+						}
+					}
 
 					var alertCaseID string
 					if alert.Severity >= 4 {

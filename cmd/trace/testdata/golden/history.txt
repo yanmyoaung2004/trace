@@ -1,0 +1,14 @@
+List recent investigations
+
+Usage:
+  trace history [flags]
+
+Aliases:
+  history, hist
+
+Flags:
+  -h, --help        help for history
+  -n, --limit int   number of investigations to show (default 20)
+
+Global Flags:
+  -c, --config string   path to config file

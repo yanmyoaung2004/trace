@@ -1,0 +1,33 @@
+Start the Trace daemon. Optionally enables SIEM log monitoring and TSE storage.
+Examples:
+  trace serve
+  trace serve --siem
+  trace serve --tse
+  trace serve --siem --tse
+
+Usage:
+  trace serve [flags]
+
+Flags:
+      --export string               start HTML report server on given address (e.g. :8080)
+  -h, --help                        help for serve
+      --log-dir strings             directories to watch for log files
+      --server-addr string          address of central server for edge sync (e.g. http://localhost:8080)
+      --siem                        enable SIEM log monitoring
+      --syslog-addr string          syslog listener address (e.g. :514)
+      --tls-auto                    auto-generate self-signed TLS certificate
+      --tls-cert string             TLS certificate file
+      --tls-key string              TLS private key file
+      --tse                         enable Trace Storage Engine (columnar event store)
+      --tse-compression string      Parquet compression (zstd, snappy, gzip, lz4, none) (default "zstd")
+      --tse-compression-level int   Parquet compression level (0=default)
+      --tse-node-role string        TSE node role: leader, follower, or auto (default) (default "auto")
+      --tse-row-group-size int      Parquet row group size (default 1,000,000)
+      --tse-s3-bucket string        S3 bucket for Parquet files (enables S3 cold storage)
+      --tse-s3-endpoint string      S3/MinIO endpoint (e.g. minio:9000)
+      --tse-s3-region string        S3 region (e.g. us-east-1)
+      --tse-s3-ssl                  Use HTTPS for S3 connections
+      --tse-storage-path string     TSE data directory
+
+Global Flags:
+  -c, --config string   path to config file

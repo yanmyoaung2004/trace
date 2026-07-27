@@ -1,0 +1,15 @@
+Generate a self-signed TLS certificate and RSA key for development use.
+Example:
+  trace genkey --host localhost --out ~/.trace/tls
+
+Usage:
+  trace genkey [flags]
+
+Flags:
+      --bits int      RSA key size in bits (default 2048)
+  -h, --help          help for genkey
+      --host string   certificate hostname or IP (default "localhost")
+      --out string    output directory (default ~/.trace/tls)
+
+Global Flags:
+  -c, --config string   path to config file

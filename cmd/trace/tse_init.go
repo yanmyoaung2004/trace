@@ -44,10 +44,20 @@ type TSE struct {
 	Router   *router.Router
 	Reader   cold.ColdReader
 	Queue    *queue.IngestQueue
+	Batch    *batch.BatchWriter
 	Writer   *batch.WriterGoroutine
 	Leader   *storage.LeaderElector // nil when no S3 configured
 	Ctx      context.Context
 	Cancel   context.CancelFunc
+	bwCtx    context.Context
+	bwCancel context.CancelFunc
+}
+
+// WriteEvents submits events through the ingest queue for rate-limited processing.
+// The queue applies backpressure: channel → spill-to-disk → drop.
+// Events are batch-written to SQLite by the background batch writer.
+func (t *TSE) WriteEvents(ctx context.Context, events []*storage.Event) error {
+	return t.Queue.WriteBatch(ctx, events)
 }
 
 // initTSE initializes the Trace Storage Engine from config.
@@ -140,6 +150,9 @@ func initTSE(cfg *config.TSEConfig) (*TSE, error) {
 		return nil, fmt.Errorf("queue: %w", err)
 	}
 
+	// Batch writer drains the queue and writes to SQLite in batches
+	bw := batch.NewBatchWriter(1000, 250*time.Millisecond)
+
 	// Check disk at startup
 	if du, err := storage.CheckDisk(storagePath); err == nil {
 		log.Printf("[tse] disk: %d/%d GB (%.0f%%)",
@@ -155,6 +168,9 @@ func initTSE(cfg *config.TSEConfig) (*TSE, error) {
 	} else {
 		log.Printf("[tse] disk check unavailable: %v", err)
 	}
+
+	// Batch writer context (separate from flusher context for independent lifecycle)
+	bwCtx, bwCancel := context.WithCancel(context.Background())
 
 	// Leader elector (S3-based, for multi-node active-passive)
 	var leader *storage.LeaderElector
@@ -199,17 +215,24 @@ func initTSE(cfg *config.TSEConfig) (*TSE, error) {
 		Router:   r,
 		Reader:   cr,
 		Queue:    q,
+		Batch:    bw,
 		Leader:   leader,
 		Ctx:      ctx,
 		Cancel:   cancel,
+		bwCtx:    bwCtx,
+		bwCancel: bwCancel,
 	}, nil
 }
 
-// StartTSE starts the TSE background tasks (flusher, GC, leader election).
+// StartTSE starts the TSE background tasks (queue drain, flusher, GC, leader election).
 func (t *TSE) StartTSE() {
 	if t == nil {
 		return
 	}
+
+	// Batch writer: drains the ingest queue and writes batches to SQLite
+	go t.Batch.Run(t.bwCtx, t.Queue.Dequeue(), t.Hot.WriteBatch)
+	log.Printf("[tse] batch writer started")
 
 	// Leader election (multi-node mode)
 	if t.Leader != nil {
@@ -220,7 +243,7 @@ func (t *TSE) StartTSE() {
 	// Flusher — only runs on the leader in multi-node mode
 	if t.Leader == nil || t.Leader.IsLeader() {
 		go t.Flusher.Run(t.Ctx)
-		log.Printf("[tse] flusher started (leader=%v, s3=%v)", t.Leader != nil, t.Leader != nil)
+		log.Printf("[tse] flusher started")
 	} else {
 		log.Printf("[tse] flusher not started (follower mode)")
 	}
@@ -234,6 +257,10 @@ func (t *TSE) StopTSE() {
 	if t == nil {
 		return
 	}
+
+	// Stop batch writer first (drains pending queue events)
+	t.bwCancel()
+
 	// Signal flusher to stop and wait for in-flight flush to complete
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer stopCancel()

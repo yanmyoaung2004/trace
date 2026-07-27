@@ -1,0 +1,18 @@
+Manage external agent plugins
+
+Usage:
+  trace plugin [command]
+
+Available Commands:
+  install     Download and install a plugin
+  list        List installed plugins and their capabilities
+  remove      Remove an installed plugin
+  search      Search available plugins in the registry
+
+Flags:
+  -h, --help   help for plugin
+
+Global Flags:
+  -c, --config string   path to config file
+
+Use "trace plugin [command] --help" for more information about a command.

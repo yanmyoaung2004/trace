@@ -1,0 +1,36 @@
+Manage EDR agents and dispatch remote actions.
+
+Commands connect to a running Trace server to list agents, view telemetry,
+and send response actions to deployed endpoint agents.
+
+Requires --server or TRACE_SERVER_URL env var and --api-key or TRACE_API_KEY.
+
+Subcommands:
+  list          List all registered EDR agents
+  view          View agent details and status
+  events        View recent events from an agent
+  dispatch      Send a response action to an agent (kill, quarantine, block, etc.)
+  dismiss       Mark an alert as false positive (trains the FP learning model)
+  revoke        Remove an agent from the server
+
+Usage:
+  trace edr [command]
+
+Available Commands:
+  dismiss     Mark an alert as false positive (trains FP learning)
+  dispatch    Send a response action to an agent
+  events      View recent events from an agent
+  list        List all registered EDR agents
+  revoke      Revoke and remove an agent from the server
+  view        View agent details and status
+  vuln        Query agent vulnerabilities
+
+Flags:
+      --api-key string   API key for server authentication
+  -h, --help             help for edr
+      --server string    Trace server URL (default: http://localhost:8080)
+
+Global Flags:
+  -c, --config string   path to config file
+
+Use "trace edr [command] --help" for more information about a command.

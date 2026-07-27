@@ -1,0 +1,11 @@
+Generate or view investigation report
+
+Usage:
+  trace report [investigation-id] [flags]
+
+Flags:
+  -h, --help            help for report
+  -o, --output string   save report to file
+
+Global Flags:
+  -c, --config string   path to config file

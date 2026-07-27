@@ -1,0 +1,33 @@
+Trace orchestrates security agents to investigate threats, enrich IOCs, analyze files, and automate response actions.
+
+Usage:
+  trace [flags]
+  trace [command]
+
+Available Commands:
+  admin       Administrative commands (org and user management)
+  approval    Manage HITL approval requests
+  case        Manage security cases
+  completion  Generate the autocompletion script for the specified shell
+  compliance  Run compliance scans and generate audit-ready reports (GDPR, HIPAA, PCI, NIST, ISO 27001, SOC 2)
+  edr         Manage EDR agents and dispatch remote actions
+  genkey      Generate a self-signed TLS certificate and key
+  help        Help about any command
+  history     List recent investigations
+  hunt        Manage automated threat hunts
+  init        First-run setup wizard
+  investigate Run a security investigation
+  plugin      Manage external agent plugins
+  report      Generate or view investigation report
+  serve       Start the investigation server daemon
+  server      Start in central server mode
+  status      View investigation status
+  tse         Trace Storage Engine management
+  update      Update Trace or its data
+  version     Print version information
+
+Flags:
+  -c, --config string   path to config file
+  -h, --help            help for trace
+
+Use "trace [command] --help" for more information about a command.

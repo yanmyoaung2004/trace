@@ -1,0 +1,19 @@
+Run a security investigation using natural language or explicit parameters.
+Examples:
+  trace investigate "check hash d41d8cd98f00b204e9800998ecf8427e"
+  trace investigate --playbook hash-lookup --param hash=<sha256>
+  trace investigate --playbook file-analysis --param file=/path/to/file.exe
+
+Usage:
+  trace investigate [query] [flags]
+
+Aliases:
+  investigate, inv
+
+Flags:
+  -h, --help                   help for investigate
+      --param stringToString   parameters for the playbook (key=value) (default [])
+  -p, --playbook string        playbook name to run
+
+Global Flags:
+  -c, --config string   path to config file

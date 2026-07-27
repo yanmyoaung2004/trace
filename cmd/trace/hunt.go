@@ -73,9 +73,9 @@ Examples:
 				return fmt.Errorf("create hunt: %w", err)
 			}
 
-			fmt.Printf("Hunt %q created (ID: %s)\n", h.Name, h.ID[:12])
-			fmt.Printf("  Schedule: every %s\n", h.Schedule)
-			fmt.Printf("  Playbook: %s\n", h.Playbook)
+			outf(cmdCobra, "Hunt %q created (ID: %s)\n", h.Name, h.ID[:12])
+			outf(cmdCobra, "  Schedule: every %s\n", h.Schedule)
+			outf(cmdCobra, "  Playbook: %s\n", h.Playbook)
 			return nil
 		},
 	}

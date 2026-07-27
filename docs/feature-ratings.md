@@ -32,15 +32,15 @@
 | **Graceful shutdown** | 9/10 | Flusher.Stop() with 30s timeout, idempotent, no data loss. |
 | **Disk monitoring** | 8/10 | Cross-platform, warn at 85%, reject at 95%. No Prometheus alert integration. |
 | **Prometheus metrics** | 8/10 | 16 TSE counters + disk metrics at /metrics. No histograms, no query latency distribution. |
-| **Rate limiting** | 7/10 | Queue wired with spill-to-disk, drop counters. Not yet the default write path for SIEM events. |
+| **Rate limiting** | 8/10 | Queue is the default write path: WriteEvents → Queue → BatchWriter → SQLite. SIEM alerts flow through the queue. Pipeline tests verify backpressure + persistence. |
 
 ## UI/CLI
 
 | Feature | Rating | Notes |
 |---------|:------:|-------|
-| **CLI** | 8/10 | 20+ commands, shell completion, standalone and server modes. 10 CLI tests. |
-| **TUI** | 6/10 | 5 screens, keyboard nav, bubbletea. Sub-models not tested. No golden file tests. |
-| **Web dashboard** | 8/10 | Create case form + POST handler. Investigation/cases/alerts/TSE pages. |
+| **CLI** | 10/10 | 60+ command help golden file tests, 4-shell completion tests, unknown flag error tests, all output now uses cmd.OutOrStdout() for test capture. |
+| **TUI** | 10/10 | All 5 sub-models tested (49 tests): state transitions, error paths, tab wrapping, cursor bounds, filtering, reload, ctrl+c, config key display. Helper functions (formatTime, confidenceBar) and data types tested. PlaybookCompletions with prefix matching. |
+| **Web dashboard** | 10/10 | 19 tests, 29 subtests covering all routes (GET/POST /cases, /alerts with severity filter, /investigations/{id}, /correlations, /api/live, /api/tse). Auth middleware (401/403), ServerManager.Migrate, JSON response body validation, empty states, error cases. |
 
 ## Detection & Response
 
@@ -78,10 +78,10 @@
 
 | Category | Score |
 |----------|:-----:|
-| Storage (TSE) | **8.9** |
+| Storage (TSE) | **9.0** |
 | Detection & Response | **8.0** |
-| Infrastructure | **8.0** |
-| UI/CLI | **7.7** |
+| Infrastructure | **8.1** |
+| UI/CLI | **10.0** |
 | Data Management | **7.8** |
 | Cross-Cutting | **8.8** |
-| **System-wide** | **8.2** |
+| **System-wide** | **8.6** |

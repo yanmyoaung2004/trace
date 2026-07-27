@@ -1,0 +1,13 @@
+View investigation status
+
+Usage:
+  trace status [investigation-id] [flags]
+
+Aliases:
+  status, st
+
+Flags:
+  -h, --help   help for status
+
+Global Flags:
+  -c, --config string   path to config file

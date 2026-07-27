@@ -50,7 +50,7 @@ Examples:
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Case created: %s (%s)\n", c.ID[:12], c.Title)
+			outf(cmdCobra, "Case created: %s (%s)\n", c.ID[:12], c.Title)
 			return nil
 		},
 	}
@@ -103,48 +103,49 @@ Examples:
 					return fmt.Errorf("case not found: %s", args[0])
 				}
 			}
-			fmt.Printf("Case: %s\n", c.ID)
-			fmt.Printf("Title:      %s\n", c.Title)
-			fmt.Printf("Status:     %s\n", c.Status)
-			fmt.Printf("Severity:   %s\n", c.Severity)
-			fmt.Printf("Assignee:   %s\n", c.Assignee)
-			fmt.Printf("Created:    %s\n", c.CreatedAt)
-			fmt.Printf("Updated:    %s\n", c.UpdatedAt)
+			w := out(cmdCobra)
+			fmt.Fprintf(w, "Case: %s\n", c.ID)
+			fmt.Fprintf(w, "Title:      %s\n", c.Title)
+			fmt.Fprintf(w, "Status:     %s\n", c.Status)
+			fmt.Fprintf(w, "Severity:   %s\n", c.Severity)
+			fmt.Fprintf(w, "Assignee:   %s\n", c.Assignee)
+			fmt.Fprintf(w, "Created:    %s\n", c.CreatedAt)
+			fmt.Fprintf(w, "Updated:    %s\n", c.UpdatedAt)
 			if c.Description != "" {
-				fmt.Printf("Description: %s\n", c.Description)
+				fmt.Fprintf(w, "Description: %s\n", c.Description)
 			}
 			if c.ClosedAt != nil {
-				fmt.Printf("Closed:     %s\n", *c.ClosedAt)
+				fmt.Fprintf(w, "Closed:     %s\n", *c.ClosedAt)
 			}
 			if c.Resolution != "" {
-				fmt.Printf("Resolution: %s\n", c.Resolution)
+				fmt.Fprintf(w, "Resolution: %s\n", c.Resolution)
 			}
 
 			events, _ := app.caseManager.GetEvents(context.Background(), c.ID)
 			if len(events) > 0 {
-				fmt.Println("\nTimeline:")
+				fmt.Fprintln(w, "\nTimeline:")
 				for _, e := range events {
-					fmt.Printf("  [%s] %s: %s\n", e.CreatedAt[:19], e.EventType, e.Content)
+					fmt.Fprintf(w, "  [%s] %s: %s\n", e.CreatedAt[:19], e.EventType, e.Content)
 				}
 			}
 
 			iocs, _ := app.caseManager.GetIOCs(context.Background(), c.ID)
 			if len(iocs) > 0 {
-				fmt.Println("\nIOCs:")
+				fmt.Fprintln(w, "\nIOCs:")
 				for _, i := range iocs {
-					fmt.Printf("  %s: %s", i.IOCType, i.Value)
+					fmt.Fprintf(w, "  %s: %s", i.IOCType, i.Value)
 					if i.Description != "" {
-						fmt.Printf(" (%s)", i.Description)
+						fmt.Fprintf(w, " (%s)", i.Description)
 					}
-					fmt.Println()
+					fmt.Fprintln(w)
 				}
 			}
 
 			evidences, _ := app.caseManager.ListEvidence(context.Background(), c.ID)
 			if len(evidences) > 0 {
-				fmt.Println("\nEvidence:")
+				fmt.Fprintln(w, "\nEvidence:")
 				for _, e := range evidences {
-					fmt.Printf("  %s (%s, %d bytes)\n", e.FileName, e.MimeType, e.FileSize)
+					fmt.Fprintf(w, "  %s (%s, %d bytes)\n", e.FileName, e.MimeType, e.FileSize)
 				}
 			}
 			return nil

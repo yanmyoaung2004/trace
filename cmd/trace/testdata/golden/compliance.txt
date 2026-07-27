@@ -1,0 +1,36 @@
+Run compliance scans and generate audit-ready reports.
+
+Frameworks:
+  pci_dss_v4.0   PCI DSS v4.0 (12 requirements)
+  pci_dss_v3.2.1 PCI DSS v3.2.1
+  hipaa          HIPAA Security Rule
+  gdpr           GDPR
+  nist_sp_800-53 NIST SP 800-53 Rev.5
+  iso_27001-2013 ISO 27001:2013
+  soc_2          SOC 2
+  cis_csc_v8     CIS Critical Security Controls v8
+
+Examples:
+  trace compliance report --framework pci_dss_v4.0
+  trace compliance assess --framework pci_dss_v4.0 --control 1.2.5 --status pass
+  trace compliance evidence --framework hipaa --control 164.312 --file audit-log.txt
+  trace compliance frameworks
+
+Usage:
+  trace compliance [flags]
+  trace compliance [command]
+
+Available Commands:
+  assess      Manually assess a compliance control (pass/fail/na)
+  evidence    Attach evidence to a compliance control
+  frameworks  List available compliance frameworks
+  report      Generate a compliance report for a framework
+  trend       Show compliance score history over time
+
+Flags:
+  -h, --help   help for compliance
+
+Global Flags:
+  -c, --config string   path to config file
+
+Use "trace compliance [command] --help" for more information about a command.

@@ -1,0 +1,18 @@
+Update Trace or its data
+
+Usage:
+  trace update [command]
+
+Available Commands:
+  intel       Refresh the bundled intel database
+  playbooks   Fetch the latest playbook library
+  rollback    Roll back to the previous binary version
+  self        Update the binary to the latest release
+
+Flags:
+  -h, --help   help for update
+
+Global Flags:
+  -c, --config string   path to config file
+
+Use "trace update [command] --help" for more information about a command.
