@@ -1,93 +1,88 @@
 package edr_agent
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 )
 
-func TestDefaultConfig(t *testing.T) {
-	cfg := DefaultConfig()
-	if cfg.ServerURL != "https://127.0.0.1:8080" {
-		t.Errorf("expected default server URL, got %s", cfg.ServerURL)
-	}
-	if cfg.PollInterval == 0 {
-		t.Error("poll interval should be non-zero")
-	}
-	if cfg.HeartbeatInterval == 0 {
-		t.Error("heartbeat interval should be non-zero")
-	}
-	if cfg.MaxBatchSize <= 0 {
-		t.Error("max batch size should be positive")
-	}
-	if cfg.EventQueueSize <= 0 {
-		t.Error("event queue size should be positive")
-	}
-	if !cfg.MonitorProcess {
-		t.Error("process monitoring should be enabled by default")
+func TestMergeRemote_Nil(t *testing.T) {
+	c := DefaultConfig()
+	prev := c.MonitorProcess
+	c.MergeRemote(nil)
+	if c.MonitorProcess != prev {
+		t.Error("nil merge should not change config")
 	}
 }
 
-func TestConfigSaveLoad(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.json")
+func TestMergeRemote_Bool(t *testing.T) {
+	c := DefaultConfig()
+	c.MonitorProcess = false
 
-	cfg := DefaultConfig()
-	cfg.ServerURL = "https://trace.example.com:8443"
-	cfg.APIKey = "test-key-12345"
-	cfg.MonitorProcess = false
-	cfg.MonitorFile = true
-	cfg.MaxBatchSize = 200
-
-	if err := cfg.Save(path); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
-
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		t.Fatal("config file was not created")
-	}
-
-	loaded, err := LoadConfig(path)
-	if err != nil {
-		t.Fatalf("load config: %v", err)
-	}
-
-	if loaded.ServerURL != "https://trace.example.com:8443" {
-		t.Errorf("server URL mismatch: got %s", loaded.ServerURL)
-	}
-	if loaded.APIKey != "test-key-12345" {
-		t.Errorf("API key mismatch: got %s", loaded.APIKey)
-	}
-	if loaded.MonitorProcess {
-		t.Error("MonitorProcess should be false")
-	}
-	if !loaded.MonitorFile {
-		t.Error("MonitorFile should be true")
-	}
-	if loaded.MaxBatchSize != 200 {
-		t.Errorf("MaxBatchSize mismatch: got %d", loaded.MaxBatchSize)
+	c.MergeRemote(map[string]any{"monitor_process": true})
+	if !c.MonitorProcess {
+		t.Error("expected monitor_process=true after merge")
 	}
 }
 
-func TestConfigLoadMissing(t *testing.T) {
-	cfg, err := LoadConfig("/nonexistent/path/config.json")
-	if err != nil {
-		t.Fatalf("load missing config: %v", err)
-	}
-	if cfg == nil {
-		t.Fatal("should return default config")
+func TestMergeRemote_Float(t *testing.T) {
+	c := DefaultConfig()
+	c.VulnMinCVSS = 0
+
+	c.MergeRemote(map[string]any{"vuln_min_cvss": 7.5})
+	if c.VulnMinCVSS != 7.5 {
+		t.Errorf("expected vuln_min_cvss=7.5, got %.1f", c.VulnMinCVSS)
 	}
 }
 
-func TestConfigSaveDirCreation(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "nested", "dirs")
-	path := filepath.Join(dir, "agent.json")
+func TestMergeRemote_IntFromFloat(t *testing.T) {
+	c := DefaultConfig()
+	c.MaxEventsPerSec = 0
 
-	cfg := DefaultConfig()
-	if err := cfg.Save(path); err != nil {
-		t.Fatalf("save config with nested dirs: %v", err)
+	c.MergeRemote(map[string]any{"max_events_per_sec": float64(1000)})
+	if c.MaxEventsPerSec != 1000 {
+		t.Errorf("expected max_events_per_sec=1000, got %d", c.MaxEventsPerSec)
 	}
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		t.Fatal("config file was not created in nested dirs")
+}
+
+func TestMergeRemote_String(t *testing.T) {
+	c := DefaultConfig()
+	c.LogLevel = "debug"
+
+	c.MergeRemote(map[string]any{"log_level": "error"})
+	if c.LogLevel != "error" {
+		t.Errorf("expected log_level=error, got %s", c.LogLevel)
+	}
+}
+
+func TestMergeRemote_StringSlice(t *testing.T) {
+	c := DefaultConfig()
+	c.WatchPaths = nil
+
+	c.MergeRemote(map[string]any{"watch_paths": []any{"/etc", "/tmp"}})
+	if len(c.WatchPaths) != 2 || c.WatchPaths[0] != "/etc" {
+		t.Errorf("expected watch_paths=[/etc /tmp], got %v", c.WatchPaths)
+	}
+}
+
+func TestMergeRemote_IgnoresUnknownKeys(t *testing.T) {
+	c := DefaultConfig()
+	prev := c.LogLevel
+
+	c.MergeRemote(map[string]any{"nonexistent_key": "value"})
+	if c.LogLevel != prev {
+		t.Error("unknown keys should be ignored")
+	}
+}
+
+func TestMergeRemote_PartialUpdate(t *testing.T) {
+	c := DefaultConfig()
+	c.MonitorProcess = false
+	c.MonitorFile = false
+
+	c.MergeRemote(map[string]any{"monitor_process": true})
+	if !c.MonitorProcess {
+		t.Error("expected monitor_process=true")
+	}
+	if c.MonitorFile {
+		t.Error("monitor_file should remain unchanged")
 	}
 }

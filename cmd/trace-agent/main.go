@@ -195,7 +195,10 @@ func runAgent(cfg *edr_agent.Config, verbose bool) {
 
 	for sig := range sigCh {
 		if sig == syscall.SIGHUP {
-			log.Printf("[trace-agent] SIGHUP — reloading correlator rules")
+			log.Printf("[trace-agent] SIGHUP — reloading config and correlator")
+			if remoteCfg := agent.FetchConfig(context.Background()); remoteCfg != nil {
+				cfg.MergeRemote(remoteCfg)
+			}
 			agent.ReloadCorrelator()
 			continue
 		}

@@ -43,6 +43,7 @@ func RunServer(cfg *config.Config, database *db.DB, invMgr *investigation.Manage
 		CertFile:   cfg.Server.TLS.CertFile,
 		KeyFile:    cfg.Server.TLS.KeyFile,
 		LogDir:     cfg.LogDir,
+		DataDir:    cfg.DataDir,
 		DB:         database.DB,
 	}, mgr, mgr)
 	if err != nil {

@@ -26,6 +26,7 @@ type SyncHandler struct {
 	manager  *ServerManager
 	logDir   string
 	updateDir string
+	configStore *remoteConfigStore
 }
 
 func NewSyncHandler(mgr *ServerManager) *SyncHandler {
@@ -39,6 +40,11 @@ func (h *SyncHandler) WithLogDir(dir string) *SyncHandler {
 
 func (h *SyncHandler) WithUpdateDir(dir string) *SyncHandler {
 	h.updateDir = dir
+	return h
+}
+
+func (h *SyncHandler) WithConfigStore(s *remoteConfigStore) *SyncHandler {
+	h.configStore = s
 	return h
 }
 
@@ -128,6 +134,7 @@ func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/edr/vulns", agentProtected(h.handleEDRVulns))
 	mux.HandleFunc("/api/v1/edr/update/check", agentProtected(h.handleEDRUpdateCheck))
 	mux.HandleFunc("/api/v1/edr/update/download", h.handleEDRUpdateDownload)
+	mux.HandleFunc("/api/v1/edr/config", agentProtected(h.handleEDRConfig))
 	mux.HandleFunc("/api/v1/compliance/snapshot", protected(h.handleComplianceSnapshot))
 	mux.HandleFunc("/api/v1/admin/orgs", adminOnly(h.handleOrgs))
 	mux.HandleFunc("/api/v1/admin/users", adminOnly(h.handleAdminUsers))
@@ -821,13 +828,13 @@ type ServeOptions struct {
 	CertFile   string
 	KeyFile    string
 	LogDir     string
+	DataDir    string
 	DB         *sql.DB
 }
 
 func ServeHTTP(opts ServeOptions, mgr *ServerManager, dashboard DashboardDataProvider) (*http.Server, error) {
 	mux := http.NewServeMux()
 
-	// Health check endpoints
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
@@ -839,7 +846,6 @@ func ServeHTTP(opts ServeOptions, mgr *ServerManager, dashboard DashboardDataPro
 		w.Write([]byte("ok"))
 	})
 
-	// TSE Prometheus metrics
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
@@ -847,6 +853,9 @@ func ServeHTTP(opts ServeOptions, mgr *ServerManager, dashboard DashboardDataPro
 	})
 
 	sync := NewSyncHandler(mgr).WithLogDir(opts.LogDir)
+	if opts.DataDir != "" {
+		sync.configStore = newRemoteConfigStore(opts.DataDir)
+	}
 	sync.RegisterRoutes(mux)
 
 	dashboardHandler := NewDashboardHandler(dashboard)
@@ -1156,6 +1165,35 @@ func (h *SyncHandler) handleEDRUpdateDownload(w http.ResponseWriter, r *http.Req
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	http.ServeFile(w, r, binPath)
+}
+
+func (h *SyncHandler) handleEDRConfig(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "GET":
+		if h.configStore == nil {
+			writeJSON(w, http.StatusOK, map[string]any{})
+			return
+		}
+		writeJSON(w, http.StatusOK, h.configStore.Get())
+	case "PUT":
+		if h.configStore == nil {
+			writeError(w, http.StatusNotFound, "config store not available")
+			return
+		}
+		var cfg AgentRemoteConfig
+		if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid json")
+			return
+		}
+		if err := h.configStore.Set(cfg); err != nil {
+			log.Printf("[edr] config save error: %v", err)
+			writeError(w, http.StatusInternalServerError, "save failed")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "GET or PUT required")
+	}
 }
 
 func serverBaseURL(r *http.Request) string {

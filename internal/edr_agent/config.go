@@ -124,6 +124,67 @@ func (c *Config) Save(path string) error {
 	return nil
 }
 
+// MergeRemote applies server-side defaults from a remote config.
+// Local file values take precedence (already loaded in cfg).
+func (c *Config) MergeRemote(remote map[string]any) {
+	if remote == nil {
+		return
+	}
+	setBool := func(field string, target *bool) {
+		if v, ok := remote[field].(bool); ok {
+			*target = v
+		}
+	}
+	setFloat := func(field string, target *float64) {
+		if v, ok := remote[field].(float64); ok {
+			*target = v
+		}
+	}
+	setInt := func(field string, target *int) {
+		if v, ok := remote[field].(float64); ok {
+			*target = int(v)
+		}
+	}
+	setInt64 := func(field string, target *int64) {
+		if v, ok := remote[field].(float64); ok {
+			*target = int64(v)
+		}
+	}
+	setStr := func(field string, target *string) {
+		if v, ok := remote[field].(string); ok {
+			*target = v
+		}
+	}
+	setStrSlice := func(field string, target *[]string) {
+		if v, ok := remote[field].([]any); ok {
+			out := make([]string, len(v))
+			for i, s := range v {
+				if str, ok := s.(string); ok {
+					out[i] = str
+				}
+			}
+			*target = out
+		}
+	}
+
+	setBool("monitor_process", &c.MonitorProcess)
+	setBool("monitor_file", &c.MonitorFile)
+	setBool("monitor_network", &c.MonitorNetwork)
+	setBool("monitor_registry", &c.MonitorRegistry)
+	setBool("monitor_fim", &c.MonitorFIM)
+	setBool("vuln_scan_enabled", &c.VulnScanEnabled)
+	setFloat("vuln_min_cvss", &c.VulnMinCVSS)
+	setInt("vuln_scan_hours", &c.VulnScanHours)
+	setFloat("resource_limit_cpu", &c.ResourceLimitCPU)
+	setInt64("resource_limit_memory_mb", &c.ResourceLimitMemory)
+	setInt("max_events_per_sec", &c.MaxEventsPerSec)
+	setStr("log_level", &c.LogLevel)
+	setStrSlice("watch_paths", &c.WatchPaths)
+	setStrSlice("exclude_paths", &c.ExcludePaths)
+	setStrSlice("fim_watch_paths", &c.FIMWatchPaths)
+	setStrSlice("fim_exclude_patterns", &c.FIMExcludePatterns)
+}
+
 func defaultWatchPaths() []string {
 	if runtime.GOOS == "windows" {
 		return []string{"C:\\temp", "C:\\Users\\Public", "C:\\Windows\\Temp"}

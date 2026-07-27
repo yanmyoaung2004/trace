@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -149,6 +150,12 @@ func (a *Agent) Start(ctx context.Context) error {
 		return fmt.Errorf("register: %w", err)
 	}
 
+	// Fetch remote config and merge
+	if remoteCfg := a.fetchRemoteConfig(ctx); remoteCfg != nil {
+		a.config.MergeRemote(remoteCfg)
+		log.Printf("[trace-agent] remote config applied")
+	}
+
 	if a.config.MonitorProcess {
 		switch runtime.GOOS {
 		case "linux":
@@ -239,6 +246,7 @@ func (a *Agent) Start(ctx context.Context) error {
 		}
 	}
 
+	go a.configLoop(ctx)
 	go a.updateLoop(ctx)
 	go a.loop(ctx)
 	go a.batcher(ctx, a.serverCh)
@@ -484,6 +492,52 @@ func (a *Agent) updateLoop(ctx context.Context) {
 				continue
 			}
 			log.Printf("[trace-agent] updated to %s — restart agent", info.Version)
+		}
+	}
+}
+
+func (a *Agent) fetchRemoteConfig(ctx context.Context) map[string]any {
+	url := a.config.ServerURL + "/api/v1/edr/config"
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil
+	}
+	if a.config.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+a.config.APIKey)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	var result map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil
+	}
+	return result
+}
+
+// FetchConfig fetches the remote config from the server (public, for SIGHUP reload).
+func (a *Agent) FetchConfig(ctx context.Context) map[string]any {
+	return a.fetchRemoteConfig(ctx)
+}
+
+func (a *Agent) configLoop(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-a.done:
+			return
+		case <-ticker.C:
+			if cfg := a.fetchRemoteConfig(ctx); cfg != nil {
+				a.config.MergeRemote(cfg)
+				log.Printf("[trace-agent] remote config refreshed")
+			}
 		}
 	}
 }
