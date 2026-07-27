@@ -65,6 +65,7 @@ type Agent struct {
 	correlator *monitor.Correlator
 	dedup      *monitor.Deduplicator
 	updater    *updater.Updater
+	logCollect *monitor.LogCollector
 
 	stats      AgentStats
 }
@@ -246,6 +247,15 @@ func (a *Agent) Start(ctx context.Context) error {
 		}
 	}
 
+	if len(a.config.LogCollectPaths) > 0 {
+		a.logCollect = monitor.NewLogCollector(a.eventCh, a.config.LogCollectPaths)
+		if err := a.logCollect.Start(ctx); err != nil {
+			log.Printf("[trace-agent] log collector: %v (disabled)", err)
+		} else {
+			log.Printf("[trace-agent] log collector active (%d paths)", len(a.config.LogCollectPaths))
+		}
+	}
+
 	go a.configLoop(ctx)
 	go a.updateLoop(ctx)
 	go a.loop(ctx)
@@ -322,6 +332,9 @@ func (a *Agent) Stop(ctx context.Context) error {
 	}
 	if a.vulnScanner != nil {
 		a.vulnScanner.Stop()
+	}
+	if a.logCollect != nil {
+		a.logCollect.Stop()
 	}
 	if a.procTree != nil {
 		a.procTree.Close()

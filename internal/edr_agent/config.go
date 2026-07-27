@@ -51,6 +51,8 @@ type Config struct {
 	TLSCertFile string `json:"tls_cert_file"`
 	TLSKeyFile  string `json:"tls_key_file"`
 	CAFile      string `json:"ca_file"`
+
+	LogCollectPaths []string `json:"log_collect_paths"`
 }
 
 func DefaultConfig() *Config {
@@ -82,6 +84,7 @@ func DefaultConfig() *Config {
 		ResourceLimitCPU:  0.5,
 		ResourceLimitMemory: 256,
 		MaxEventsPerSec:   500,
+		LogCollectPaths:   defaultLogPaths(),
 	}
 }
 
@@ -205,5 +208,16 @@ func defaultFIMPaths() []string {
 		"/etc/passwd", "/etc/shadow",
 		"/etc/ssh/sshd_config",
 		"/bin", "/sbin", "/usr/bin", "/usr/sbin",
+	}
+}
+
+func defaultLogPaths() []string {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	return []string{
+		"/var/log/auth.log",
+		"/var/log/syslog",
+		"/var/log/messages",
 	}
 }

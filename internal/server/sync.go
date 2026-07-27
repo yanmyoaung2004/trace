@@ -147,6 +147,7 @@ func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/edr/update/check", agentProtected(h.handleEDRUpdateCheck))
 	mux.HandleFunc("/api/v1/edr/update/download", h.handleEDRUpdateDownload)
 	mux.HandleFunc("/api/v1/edr/config", agentProtected(h.handleEDRConfig))
+	mux.HandleFunc("/api/v1/edr/vuln/feed", h.handleEDRVulnFeed)
 	mux.HandleFunc("/api/v1/compliance/snapshot", protected(h.handleComplianceSnapshot))
 	mux.HandleFunc("/api/v1/admin/orgs", adminOnly(h.handleOrgs))
 	mux.HandleFunc("/api/v1/admin/users", adminOnly(h.handleAdminUsers))
@@ -1131,6 +1132,35 @@ func (h *SyncHandler) handleEDRVulns(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"vulns": vulns})
+}
+
+var builtinCVEFeed = []map[string]any{
+	{"cve_id": "CVE-2024-3094", "package": "liblzma*", "cvss": 10, "severity": "critical", "description": "liblzma/xz backdoor — SSHD remote code execution"},
+	{"cve_id": "CVE-2024-6387", "package": "openssh*", "cvss": 9.8, "severity": "critical", "description": "OpenSSH regreSSHion — remote code execution"},
+	{"cve_id": "CVE-2024-2961", "package": "glibc", "cvss": 9.1, "severity": "critical", "description": "glibc iconv() out-of-bounds write"},
+	{"cve_id": "CVE-2024-38477", "package": "httpd*", "cvss": 9.1, "severity": "critical", "description": "Apache HTTPd mod_proxy CRLF injection"},
+	{"cve_id": "CVE-2024-38077", "package": "openssl*", "cvss": 8.6, "severity": "high", "description": "OpenSSL SSL_free() use-after-free"},
+	{"cve_id": "CVE-2024-47575", "package": "openssl*", "cvss": 7.5, "severity": "high", "description": "OpenSSL certificate validation bypass"},
+	{"cve_id": "CVE-2024-24790", "package": "golang", "cvss": 7.5, "severity": "high", "description": "Go net/netip IPv6 zone parsing DoS"},
+	{"cve_id": "CVE-2024-27316", "package": "httpd*", "cvss": 8.1, "severity": "high", "description": "Apache HTTPd HTTP/2 CONTINUATION flood DoS"},
+	{"cve_id": "CVE-2024-34102", "package": "nginx", "cvss": 7.5, "severity": "high", "description": "nginx MP4 module memory corruption"},
+	{"cve_id": "CVE-2024-27309", "package": "apache2*", "cvss": 7.5, "severity": "high", "description": "Apache Kafka Connect JNDI injection"},
+	{"cve_id": "CVE-2024-3247", "package": "nodejs*", "cvss": 7.5, "severity": "high", "description": "Node.js HTTP/2 CONTINUATION flood DoS"},
+	{"cve_id": "CVE-2024-3499", "package": "python3*", "cvss": 8.1, "severity": "high", "description": "Python ipaddress hostname validation"},
+	{"cve_id": "CVE-2024-4333", "package": "systemd", "cvss": 7.8, "severity": "high", "description": "systemd-resolved out-of-bounds read"},
+	{"cve_id": "CVE-2024-2222", "package": "linux-image*", "cvss": 7.0, "severity": "high", "description": "Linux kernel netfilter use-after-free"},
+	{"cve_id": "CVE-2024-35196", "package": "git", "cvss": 7.8, "severity": "high", "description": "Git clone path traversal via symlink"},
+	{"cve_id": "CVE-2024-2511", "package": "libcurl*", "cvss": 5.3, "severity": "medium", "description": "curl OCSP stapling bypass"},
+	{"cve_id": "CVE-2024-24989", "package": "nginx", "cvss": 6.5, "severity": "medium", "description": "nginx HTTP/2 memory disclosure"},
+	{"cve_id": "CVE-2024-3148", "package": "redis*", "cvss": 5.5, "severity": "medium", "description": "Redis Lua script stack overflow"},
+}
+
+func (h *SyncHandler) handleEDRVulnFeed(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		writeError(w, http.StatusMethodNotAllowed, "GET required")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"cves": builtinCVEFeed})
 }
 
 func (h *SyncHandler) handleEDRUpdateCheck(w http.ResponseWriter, r *http.Request) {
