@@ -24,31 +24,37 @@ func newDemoCmd() *cobra.Command {
 		Use:   "demo",
 		Short: "Start a demo environment (server + agent + test data)",
 		Long: `Starts a full Trace demo on your machine:
-- Server with web dashboard on :8443
+- Server with web dashboard
 - EDR agent monitoring local system
 - TSE storage engine with sample events
 - SIEM-like test data feed
 
-Open http://localhost:8443 in your browser after startup.`,
+Use --port to change the HTTP port (default: 8443).`,
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
 			dir, _ := cmdCobra.Flags().GetString("data-dir")
+			port, _ := cmdCobra.Flags().GetString("port")
+
 			if dir == "" {
 				home, _ := os.UserHomeDir()
 				dir = filepath.Join(home, ".trace-demo")
 			}
+			if port == "" {
+				port = "8443"
+			}
+			addr := ":" + port
 			os.MkdirAll(dir, 0755)
 
-			// Create config
 			cfg := config.Default()
 			cfg.DBPath = filepath.Join(dir, "trace.db")
 			cfg.DataDir = dir
 			cfg.LogDir = filepath.Join(dir, "logs")
-			cfg.Server.HTTPAddr = ":8443"
+			cfg.Server.HTTPAddr = addr
 			cfg.Server.Enabled = true
+
+			os.WriteFile(filepath.Join(dir, "config.json"), []byte(fmt.Sprintf(`{"server":{"http_addr":"%s"}}`, addr)), 0644)
 
 			os.MkdirAll(cfg.LogDir, 0755)
 
-			// Initialize database
 			database, err := db.Open(cfg.DBPath)
 			if err != nil {
 				return fmt.Errorf("db: %w", err)
@@ -74,7 +80,7 @@ Open http://localhost:8443 in your browser after startup.`,
 
 			// Start HTTP server
 			srv, err := server.ServeHTTP(server.ServeOptions{
-				ListenAddr: ":8443",
+				ListenAddr: addr,
 				LogDir:     cfg.LogDir,
 				DataDir:    dir,
 				DB:         database.DB,
@@ -89,7 +95,7 @@ Open http://localhost:8443 in your browser after startup.`,
 
 			// Start demo agent (monitors /tmp)
 			agentCfg := edr_agent.DefaultConfig()
-			agentCfg.ServerURL = "http://127.0.0.1:8443"
+			agentCfg.ServerURL = fmt.Sprintf("http://127.0.0.1:%s", port)
 			agentCfg.DataDir = filepath.Join(dir, "agent-data")
 			agentCfg.MonitorProcess = false
 			agentCfg.MonitorFile = true
@@ -111,7 +117,7 @@ Open http://localhost:8443 in your browser after startup.`,
 			fmt.Println()
 			fmt.Println("=== Trace Demo ===")
 			fmt.Println()
-			fmt.Printf("  Web UI:    http://localhost:8443\n")
+			fmt.Printf("  Web UI:    http://localhost:%s\n", port)
 			fmt.Printf("  Data dir:  %s\n", dir)
 			fmt.Println()
 			fmt.Println("  Demo agent is monitoring /tmp for file changes.")
@@ -132,6 +138,7 @@ Open http://localhost:8443 in your browser after startup.`,
 	}
 
 	cmd.Flags().String("data-dir", "", "Demo data directory (default: ~/.trace-demo)")
+	cmd.Flags().String("port", "8443", "HTTP port for web dashboard")
 	return cmd
 }
 
