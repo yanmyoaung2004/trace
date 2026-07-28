@@ -101,6 +101,7 @@ Use --port to change the HTTP port (default: 8443).`,
 			agentCfg.MonitorFile = true
 			agentCfg.MonitorNetwork = false
 			agentCfg.WatchPaths = []string{dir, "/tmp"}
+			agentCfg.ExcludePaths = []string{".db", ".db-wal", ".db-shm", ".log"}
 			agentCfg.HeartbeatInterval = 15 * time.Second
 			agentCfg.BatchInterval = 2 * time.Second
 			agentCfg.MaxBatchSize = 50

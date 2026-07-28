@@ -75,6 +75,7 @@ func DefaultConfig() *Config {
 		MonitorFIM:        true,
 		MonitorETWChannels: runtime.GOOS == "windows",
 		WatchPaths:        defaultWatchPaths(),
+		ExcludePaths:      defaultExcludePaths(),
 		FIMWatchPaths:     defaultFIMPaths(),
 		FIMMaxSizeMB:      50,
 		FIMScanInterval:   60 * time.Second,
@@ -193,6 +194,10 @@ func defaultWatchPaths() []string {
 		return []string{"C:\\temp", "C:\\Users\\Public", "C:\\Windows\\Temp"}
 	}
 	return []string{"/tmp", "/var/tmp", "/etc"}
+}
+
+func defaultExcludePaths() []string {
+	return []string{".db", ".db-wal", ".db-shm", ".log"}
 }
 
 func defaultFIMPaths() []string {
