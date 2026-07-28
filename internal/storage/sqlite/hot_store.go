@@ -83,6 +83,25 @@ func (s *SQLiteHotStore) WriteBatch(ctx context.Context, events []*storage.Event
 		return nil
 	}
 
+	// SQLite has a limit of 999 variables per SQL statement.
+	// With 16 columns per row, split if batch exceeds 62 events (62*16=992).
+	const maxVars = 999
+	const varsPerEvent = 16
+	maxEventBatch := maxVars / varsPerEvent
+
+	if len(events) > maxEventBatch {
+		for i := 0; i < len(events); i += maxEventBatch {
+			end := i + maxEventBatch
+			if end > len(events) {
+				end = len(events)
+			}
+			if err := s.WriteBatch(ctx, events[i:end]); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
 	// Check disk space before accepting new events
 	if storage.StoragePathFunc != nil {
 		if du, err := storage.CheckDisk(storage.StoragePathFunc()); err == nil {
