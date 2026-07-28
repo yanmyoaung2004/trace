@@ -76,6 +76,8 @@ type TSEConfig struct {
 	BackupInterval      string `json:"tse_backup_interval,omitempty"`
 	BackupDir           string `json:"tse_backup_dir,omitempty"`
 	BackupMaxRetention  int    `json:"tse_backup_max_retention,omitempty"`
+
+	ShardCount int `json:"tse_shard_count,omitempty"`
 }
 
 type TLSConfig struct {

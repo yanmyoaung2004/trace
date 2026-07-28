@@ -19,6 +19,7 @@ import (
 	"github.com/yanmyoaung2004/trace/internal/storage/parquet"
 	"github.com/yanmyoaung2004/trace/internal/storage/queue"
 	"github.com/yanmyoaung2004/trace/internal/storage/router"
+	"github.com/yanmyoaung2004/trace/internal/storage/shard"
 	"github.com/yanmyoaung2004/trace/internal/storage/sqlite"
 )
 
@@ -37,22 +38,23 @@ func s3ConfigFromCfg(cfg *config.TSEConfig) *storage.S3Config {
 
 // TSE holds the initialized Trace Storage Engine components.
 type TSE struct {
-	Hot      *sqlite.SQLiteHotStore
-	Manifest *manifestpkg.Manifest
-	Parquet  *parquet.ParquetWriter
-	Flusher  *flusher.Flusher
-	GC       *gc.GC
-	Router   *router.Router
-	Reader   cold.ColdReader
-	Queue    *queue.IngestQueue
-	Batch    *batch.BatchWriter
-	Writer   *batch.WriterGoroutine
-	Leader   *storage.LeaderElector
-	Backup   *backup.Scheduler
-	Ctx      context.Context
-	Cancel   context.CancelFunc
-	bwCtx    context.Context
-	bwCancel context.CancelFunc
+	Hot         *sqlite.SQLiteHotStore
+	Manifest    *manifestpkg.Manifest
+	Parquet     *parquet.ParquetWriter
+	Flusher     *flusher.Flusher
+	GC          *gc.GC
+	Router      *router.Router
+	Reader      cold.ColdReader
+	Queue       *queue.IngestQueue
+	Batch       *batch.BatchWriter
+	Writer      *batch.WriterGoroutine
+	Leader      *storage.LeaderElector
+	Backup      *backup.Scheduler
+	ShardRouter *shard.Router // non-nil when sharded mode is active
+	Ctx         context.Context
+	Cancel      context.CancelFunc
+	bwCtx       context.Context
+	bwCancel    context.CancelFunc
 }
 
 // WriteEvents submits events through the ingest queue for rate-limited processing.
@@ -231,22 +233,40 @@ func initTSE(cfg *config.TSEConfig) (*TSE, error) {
 
 	log.Printf("[tse] initialized (hot=%s, events=%s, compression=%s)", hotPath, eventsDir, parquetOpts.Compression)
 
+	// Shard router (optional, replaces single TSE with N shards)
+	var shardRouter *shard.Router
+	if cfg.ShardCount > 1 {
+		sr, err := shard.New(shard.Config{
+			NumShards:    cfg.ShardCount,
+			BaseDir:      storagePath,
+			FlushSize:    256 << 20,
+			FlushMaxRows: 100000,
+			EventsDir:    eventsDir,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("shard router: %w", err)
+		}
+		shardRouter = sr
+		log.Printf("[tse] shard router: %d shards in %s", sr.NumShards(), storagePath)
+	}
+
 	return &TSE{
-		Hot:      hot,
-		Manifest: m,
-		Parquet:  pw,
-		Flusher:  f,
-		GC:       g,
-		Router:   r,
-		Reader:   cr,
-		Queue:    q,
-		Batch:    bw,
-		Leader:   leader,
-		Backup:   bkup,
-		Ctx:      ctx,
-		Cancel:   cancel,
-		bwCtx:    bwCtx,
-		bwCancel: bwCancel,
+		Hot:         hot,
+		Manifest:    m,
+		Parquet:     pw,
+		Flusher:     f,
+		GC:          g,
+		Router:      r,
+		Reader:      cr,
+		Queue:       q,
+		Batch:       bw,
+		Leader:      leader,
+		Backup:      bkup,
+		ShardRouter: shardRouter,
+		Ctx:         ctx,
+		Cancel:      cancel,
+		bwCtx:       bwCtx,
+		bwCancel:    bwCancel,
 	}, nil
 }
 
