@@ -71,6 +71,11 @@ type TSEConfig struct {
 	S3UseSSL         bool   `json:"tse_s3_usessl"`
 	S3AccessKey      string `json:"tse_s3_access_key,omitempty"`
 	S3SecretKey      string `json:"tse_s3_secret_key,omitempty"`
+
+	BackupEnabled       bool   `json:"tse_backup_enabled,omitempty"`
+	BackupInterval      string `json:"tse_backup_interval,omitempty"`
+	BackupDir           string `json:"tse_backup_dir,omitempty"`
+	BackupMaxRetention  int    `json:"tse_backup_max_retention,omitempty"`
 }
 
 type TLSConfig struct {

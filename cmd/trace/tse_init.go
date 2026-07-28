@@ -9,6 +9,7 @@ import (
 
 	"github.com/yanmyoaung2004/trace/internal/config"
 	"github.com/yanmyoaung2004/trace/internal/storage"
+	"github.com/yanmyoaung2004/trace/internal/storage/backup"
 	"github.com/yanmyoaung2004/trace/internal/storage/batch"
 	"github.com/yanmyoaung2004/trace/internal/storage/cold"
 	"github.com/yanmyoaung2004/trace/internal/storage/flusher"
@@ -46,7 +47,8 @@ type TSE struct {
 	Queue    *queue.IngestQueue
 	Batch    *batch.BatchWriter
 	Writer   *batch.WriterGoroutine
-	Leader   *storage.LeaderElector // nil when no S3 configured
+	Leader   *storage.LeaderElector
+	Backup   *backup.Scheduler
 	Ctx      context.Context
 	Cancel   context.CancelFunc
 	bwCtx    context.Context
@@ -204,6 +206,29 @@ func initTSE(cfg *config.TSEConfig) (*TSE, error) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// Backup scheduler (optional)
+	var bkup *backup.Scheduler
+	if cfg.BackupEnabled && cfg.BackupDir != "" {
+		interval := 6 * time.Hour
+		if cfg.BackupInterval != "" {
+			if d, err := time.ParseDuration(cfg.BackupInterval); err == nil {
+				interval = d
+			}
+		}
+		bkupCfg := backup.Config{
+			Interval:   interval,
+			BackupDir:  cfg.BackupDir,
+			MaxBackups: cfg.BackupMaxRetention,
+			DataDir:    storagePath,
+		}
+		if cfg.S3Bucket != "" && cfg.S3Endpoint != "" {
+			bkupCfg.S3Bucket = cfg.S3Bucket
+			bkupCfg.S3Endpoint = cfg.S3Endpoint
+		}
+		bkup = backup.NewScheduler(bkupCfg)
+		log.Printf("[tse] backup scheduler: every=%s dir=%s", interval, cfg.BackupDir)
+	}
+
 	log.Printf("[tse] initialized (hot=%s, events=%s, compression=%s)", hotPath, eventsDir, parquetOpts.Compression)
 
 	return &TSE{
@@ -217,6 +242,7 @@ func initTSE(cfg *config.TSEConfig) (*TSE, error) {
 		Queue:    q,
 		Batch:    bw,
 		Leader:   leader,
+		Backup:   bkup,
 		Ctx:      ctx,
 		Cancel:   cancel,
 		bwCtx:    bwCtx,
@@ -250,6 +276,10 @@ func (t *TSE) StartTSE() {
 
 	go t.GC.Run(t.Ctx)
 	log.Printf("[tse] GC started")
+
+	if t.Backup != nil {
+		t.Backup.Start(t.Ctx, t.Flusher, t.Manifest)
+	}
 }
 
 // StopTSE gracefully shuts down the TSE pipeline.
@@ -260,6 +290,11 @@ func (t *TSE) StopTSE() {
 
 	// Stop batch writer first (drains pending queue events)
 	t.bwCancel()
+
+	// Stop backup scheduler
+	if t.Backup != nil {
+		t.Backup.Stop()
+	}
 
 	// Signal flusher to stop and wait for in-flight flush to complete
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), 30*time.Second)
