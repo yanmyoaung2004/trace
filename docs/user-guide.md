@@ -18,8 +18,9 @@
 10. [EDR Remote Actions](#10-edr-remote-actions)
 11. [Central Server & Team Use](#11-central-server--team-use)
 12. [Compliance Reporting](#12-compliance-reporting)
-13. [Troubleshooting](#13-troubleshooting)
-14. [Real-World Scenario Walkthrough](#14-real-world-scenario-walkthrough)
+13. [Advanced Deployment](#13-advanced-deployment)
+14. [Troubleshooting](#14-troubleshooting)
+15. [Real-World Scenario Walkthrough](#15-real-world-scenario-walkthrough)
 
 ---
 
@@ -645,7 +646,118 @@ Reports automatically combine automated SCA scan results with manual assessments
 
 ---
 
-## 13. Troubleshooting
+## 15. Advanced Deployment
+
+### 15.1 PostgreSQL Backend (Stateless Server)
+
+Run multiple server instances behind a load balancer by using PostgreSQL instead of local SQLite.
+
+**Start PostgreSQL:**
+```bash
+docker run -d \
+  --name trace-pg \
+  -e POSTGRES_PASSWORD=trace \
+  -p 5432:5432 \
+  postgres:16
+```
+
+**Test the connection:**
+```bash
+$env:TRACE_TEST_PG_DSN = "postgres://postgres:trace@localhost:5432/trace?sslmode=disable"
+go test ./internal/db/ -run TestPostgreSQLIntegration -v
+```
+
+**Run the server with PostgreSQL:**
+```bash
+trace server --db-dsn "postgres://postgres:trace@localhost:5432/trace?sslmode=disable"
+```
+
+**Run N server instances behind a load balancer:**
+```bash
+# Instance 1
+trace server --http-addr :8080 --db-dsn "postgres://postgres:trace@localhost:5432/trace"
+
+# Instance 2
+trace server --http-addr :8081 --db-dsn "postgres://postgres:trace@localhost:5432/trace"
+
+# Instance 3
+trace server --http-addr :8082 --db-dsn "postgres://postgres:trace@localhost:5432/trace"
+
+# Load balancer (HAProxy/Nginx) distributes traffic across :8080, :8081, :8082
+```
+
+### 15.2 Sharded TSE (High-Throughput Storage)
+
+Scale write throughput linearly by sharding the TSE storage engine across N independent shards. Each shard has its own SQLite hot store, Parquet cold tier, and flusher.
+
+**Enable sharding:**
+```bash
+trace serve --tse --tse-shard-count 4
+```
+
+This creates 4 shard directories: `./data/tse/shard-0`, `shard-1`, etc. Events are distributed by FNV-1a hash of `tenant_id + ":" + agent_id`, so the same agent always goes to the same shard. Queries fan out to all shards and merge results.
+
+**Verify sharding:**
+```bash
+# Check shard directories exist
+ls ./data/tse/shard-*/hot.db
+
+# Run shard integration tests
+go test ./internal/storage/shard/ -v
+```
+
+### 15.3 Backup & Recovery
+
+Automatically snapshot the TSE storage engine to a local directory or S3.
+
+**Manual snapshot:**
+```bash
+trace tse snapshot --storage-path ./data/tse --output backup.tar.gz
+```
+
+**Restore from snapshot:**
+```bash
+trace tse recover --from backup.tar.gz --storage-path ./data/tse
+```
+
+**Automated backup scheduler:**
+```bash
+trace serve --tse --tse-backup-enabled --tse-backup-dir ./backups --tse-backup-interval 6h
+```
+
+With S3:
+```bash
+trace serve --tse \
+  --tse-backup-enabled \
+  --tse-backup-dir ./backups \
+  --tse-backup-interval 6h \
+  --tse-s3-bucket my-backups \
+  --tse-s3-endpoint s3.amazonaws.com
+```
+
+**Backup test:**
+```bash
+go test ./internal/storage/backup/ -v
+```
+
+### 15.4 CI Testing
+
+```bash
+# Run all backend tests
+$env:CGO_ENABLED = "0"
+go test ./internal/db/ ./internal/storage/backup/ ./internal/storage/shard/ -v
+
+# With PostgreSQL
+$env:TRACE_TEST_PG_DSN = "postgres://postgres:trace@localhost:5432/trace?sslmode=disable"
+go test ./internal/db/ -run TestPostgreSQLIntegration -v
+
+# Full test suite
+go test ./... -short -count=1 -timeout 180s
+```
+
+---
+
+## 16. Troubleshooting
 
 ### Common issues
 
@@ -679,7 +791,7 @@ Remove-Item -Recurse $env:USERPROFILE\.trace\
 
 ---
 
-## 14. Real-World Scenario Walkthrough
+## 17. Real-World Scenario Walkthrough
 
 ### Scenario: Suspicious email with attachment
 
