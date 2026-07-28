@@ -88,23 +88,38 @@ func newTSECmd() *cobra.Command {
 	snapshotCmd := &cobra.Command{
 		Use:   "snapshot",
 		Short: "Create a TSE snapshot",
+		Long: `Create a point-in-time backup of the TSE storage engine.
+
+Standalone mode (no server needed):
+  trace tse snapshot --storage-path ./data/tse --output backup.tar.gz
+
+With running server:
+  trace tse snapshot`,
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
 			sp, _ := cmdCobra.Flags().GetString("storage-path")
 			if sp == "" {
-				return fmt.Errorf("--storage-path is required")
+				if app.tse == nil {
+					return fmt.Errorf("--storage-path is required when TSE is not running")
+				}
+				sp = app.cfg.TSE.StoragePath
 			}
-			if app.tse == nil {
-				return fmt.Errorf("TSE not enabled")
-			}
-			tok, _ := cmdCobra.Flags().GetString("admin-token")
-			if tok != "" && tok != app.cfg.TSE.AdminToken {
-				return fmt.Errorf("invalid admin token")
-			}
+
 			output, _ := cmdCobra.Flags().GetString("output")
 			if output == "" {
 				output = fmt.Sprintf("tse-snapshot-%s.tar.gz", time.Now().Format("20060102-150405"))
 			}
-			return snapshot.Create(context.Background(), output, sp, app.tse.Flusher, app.tse.Manifest)
+
+			if app.tse != nil {
+				return snapshot.Create(context.Background(), output, sp, app.tse.Flusher, app.tse.Manifest)
+			}
+
+			// Standalone mode: open manifest directly
+			m, err := manifest.NewManifest(filepath.Join(sp, "manifest.db"))
+			if err != nil {
+				return fmt.Errorf("open manifest: %w", err)
+			}
+			defer m.Close()
+			return snapshot.Create(context.Background(), output, sp, nil, m)
 		},
 	}
 	snapshotCmd.Flags().StringP("output", "o", "", "Output file path")

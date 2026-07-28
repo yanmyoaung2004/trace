@@ -28,6 +28,7 @@ type Instance struct {
 	Flusher  *flusher.Flusher
 	Router   *router.Router
 	Reader   cold.ColdReader
+	writeMu  sync.Mutex
 }
 
 // Config controls sharding.
@@ -126,21 +127,17 @@ func (r *Router) WriteEvents(ctx context.Context, events []*storage.Event) error
 		return nil
 	}
 	if len(r.shards) == 1 {
+		r.shards[0].writeMu.Lock()
+		defer r.shards[0].writeMu.Unlock()
 		return r.shards[0].Hot.WriteBatch(ctx, events)
 	}
 
-	// Group events by shard
-	type batch struct {
-		shard  int
-		events []*storage.Event
-	}
 	shardBatches := make(map[int][]*storage.Event)
 	for _, e := range events {
 		s := r.ShardFor(e.TenantID, e.AgentID)
 		shardBatches[s] = append(shardBatches[s], e)
 	}
 
-	// Write to each shard concurrently
 	var mu sync.Mutex
 	var firstErr error
 	var wg sync.WaitGroup
@@ -148,7 +145,10 @@ func (r *Router) WriteEvents(ctx context.Context, events []*storage.Event) error
 		wg.Add(1)
 		go func(sIdx int, evts []*storage.Event) {
 			defer wg.Done()
-			if err := r.shards[sIdx].Hot.WriteBatch(ctx, evts); err != nil {
+			r.shards[sIdx].writeMu.Lock()
+			err := r.shards[sIdx].Hot.WriteBatch(ctx, evts)
+			r.shards[sIdx].writeMu.Unlock()
+			if err != nil {
 				mu.Lock()
 				if firstErr == nil {
 					firstErr = err
