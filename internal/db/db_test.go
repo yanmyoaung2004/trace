@@ -1,6 +1,7 @@
 package db
 
 import (
+	"os"
 	"testing"
 )
 
@@ -88,6 +89,45 @@ func TestTranslate_ComplexQuery(t *testing.T) {
 	}
 	if contains(q, "datetime('now')") {
 		t.Errorf("expected NOW(), got datetime('now'): %q", q)
+	}
+}
+
+func TestPostgreSQLIntegration(t *testing.T) {
+	pgDSN := os.Getenv("TRACE_TEST_PG_DSN")
+	if pgDSN == "" {
+		t.Skip("set TRACE_TEST_PG_DSN to enable PostgreSQL integration test")
+	}
+
+	db, err := Open(pgDSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	// Verify migration ran
+	var tableCount int
+	err = db.QueryRow("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'").Scan(&tableCount)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tableCount == 0 {
+		t.Error("expected at least one table after migration")
+	}
+	t.Logf("PostgreSQL: %d tables created", tableCount)
+
+	// Test basic CRUD
+	_, err = db.Exec("INSERT INTO cache (key, value, ttl) VALUES ($1, $2, $3)", "test-key", "test-value", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var val string
+	err = db.QueryRow("SELECT value FROM cache WHERE key = $1", "test-key").Scan(&val)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != "test-value" {
+		t.Errorf("expected test-value, got %s", val)
 	}
 }
 
