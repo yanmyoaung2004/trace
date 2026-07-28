@@ -260,5 +260,4 @@ func (w *WindowsMemScanner) isPPL(pid int) bool {
 }
 
 func init() {
-	log.Printf("[mem-scanner] Windows memory scanner active")
 }

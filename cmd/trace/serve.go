@@ -36,10 +36,11 @@ Examples:
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			sigCh := make(chan os.Signal, 1)
-			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-			log.Printf("Trace v%s starting", Version)
+		log.SetOutput(os.Stderr)
+		log.Printf("Trace v%s starting", Version)
 			log.Printf("Database: %s", app.cfg.DBPath)
 
 			// Initialize TSE if enabled

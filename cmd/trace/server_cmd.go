@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/yanmyoaung2004/trace/internal/server"
 	"github.com/yanmyoaung2004/trace/internal/storage"
@@ -22,6 +23,7 @@ Edge nodes connect to this server to push investigations and receive cross-node 
 
 Use --tse-storage-path to enable long-term storage of EDR agent events in TSE.`,
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
+			log.SetOutput(os.Stderr)
 			if err := app.initialize(cmdCobra.Flag("config").Value.String()); err != nil {
 				return err
 			}

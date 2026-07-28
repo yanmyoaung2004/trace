@@ -4,7 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
+	"io"
+	"log"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -476,14 +477,6 @@ func (a *App) initialize(cfgPath string) error {
 	return nil
 }
 
-func persistentPre(cmd *cobra.Command, args []string) {
-	cfgPath, _ := cmd.Flags().GetString("config")
-	if err := app.initialize(cfgPath); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-}
-
 var app = &App{}
 
 func newRootCmd() *cobra.Command {
@@ -495,6 +488,7 @@ func newRootCmd() *cobra.Command {
 			if cmd.Name() == "help" || cmd.Name() == "completion" || cmd.Name() == "compliance" {
 				return nil
 			}
+			log.SetOutput(io.Discard)
 			return app.initialize(cmd.Flag("config").Value.String())
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {

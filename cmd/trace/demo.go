@@ -31,6 +31,7 @@ func newDemoCmd() *cobra.Command {
 
 Use --port to change the HTTP port (default: 8443).`,
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
+			log.SetOutput(os.Stderr)
 			dir, _ := cmdCobra.Flags().GetString("data-dir")
 			port, _ := cmdCobra.Flags().GetString("port")
 

@@ -3,7 +3,6 @@ package monitor
 import (
 	"context"
 	"fmt"
-	"log"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -295,5 +294,4 @@ func isSuspiciousConnection(conn *NetConn) bool {
 }
 
 func init() {
-	log.Printf("[net-monitor] initialized for %s", runtime.GOOS)
 }
