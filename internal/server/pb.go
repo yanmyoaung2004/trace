@@ -191,6 +191,9 @@ func (m *ServerManager) Migrate() error {
 	m.db.Exec("ALTER TABLE edr_actions ADD COLUMN org_id TEXT DEFAULT ''")
 	m.db.Exec("ALTER TABLE edr_fp_counters ADD COLUMN org_id TEXT DEFAULT ''")
 
+	// Migration: add scope for API key scoping
+	m.db.Exec("ALTER TABLE server_users ADD COLUMN scope TEXT DEFAULT 'full'")
+
 	return nil
 }
 
@@ -481,6 +484,17 @@ func (m *ServerManager) AuthenticateOrg(ctx context.Context, apiKey string) (str
 		return "", "", "", status.Error(codes.Unauthenticated, "invalid api key")
 	}
 	return id, role, orgID, nil
+}
+
+func (m *ServerManager) AuthenticateOrgFull(ctx context.Context, apiKey string) (string, string, string, string, error) {
+	var id, role, orgID, scope string
+	err := m.db.QueryRowContext(ctx,
+		`SELECT id, role, COALESCE(org_id, ''), COALESCE(scope, 'full') FROM server_users WHERE api_key = ?`, apiKey).
+		Scan(&id, &role, &orgID, &scope)
+	if err != nil {
+		return "", "", "", "", status.Error(codes.Unauthenticated, "invalid api key")
+	}
+	return id, role, orgID, scope, nil
 }
 
 func (m *ServerManager) AuthenticateAgent(ctx context.Context, apiKey string) (string, error) {

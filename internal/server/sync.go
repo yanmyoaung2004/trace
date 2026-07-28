@@ -59,7 +59,6 @@ func (h *SyncHandler) WithTSEWriter(w EventWriter) *SyncHandler {
 	h.tseWriter = w
 	return h
 }
-
 func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 	protected := func(handler http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
@@ -70,38 +69,45 @@ func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 				}
 			}
 			if apiKey != "" {
-		if userID, role, orgID, err := h.manager.AuthenticateOrg(r.Context(), apiKey); err == nil && userID != "" {
-				ctx := context.WithValue(r.Context(), ctxKeyRole, role)
-				ctx = context.WithValue(ctx, ctxKeyUserID, userID)
-				if orgID != "" {
-					ctx = context.WithValue(ctx, ctxKeyOrg, orgID)
+				if userID, role, orgID, scope, err := h.manager.AuthenticateOrgFull(r.Context(), apiKey); err == nil && userID != "" {
+					ctx := context.WithValue(r.Context(), ctxKeyRole, role)
+					ctx = context.WithValue(ctx, ctxKeyUserID, userID)
+					ctx = context.WithValue(ctx, ctxKeyScope, scope)
+					if orgID != "" {
+						ctx = context.WithValue(ctx, ctxKeyOrg, orgID)
+					}
+					r = r.WithContext(ctx)
+					handler(w, r)
+					return
 				}
-				r = r.WithContext(ctx)
-				handler(w, r)
-				return
-			}
 			}
 			writeError(w, http.StatusUnauthorized, "unauthorized — provide api_key query param or Authorization: Bearer <key>")
 		}
 	}
 
+	// requirePermission checks that the authenticated user has the required permission.
+	requirePermission := func(perm Permission) func(http.HandlerFunc) http.HandlerFunc {
+		return func(handler http.HandlerFunc) http.HandlerFunc {
+			return protected(func(w http.ResponseWriter, r *http.Request) {
+				role := RoleFromContext(r.Context())
+				if !HasPermission(role, perm) {
+					writeError(w, http.StatusForbidden, "insufficient permissions")
+					return
+				}
+				handler(w, r)
+			})
+		}
+	}
+
 	readOnly := func(handler http.HandlerFunc) http.HandlerFunc {
-		return protected(func(w http.ResponseWriter, r *http.Request) {
-			handler(w, r)
-		})
+		return requirePermission(PermCaseRead)(handler)
 	}
 
 	adminOnly := func(handler http.HandlerFunc) http.HandlerFunc {
-		return protected(func(w http.ResponseWriter, r *http.Request) {
-			role, _ := r.Context().Value(ctxKeyRole).(string)
-			if role != "admin" {
-				writeError(w, http.StatusForbidden, "admin access required")
-				return
-			}
-			handler(w, r)
-		})
+		return requirePermission(PermAdmin)(handler)
 	}
 
+	
 	agentProtected := func(handler http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			var agentKey string
@@ -139,10 +145,10 @@ func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/edr/events", agentProtected(h.handleEDREvents))
 	mux.HandleFunc("/api/v1/edr/actions/pending", agentProtected(h.handleEDRActionsPending))
 	mux.HandleFunc("/api/v1/edr/actions/result", agentProtected(h.handleEDRActionResult))
-	mux.HandleFunc("/api/v1/edr/actions/dispatch", protected(h.handleEDRDispatch))
-	mux.HandleFunc("/api/v1/edr/alerts/dismiss", protected(h.handleEDRAlertDismiss))
-	mux.HandleFunc("/api/v1/edr/agents", readOnly(h.handleEDRAgentsList))
-	mux.HandleFunc("/api/v1/edr/agents/", readOnly(h.handleEDRAgentByID))
+	mux.HandleFunc("/api/v1/edr/actions/dispatch", requirePermission(PermAgentWrite)(h.handleEDRDispatch))
+	mux.HandleFunc("/api/v1/edr/alerts/dismiss", requirePermission(PermAgentWrite)(h.handleEDRAlertDismiss))
+	mux.HandleFunc("/api/v1/edr/agents", requirePermission(PermAgentRead)(h.handleEDRAgentsList))
+	mux.HandleFunc("/api/v1/edr/agents/", requirePermission(PermAgentRead)(h.handleEDRAgentByID))
 	mux.HandleFunc("/api/v1/edr/vulns", agentProtected(h.handleEDRVulns))
 	mux.HandleFunc("/api/v1/edr/update/check", agentProtected(h.handleEDRUpdateCheck))
 	mux.HandleFunc("/api/v1/edr/update/download", h.handleEDRUpdateDownload)
@@ -157,15 +163,6 @@ func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 }
-
-type contextKey string
-
-	const (
-		ctxKeyRole    contextKey = "role"
-		ctxKeyOrg     contextKey = "org_id"
-		ctxKeyAgentID contextKey = "agent_id"
-		ctxKeyUserID  contextKey = "user_id"
-	)
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
