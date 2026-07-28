@@ -188,6 +188,47 @@ func newTSECmd() *cobra.Command {
 	}
 	configCmd.AddCommand(configShowCmd, configSetCmd)
 	cmd.AddCommand(statusCmd, flushCmd, inspectCmd, snapshotCmd, metricsCmd, configCmd)
+
+	recoverCmd := &cobra.Command{
+		Use:   "recover",
+		Short: "Recover TSE from backup snapshot",
+		Long: `Restore TSE data from a snapshot tarball created by 'trace tse snapshot' or the backup scheduler.
+
+Usage:
+  trace tse recover --from snapshot.tar.gz --storage-path ./data/tse`,
+		Args: cobra.NoArgs,
+		RunE: func(cmdCobra *cobra.Command, args []string) error {
+			from, _ := cmdCobra.Flags().GetString("from")
+			storagePath, _ := cmdCobra.Flags().GetString("storage-path")
+
+			if from == "" {
+				return fmt.Errorf("--from is required (path to snapshot tar.gz)")
+			}
+			if storagePath == "" {
+				return fmt.Errorf("--storage-path is required")
+			}
+
+			if _, err := os.Stat(from); err != nil {
+				return fmt.Errorf("snapshot file: %w", err)
+			}
+
+			if app.tse != nil {
+				outf(cmdCobra, "stopping current TSE...\n")
+				app.tse.StopTSE()
+			}
+
+			if err := snapshot.Restore(context.Background(), from, storagePath); err != nil {
+				return fmt.Errorf("restore: %w", err)
+			}
+
+			outf(cmdCobra, "TSE restored from %s to %s\n", from, storagePath)
+			return nil
+		},
+	}
+	recoverCmd.Flags().String("from", "", "Snapshot tarball path")
+	recoverCmd.Flags().String("storage-path", "", "TSE storage path to restore into")
+	cmd.AddCommand(recoverCmd)
+
 	return cmd
 }
 

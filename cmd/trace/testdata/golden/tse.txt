@@ -8,6 +8,7 @@ Available Commands:
   flush       Trigger an immediate flush cycle
   inspect     List recent Parquet files in the manifest
   metrics     Show TSE metrics
+  recover     Recover TSE from backup snapshot
   snapshot    Create a TSE snapshot
   status      Show TSE status
 
