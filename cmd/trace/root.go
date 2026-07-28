@@ -350,7 +350,11 @@ func (a *App) initConfig(cfgPath string) error {
 }
 
 func (a *App) initDatabase() error {
-	d, err := db.Open(a.cfg.DBPath)
+	path := a.cfg.DBPath
+	if a.cfg.Server.DatabaseURL != "" {
+		path = a.cfg.Server.DatabaseURL
+	}
+	d, err := db.Open(path)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}

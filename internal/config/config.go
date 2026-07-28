@@ -87,10 +87,11 @@ type TLSConfig struct {
 }
 
 type ServerConfig struct {
-	Enabled  bool      `json:"enabled"`
-	GRPCAddr string    `json:"grpc_addr"`
-	HTTPAddr string    `json:"http_addr"`
-	TLS      TLSConfig `json:"tls"`
+	Enabled     bool      `json:"enabled"`
+	GRPCAddr    string    `json:"grpc_addr"`
+	HTTPAddr    string    `json:"http_addr"`
+	TLS         TLSConfig `json:"tls"`
+	DatabaseURL string    `json:"database_url,omitempty"`
 }
 
 func repoDir() string {
