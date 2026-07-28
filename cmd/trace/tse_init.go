@@ -244,6 +244,8 @@ func initTSE(cfg *config.TSEConfig) (*TSE, error) {
 			EventsDir:    eventsDir,
 		})
 		if err != nil {
+			bwCancel()
+			cancel()
 			return nil, fmt.Errorf("shard router: %w", err)
 		}
 		shardRouter = sr
