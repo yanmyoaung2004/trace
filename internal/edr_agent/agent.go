@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -734,6 +735,24 @@ func (a *Agent) analysisLoop(ctx context.Context) {
 				}
 			}
 
+			// AMSI scan (Windows): scan script content via Windows Antimalware Scan Interface
+			if runtime.GOOS == "windows" {
+				if evt.Type == monitor.EventFileCreate || evt.Type == monitor.EventFileModify {
+					if evt.File != nil && evt.File.Path != "" {
+						a.maybeScanAMSI(evt)
+					}
+				}
+			}
+
+			// Authenticode verification (Windows): verify PE digital signatures
+			if runtime.GOOS == "windows" {
+				if evt.Type == monitor.EventFileCreate || evt.Type == monitor.EventFileModify {
+					if evt.File != nil && evt.File.Path != "" {
+						a.maybeVerifySignature(evt)
+					}
+				}
+			}
+
 		case <-ancestryTick.C:
 			alerts := a.procTree.DetectSuspiciousAncestry()
 			for _, alertMsg := range alerts {
@@ -863,6 +882,52 @@ func (a *Agent) scanFileYARA(evt *monitor.Event) {
 		case a.eventCh <- alertEvt:
 		default:
 		}
+	}
+}
+
+func (a *Agent) maybeScanAMSI(evt *monitor.Event) {
+	path := strings.ToLower(evt.File.Path)
+	if !strings.HasSuffix(path, ".ps1") && !strings.HasSuffix(path, ".vbs") &&
+		!strings.HasSuffix(path, ".js") && !strings.HasSuffix(path, ".hta") {
+		return
+	}
+	data, err := os.ReadFile(evt.File.Path)
+	if err != nil || len(data) > 256*1024 {
+		return
+	}
+	if monitor.ScanBufferWithAMSI(data, evt.File.Path) {
+		log.Printf("[amsi] detected malicious content: %s", evt.File.Path)
+		alertEvt := &monitor.Event{
+			ID: uuid.New().String(), Timestamp: time.Now(),
+			Type: monitor.EventAlert, Severity: monitor.SeverityCritical,
+			File: evt.File,
+			Annotations: map[string]string{
+				"source": "amsi", "details": "AMSI flagged content",
+			},
+		}
+		select { case a.eventCh <- alertEvt: default: }
+	}
+}
+
+func (a *Agent) maybeVerifySignature(evt *monitor.Event) {
+	path := strings.ToLower(evt.File.Path)
+	if !strings.HasSuffix(path, ".exe") && !strings.HasSuffix(path, ".dll") &&
+		!strings.HasSuffix(path, ".sys") && !strings.HasSuffix(path, ".msi") {
+		return
+	}
+	status := monitor.VerifySignature(evt.File.Path)
+	if status != nil && !status.Signed {
+		log.Printf("[authenticode] unsigned file: %s", evt.File.Path)
+		alertEvt := &monitor.Event{
+			ID: uuid.New().String(), Timestamp: time.Now(),
+			Type: monitor.EventAlert, Severity: monitor.SeverityInfo,
+			File: evt.File,
+			Annotations: map[string]string{
+				"source": "authenticode", "details": "Unsigned PE file",
+				"publisher": status.Publisher,
+			},
+		}
+		select { case a.eventCh <- alertEvt: default: }
 	}
 }
 
