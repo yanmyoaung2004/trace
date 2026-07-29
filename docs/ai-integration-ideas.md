@@ -460,3 +460,47 @@ trace analyze image --file suspicious_email.png
 | 20. Multi-modal analysis | 2-3d | Medium | Analysis |
 
 **Total: ~50-65 days of work. Pick what excites you most.**
+
+---
+
+## Architecture Principles (from industry research)
+
+Research across Elastic, CrowdStrike, and other AI security platforms reveals common patterns:
+
+### Agent vs. Skills Model
+The security industry is converging on a two-layer architecture:
+- **Agent** — a single LLM-powered orchestrator that plans, calls tools, and loops until tasks complete
+- **Skills** — packaged, reusable instructions that teach the agent how to do specific tasks (alert triage, threat hunting, entity profiling)
+
+Trace already has this pattern partially: the `dispatch.Agent` executes playbooks, and plugins provide capabilities. The next step is making the dispatch agent truly autonomous (plan → execute → observe → adapt loop).
+
+### Model-Agnostic Design
+Don't hardcode any single LLM provider. Support:
+- Local models (Ollama, llama.cpp) for air-gapped environments
+- Cloud APIs (OpenAI, Anthropic, Gemini) for maximum capability
+- Custom endpoints (vLLM, TGI) for self-hosted
+
+Trace already has provider chaining. The next step is showing per-idea which provider tier each feature needs.
+
+### Human-in-the-Loop
+Every AI decision must be transparent and auditable:
+- Show the prompt that was used
+- Show the evidence the AI based its decision on
+- Let the analyst approve, reject, or override before any action is taken
+- Log all AI decisions to the audit trail
+
+### Always-On vs. On-Demand
+Some AI features run continuously (alert triage, anomaly detection), others are invoked by analysts (co-pilot, root cause analysis). The architecture should support both modes:
+
+- **Always-on**: Runs as background goroutines, enriches events as they arrive
+- **On-demand**: Invoked via CLI (`trace investigate --ai`), web chat, or API
+
+### Transparency & Audit
+Every AI decision should be logged with:
+- The exact prompt sent to the LLM
+- The raw response
+- The final decision made
+- Whether a human reviewed/overrode it
+- Confidence scores at each step
+
+This maps directly to the `audit.Logger` already wired in Trace.
