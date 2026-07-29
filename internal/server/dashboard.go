@@ -44,6 +44,7 @@ func (dh *DashboardHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/alerts", dh.alerts)
 	mux.HandleFunc("/api/live", dh.liveData)
 	mux.HandleFunc("/api/tse", dh.tseStatus)
+	mux.HandleFunc("/api/dashboard/charts", dh.chartData)
 }
 
 const pageStyle = `
@@ -203,6 +204,7 @@ func (dh *DashboardHandler) index(w http.ResponseWriter, r *http.Request) {
 	var b strings.Builder
 	b.WriteString(`<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>` + locale.T("dashboard_title") + `</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>` + pageStyle + `</style></head><body>
 <div class="header">
 <h1>` + locale.T("dashboard_title") + `</h1>
@@ -254,6 +256,14 @@ setInterval(async function(){
 <a href="/?status=pending" class="filter-btn` + filterClass("pending", statusFilter) + `">` + locale.T("dashboard_pending") + `</a>
 </div>
 
+<div class="card" style="margin-bottom:16px">
+<h2 style="margin:0 0 8px">Alert Dashboard</h2>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+  <div><canvas id="alertTimelineChart" height="150"></canvas></div>
+  <div><canvas id="alertSeverityChart" height="150"></canvas></div>
+</div>
+</div>
+
 <table class="card" style="padding:0;margin-top:0"><thead><tr><th>` + locale.T("dashboard_id") + `</th><th>` + locale.T("dashboard_edge") + `</th><th>` + locale.T("dashboard_status") + `</th><th>` + locale.T("dashboard_intent") + `</th><th>` + locale.T("dashboard_confidence") + `</th><th>` + locale.T("dashboard_created") + `</th></tr></thead><tbody>`)
 
 	if len(invs) == 0 {
@@ -295,6 +305,54 @@ filterBtns.forEach(function(btn) {
     this.classList.add('active');
   });
 });
+
+async function loadCharts() {
+  try {
+    var r = await fetch('/api/dashboard/charts');
+    var d = await r.json();
+    
+    if (d.timeline) {
+      new Chart(document.getElementById('alertTimelineChart'), {
+        type: 'bar',
+        data: {
+          labels: Array.from({length:24}, (_,i) => i+':00'),
+          datasets: [{
+            label: 'Alerts',
+            data: d.timeline,
+            backgroundColor: '#00BFFF44',
+            borderColor: '#00BFFF',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false }, title: { display: true, text: 'Alerts (24h)', color: '#e0e0e0' } },
+          scales: { x: { ticks: { color: '#888', maxTicksLimit: 8 } }, y: { ticks: { color: '#888' } } }
+        }
+      });
+    }
+    
+    if (d.alert_counts) {
+      new Chart(document.getElementById('alertSeverityChart'), {
+        type: 'doughnut',
+        data: {
+          labels: ['Critical','High','Medium','Low'],
+          datasets: [{
+            data: [d.alert_counts.critical, d.alert_counts.high, d.alert_counts.medium, d.alert_counts.low],
+            backgroundColor: ['#FF4444','#FF8800','#FFCC00','#32CD32']
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'right', labels: { color: '#e0e0e0' } }, title: { display: true, text: 'Severity Distribution', color: '#e0e0e0' } }
+        }
+      });
+    }
+  } catch(e) {}
+}
+loadCharts();
 </script>
 </body></html>`)
 
@@ -694,6 +752,86 @@ func statusColor(compl, fail, run int) string {
 		return "var(--warning)"
 	}
 	return "var(--success)"
+}
+
+func (dh *DashboardHandler) chartData(w http.ResponseWriter, r *http.Request) {
+	snap := metrics.Global.Snapshot()
+
+	data := map[string]any{
+		"tse": map[string]any{
+			"events_written": snap["events_written"],
+			"events_flushed": snap["events_flushed"],
+			"events_dropped": snap["events_dropped"],
+			"hot_tables":     snap["hot_table_count"],
+			"cold_files":     snap["cold_file_count"],
+			"queue_depth":    snap["queue_depth"],
+		},
+	}
+
+	// Alert timeline: count by severity for last 24h
+	alertCounts := map[string]int{"critical": 0, "high": 0, "medium": 0, "low": 0}
+	if dh.db != nil {
+		rows, err := dh.db.Query(`SELECT severity, COUNT(*) as cnt FROM alerts WHERE created_at >= datetime('now', '-1 day') GROUP BY severity`)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var sev int
+				var cnt int
+				if err := rows.Scan(&sev, &cnt); err == nil {
+					label := "low"
+					if sev >= 8 {
+						label = "critical"
+					} else if sev >= 5 {
+						label = "high"
+					} else if sev >= 3 {
+						label = "medium"
+					}
+					alertCounts[label] = cnt
+				}
+			}
+		}
+
+		// Alert timeline: last 24 hours by hour
+		timeline := make([]int, 24)
+		tRows, err := dh.db.Query(`SELECT CAST(strftime('%H', created_at) AS INTEGER) as h, COUNT(*) as cnt FROM alerts WHERE created_at >= datetime('now', '-1 day') GROUP BY h ORDER BY h`)
+		if err == nil {
+			defer tRows.Close()
+			for tRows.Next() {
+				var h, cnt int
+				if err := tRows.Scan(&h, &cnt); err == nil && h >= 0 && h < 24 {
+					timeline[h] = cnt
+				}
+			}
+		}
+		data["timeline"] = timeline
+
+		// Recent alerts for the list
+		type alertSummary struct {
+			ID       string `json:"id"`
+			Title    string `json:"title"`
+			Severity int    `json:"severity"`
+			Time     string `json:"time"`
+		}
+		aRows, err := dh.db.Query(`SELECT id, title, severity, created_at FROM alerts ORDER BY created_at DESC LIMIT 10`)
+		if err == nil {
+			defer aRows.Close()
+			var recent []alertSummary
+			for aRows.Next() {
+				var a alertSummary
+				if err := aRows.Scan(&a.ID, &a.Title, &a.Severity, &a.Time); err == nil {
+					if len(a.ID) > 12 {
+						a.ID = a.ID[:12]
+					}
+					recent = append(recent, a)
+				}
+			}
+			data["recent_alerts"] = recent
+		}
+	}
+	data["alert_counts"] = alertCounts
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(data)
 }
 
 func (dh *DashboardHandler) tseStatus(w http.ResponseWriter, r *http.Request) {
