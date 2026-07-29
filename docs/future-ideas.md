@@ -35,13 +35,17 @@
 
 | Idea | Effort | Why |
 |------|--------|-----|
-| **USB device monitoring** | 1 day | Detect USB insertion via `udev` (Linux) or `WMIDC` (Windows). Alert on new mass storage devices |
+| **USB device monitoring** | 1 day | Detect USB insertion via `RegisterDeviceNotificationW` (Windows). **Code exists** (`usb_windows.go`) but not wired into agent |
+| **ETW channel monitoring** | — | Already implemented. `etw_channels_windows.go` wired into agent |
+| **Windows memory scanning** | — | Already implemented. `memory_windows.go` (EnumerateProcesses + ReadProcessMemory) |
+| **Process tree tracking** | — | Already implemented. `tree.go` tracks parent-child relationships |
 | **Container security** | 2 days | Watch Docker/K8s audit logs. Detect privileged containers, host mounts, `--net=host` |
 | **Windows Event Log** | 2 days | Subscribe to Windows Event Log channels (Security, System, PowerShell) and ship as EDR events |
 | **macOS agent** | 3 days | Compile for darwin/amd64 + arm64. Basic monitoring (process, file, network) using EndpointSecurity framework |
 | **DNS query monitoring** | 2 days | Capture DNS queries (via eBPF on Linux, EventLog on Windows). Detect beaconing, DGA domains |
 | **Process memory scanning** | 2 days | Scan process memory for known malicious patterns (Mimikatz, Cobalt Strike) |
 | **Binary allowlist/blocklist** | 1 day | `trace policy add --hash sha256:<hash> --action block` — prevent execution of known-bad hashes |
+| **Response actions** | — | Already implemented: `kill_process`, `quarantine_file`, `block_ip`, `run_script`, `isolate_host`, `collect_forensics` with rollback support |
 
 ---
 
