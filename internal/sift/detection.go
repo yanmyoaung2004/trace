@@ -58,6 +58,8 @@ func (a *Agent) Execute(ctx context.Context, input agent.Input) (agent.Output, e
 		return a.rootkitScanner.scanRootkits(ctx, input)
 	case "check_trojans":
 		return a.rootkitScanner.checkTrojan(ctx, input)
+	case "behavior_scan":
+		return a.rootkitScanner.behaviorScan(ctx)
 	default:
 		return nil, fmt.Errorf("unknown action: %s", action)
 	}
