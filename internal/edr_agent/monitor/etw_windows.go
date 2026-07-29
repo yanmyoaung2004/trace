@@ -227,6 +227,7 @@ func (s *ETWSession) cleanup() {
 	etwControlTrace.Call(0, uintptr(unsafe.Pointer(&name16[0])), uintptr(unsafe.Pointer(&props[0])), evtTraceCtrlStop)
 }
 
+//go:nocheckptr
 func etwEventCallbackBridge(recordPtr uintptr) uintptr {
 	defer func() {
 		if r := recover(); r != nil {
