@@ -84,7 +84,7 @@ func DefaultConfig() *Config {
 		VulnScanHours:     6,
 		ResourceLimitCPU:  0.5,
 		ResourceLimitMemory: 256,
-		MaxEventsPerSec:   500,
+		MaxEventsPerSec:   defaultMaxEventsPerSec(),
 		LogCollectPaths:   defaultLogPaths(),
 	}
 }
@@ -197,7 +197,21 @@ func defaultWatchPaths() []string {
 }
 
 func defaultExcludePaths() []string {
-	return []string{".db", ".db-wal", ".db-shm", ".log"}
+	base := []string{".db", ".db-wal", ".db-shm", ".log", ".git", "node_modules", ".cache", "__pycache__"}
+	if runtime.GOOS == "windows" {
+		base = append(base,
+			"\\windows\\temp\\", "\\temp\\", "\\appdata\\local\\temp\\",
+			"\\windows\\prefetch\\", "\\windows\\logs\\",
+			".dmp", ".etl", ".evtx")
+	}
+	return base
+}
+
+func defaultMaxEventsPerSec() int {
+	if runtime.GOOS == "windows" {
+		return 5000
+	}
+	return 500
 }
 
 func defaultFIMPaths() []string {

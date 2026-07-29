@@ -34,11 +34,15 @@ type fileState struct {
 }
 
 func NewFileMonitor(eventCh chan<- *Event, watchPaths, exclude []string) *FileMonitor {
+	interval := 30 * time.Second
+	if runtime.GOOS == "windows" {
+		interval = 120 * time.Second
+	}
 	return &FileMonitor{
 		eventCh:    eventCh,
 		watchPaths: watchPaths,
 		exclude:    exclude,
-		interval:   15 * time.Second,
+		interval:   interval,
 		done:       make(chan struct{}),
 		snapshots:  make(map[string]fileState),
 		maxSize:    100 * 1024 * 1024,

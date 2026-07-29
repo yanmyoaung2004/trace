@@ -33,7 +33,7 @@
 |----------|--------|----------|
 | **No mobile app** | Analysts can't acknowledge alerts from their phone. Requires terminal or web browser. | Low |
 | **No playbook editor UI** | Playbooks are hand-edited YAML files. No drag-and-drop workflow builder. | Low |
-| **Agent on Windows is noisy** | Polling-based file monitor generates excessive events. Rate limiting drops legitimate events. Linux with fanotify is clean. | Medium |
+| **Agent on Windows is noisy** | Polling file monitor generates excessive events. | Medium | 🟢 Fixed — polling interval 120s (was 15s), rate limit 5000 (was 500), more exclude patterns (.dmp, .etl, .evtx, \windows\temp, .git, node_modules) |
 
 ## Summary
 
