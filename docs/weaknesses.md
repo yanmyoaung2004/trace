@@ -21,11 +21,11 @@
 
 ## Analytics
 
-| Weakness | Impact | Priority |
-|----------|--------|----------|
-| **PE analysis is signature-only** | No ML classifier, no behavioral sandbox. Detects known packers but not novel malware. | Medium |
-| **Static YARA rules** | 17 embedded rules never update. No threat intel feed integration (OTX, MISP) for fresh rules. | Low |
-| **No visualization** | Dashboard is server-rendered HTML. No charts, timelines, MITRE ATT&CK heatmaps, or drill-down graphs. | Low |
+| Weakness | Impact | Priority | Status |
+|----------|--------|----------|--------|
+| **PE analysis is signature-only** | No ML classifier for novel malware. | Medium | 🟡 Infrastructure ready, training guide in `docs/ml-training-guide.md` |
+| **Static YARA rules** | 17 built-in rules, no auto-update. | Low | 🟢 Fixed — `LoadFromDir()` loads `.yar` files from `~/.trace/yara/` |
+| **No visualization** | Plain HTML tables. | Low | 🟢 Fixed — Chart.js timeline + severity charts on dashboard |
 
 ## User Experience
 

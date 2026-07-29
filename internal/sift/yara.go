@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -47,6 +48,48 @@ func (ys *YaraScanner) LoadRules(rules []YaraRule) {
 
 func (ys *YaraScanner) LoadEmbedded() {
 	ys.rules = defaultRules
+}
+
+// LoadFromDir loads YARA rules from .yar files in a directory, merging with existing rules.
+func (ys *YaraScanner) LoadFromDir(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read yara dir: %w", err)
+	}
+
+	var additional []YaraRule
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yar") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			log.Printf("[yara] skip %s: %v", e.Name(), err)
+			continue
+		}
+		rule := YaraRule{
+			Name:      strings.TrimSuffix(e.Name(), ".yar"),
+			Condition: "any",
+			Patterns: []YaraPattern{
+				{
+					Type:      "string",
+					Value:     string(data),
+					CaseSensitive: false,
+				},
+			},
+		}
+		additional = append(additional, rule)
+		log.Printf("[yara] loaded rule: %s", rule.Name)
+	}
+
+	if len(additional) > 0 {
+		ys.rules = append(ys.rules, additional...)
+		log.Printf("[yara] loaded %d rules from %s", len(additional), dir)
+	}
+	return nil
 }
 
 func (ys *YaraScanner) ScanFile(path string) ([]YaraMatch, error) {
