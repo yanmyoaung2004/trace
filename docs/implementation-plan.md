@@ -16,40 +16,25 @@
 
 ## 2. Dependency Graph
 
-```
-Queue (no deps)
-  │
-  ▼
-Batch Writer (depends: Queue)
-  │
-  ├──► SQLite Hot Tables (depends: Batch Writer)
-  │         │
-  │         ▼
-  │    Dedicated Writer Goroutine (depends: SQLite)
-  │
-  ├──► Manifest (no deps — can be built in parallel)
-  │
-  ▼
-Flusher (depends: SQLite Hot Tables, Manifest, Parquet Writer)
-  │
-  ▼
-Parquet Writer (depends: Manifest — can be built in parallel with SQLite)
-  │
-  ▼
-Router (depends: SQLite Hot Tables, Manifest, Cold Reader)
-  │
-  ├──► Cold Reader / Parquet Reader (depends: Manifest)
-  │
-  ├──► DuckDB Adapter (depends: Manifest, optional CGO)
-  │
-  ▼
-Compactor (depends: Manifest, Parquet Reader)
-  │
-  ▼
-Snapshots (depends: Flusher, Manifest, SQLite Hot Tables)
-  │
-  ▼
-GC / Integrity Scrub (depends: Manifest)
+```mermaid
+flowchart TB
+    Q[Queue] --> BW[Batch Writer]
+    BW --> SQL[SQLite Hot Tables]
+    SQL --> WG[Dedicated Writer Goroutine]
+    BW --> FL[Flusher]
+    MAN[Manifest - no deps] --> FL
+    PW[Parquet Writer] --> FL
+    SQL --> R[Router]
+    MAN --> R
+    CR[Cold Reader / Parquet Reader] --> R
+    MAN --> CR
+    MAN --> DA[DuckDB Adapter]
+    MAN --> COMP[Compactor]
+    CR --> COMP
+    FL --> SNAP[Snapshots]
+    MAN --> SNAP
+    SQL --> SNAP
+    MAN --> GC[GC / Integrity Scrub]
 ```
 
 **Parallel build groups:**

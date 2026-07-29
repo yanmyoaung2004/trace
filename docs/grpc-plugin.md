@@ -4,13 +4,11 @@ For platforms where Go's `plugin` package is unavailable (Windows) or when plugi
 
 ## Architecture
 
-```
-┌─────────────────┐     gRPC     ┌──────────────────┐
-│   Trace Core     │◄───────────►│  Plugin Process   │
-│                  │             │  (sidecar)        │
-│  Plugin Loader   │             │                   │
-│  gRPC Client     │             │  gRPC Server      │
-└─────────────────┘             └──────────────────┘
+```mermaid
+flowchart LR
+    TC[Trace Core<br/>Plugin Loader<br/>gRPC Client]
+    PP[Plugin Process<br/>sidecar<br/>gRPC Server]
+    TC <-->|gRPC| PP
 ```
 
 ## Proto Definition

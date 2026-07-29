@@ -20,37 +20,22 @@ Single self-contained binary. No Docker, no Python runtime, no external services
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────┐
-│              Edge Node (single binary)       │
-│                                               │
-│  ┌──────────┐  ┌──────────┐  ┌────────────┐  │
-│  │  Host     │  │Knowledge │  │ Detection  │  │
-│  │  Agent    │  │  Agent   │  │   Agent    │  │
-│  ├──────────┤  ├──────────┤  ├────────────┤  │
-│  │ Planner  │  │ RAG      │  │ YARA       │  │
-│  │ Orch.    │  │ MITRE DB │  │ PE scan    │  │
-│  │ Playbook │  │ CVE cache│  │ VT client  │  │
-│  └──────────┘  └──────────┘  └────────────┘  │
-│         │           │               │         │
-│         └───────────┴───────────────┘         │
-│                         │                     │
-│                    ┌────┴────┐                │
-│                    │ SQLite  │                │
-│                    │ (WAL)   │                │
-│                    ├─────────┤                │
-│                    │ tasks   │                │
-│                    │ results │                │
-│                    │ config  │                │
-│                    │ cache   │                │
-│                    │ intel   │                │
-│                    └─────────┘                │
-│                                               │
-│  ┌──────────────┐  ┌──────────────────────┐   │
-│  │ File Watcher │  │ Append-Only Inv. Log │   │
-│  │ (local logs) │  │   (JSONL / replay)   │   │
-│  └──────────────┘  └──────────────────────┘   │
-└─────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Edge[Edge Node - single binary]
+        HA[Host Agent] --> PL[Planner / Orchestrator]
+        HA --> PB[Playbook Engine]
+        KA[Knowledge Agent] --> RG[RAG]
+        KA --> MB[MITRE DB]
+        KA --> CC[CVE Cache]
+        DA[Detection Agent] --> YR[YARA Scan]
+        DA --> PE[PE Analysis]
+        DA --> VT[VirusTotal Client]
+        PL & PB & RG & YR --> SQL[SQLite WAL]
+        SQL --> TSKS[tasks / results / config / cache / intel]
+        FW[File Watcher<br/>local logs] --> SQL
+        SQL --> AL[Append-Only<br/>Investigation Log<br/>JSONL / replay]
+    end
 ```
 
 ## Core Design Decisions
@@ -202,41 +187,35 @@ Trace now includes its own lightweight endpoint agent, replacing the need for th
 
 ### Agent Architecture
 
-```
-┌─────────────────────────────────────────────────────┐
-│              Endpoint (trace-agent binary)            │
-│                                                       │
-│  ┌──────────────┐  ┌──────────────┐  ┌────────────┐ │
-│  │  Monitoring   │  │    Event     │  │  Response  │ │
-│  │  Modules      │──│   Pipeline   │──│  Executor  │ │
-│  ├──────────────┤  │  ┌────────┐  │  ├────────────┤ │
-│  │ Process (ETW │  │  │ YARA   │  │  │ kill proc  │ │
-│  │ /netlink/ps) │  │  │ scan   │  │  │ quarantine │ │
-│  │ File (inotify│  │  │ dedup  │  │  │ block IP   │ │
-│  │ /RDCW/fan)   │  │  │ corr   │  │  │ isolate    │ │
-│  │ Network (ss/ │  │  │ tree   │  │  │ forensics  │ │
-│  │ netstat/lsof)│  │  └────────┘  │  └────────────┘ │
-│  │ Memory (maps/│  │              │                  │
-│  │ VQueryEx)    │  │  ┌────────┐  │  ┌────────────┐ │
-│  └──────────────┘  │  │ SQLite │  │  │  Updater   │ │
-│                     │  │ Queue  │  │  │ (auto-SW)  │ │
-│                     │  └────────┘  │  └────────────┘ │
-│                     └──────────────┘                  │
-│                               │                       │
-│                    ┌──────────┴──────────┐            │
-│                    │  Transport (HTTPS)   │            │
-│                    │  + mTLS + HMAC      │            │
-│                    │  + Circuit Breaker   │            │
-│                    └──────────┬──────────┘            │
-└───────────────────────────────┼────────────────────────┘
-                                │
-                    ┌───────────┴───────────┐
-                    │   Trace Server         │
-                    │   /api/v1/edr/*        │
-                    │   Agent registration   │
-                    │   Event storage        │
-                    │   Action dispatch      │
-                    └───────────────────────┘
+```mermaid
+flowchart LR
+    subgraph Agent[Endpoint - trace-agent binary]
+        subgraph Mon[Monitoring Modules]
+            PROC[Process<br/>ETW / netlink / ps]
+            FILE[File<br/>inotify / RDCW / fan]
+            NET[Network<br/>ss / netstat / lsof]
+            MEM[Memory<br/>maps / VQueryEx]
+        end
+        subgraph Pipe[Event Pipeline]
+            YARA[YARA Scan]
+            DEDUP[Dedup]
+            CORR[Correlator]
+            TREE[Process Tree]
+        end
+        subgraph Resp[Response Executor]
+            KILL[kill / quarantine / block]
+            ISOLATE[isolate / forensics]
+        end
+        subgraph Other[Infra]
+            Q[SQLite Queue]
+            UPD[Auto-Updater]
+        end
+        Mon --> Pipe --> Q
+        Pipe --> Resp
+        AgentTransport[Transport<br/>HTTPS + mTLS + HMAC<br/>+ Circuit Breaker]
+        Q --> AgentTransport
+    end
+    AgentTransport --> Server[Trace Server<br/>/api/v1/edr/*]
 ```
 
 ### Monitoring Depth

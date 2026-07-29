@@ -16,61 +16,35 @@ Four independent reviews converged on the same shape: **SQLite as durable WAL, P
 
 The critical insight from the final review: **You're not avoiding the LSM architecture. You're renting its hardest parts from boring, battle-tested components.** SQLite is the memtable+WAL, the flusher is the memtable flush, compaction is LSM compaction, the manifest is the MANIFEST file. The design gets LSM semantics without writing an LSM from scratch.
 
-```
-                     Trace Storage Engine (TSE)
-                     ═══════════════════════════
-
-  Collectors / SIEM / Agents
-        │
-        ▼
-  Ingest Queue (bounded, blocking w/ timeout, spill-to-disk overflow)
-        │
-        ├── N ingest workers (default 4)
-        │
-        ▼
-  Batch Writer ──────────────► Dedicated Writer Goroutine (owns SQLite conn)
-        │                          │
-        │                          ▼
-        │                   SQLite (hot tier + durable WAL)
-        │                   ┌──────────────────────────────┐
-        │                   │  Hourly tables:               │
-        │                   │  edr_events_2026072410        │
-        │                   │  edr_events_2026072411        │
-        │                   │  edr_events_2026072412        │
-        │                   │  Only index: (ts_us)          │
-        │                   │  WAL mode, passive checkpoint  │
-        │                   │  Retention: DROP TABLE (O(1)) │
-        │                   └──────────────────────────────┘
-        │                                   │
-        │                                   ▼
-        │                    ┌──────────────────────────────┐
-        │                    │  Flusher (single goroutine)  │
-        │                    │  reads: id > watermark        │
-        │                    │  accumulates by (tenant,hour) │
-        │                    │  sorts by (agent_id, ts_us)   │
-        │                    └──────────────┬───────────────┘
-        │                                   │
-        │                                   ▼
-        │                          Parquet segments (canonical)
-        │                          events/{tenant}/{yyyy-mm-dd}/{hh}/part-*.parquet
-        │                          Columnar-decomposed: 5-10 hot JSON fields as real columns
-        │                          Timestamps: INT64 epoch microseconds
-        │                                   │
-        │                                   ▼
-        │                          Manifest (SQLite, separate DB)
-        │                          One atomic transaction per file:
-        │                            INSERT file row (status='committed')
-        │                            UPDATE watermark (last_id, last_ts)
-        │                                   │
-        ▼                                   ▼
-  Query Router ◄────── watermark ────► Compactor (hourly → daily after 48h)
-        │                                   │
-  ┌──────┴──────┐                     Weekly integrity scrub:
-  │ hot: SQLite │                     re-hash committed files → status='corrupted' if mismatch
-  │ cold: DuckDB│                     Bit rot detection for cold data
-  └──────┬──────┘
-         │
-  Merge + dedup by UUIDv7 + partial-result warnings
+```mermaid
+flowchart TB
+    subgraph Input[Ingest]
+        C[Collectors / SIEM / Agents]
+        IQ[Ingest Queue<br/>bounded, spill-to-disk]
+    end
+    subgraph Hot[Hot Tier - SQLite]
+        BW[Batch Writer]
+        WG[Dedicated Writer Goroutine]
+        SQL[SQLite WAL]
+        HT[Hourly Tables<br/>edr_events_2026072410+<br/>DROP TABLE retention]
+    end
+    subgraph Flush[Flush Pipeline]
+        FL[Flusher<br/>reads: id > watermark]
+        PQ[Parquet Segments<br/>events/{tenant}/{date}/{hh}/part-*.parquet]
+        MAN[Manifest - SQLite<br/>SHA-256, atomic tx per file]
+    end
+    subgraph Cold[Cold Tier]
+        QR[Query Router]
+        HOTQ[hot: SQLite]
+        COLDQ[cold: DuckDB]
+        COMP[Compactor<br/>hourly → daily]
+    end
+    C --> IQ --> BW --> WG --> SQL
+    SQL --> FL --> PQ --> MAN
+    MAN -->|watermark| QR
+    MAN --> COMP --> PQ
+    QR --> HOTQ & COLDQ
+    HOTQ & COLDQ --> MERGE[Merge + dedup by UUIDv7]
 ```
 
 ## What Changed From v4 (and Why)

@@ -19,28 +19,17 @@ Rather than replacing security analysts, it acts as an AI teammate capable of pe
 
 # High-Level Architecture
 
-```
-                    User
-                      │
-              Natural Language Query
-                      │
-                Dispatch Agent
-        (Planner / Orchestrator)
-                      │
-     ┌────────────────┴───────────────┐
-     │                                │
-Archive Agent                Sift Agent
-     │                                │
-Threat Intelligence         Malware Analysis
-MITRE ATT&CK                VirusTotal
-Web Search                  ML/DL Models
-CVE Database                IOC Analysis
-     │                                │
-     └──────────────┬─────────────────┘
-                    │
-            Shared Context
-                    │
-              Final Response
+```mermaid
+flowchart TB
+    User[User]
+    User -->|Natural Language Query| DA[Dispatch Agent<br/>Planner / Orchestrator]
+    DA --> AA[Archive Agent]
+    DA --> SA[Sift Agent]
+    AA --> TI[Threat Intelligence<br/>MITRE ATT&CK<br/>Web Search<br/>CVE Database]
+    SA --> MA[Malware Analysis<br/>VirusTotal<br/>ML/DL Models<br/>IOC Analysis]
+    AA --> SC[Shared Context]
+    SA --> SC
+    SC --> FR[Final Response]
 ```
 
 The platform follows an **orchestrated multi-agent architecture** rather than asking one LLM to perform every task. This kind of specialization is a common pattern in modern multi-agent AI systems because specialized agents are typically easier to scale and maintain than a single general-purpose agent. ([arXiv][1])

@@ -24,18 +24,22 @@
 
 ### Gap in the Market
 
-```
-                     COMPLEXITY →
-                     Low                    High
-COST      ┌─────────────────────────────────────┐
-Low       │  Trace (single binary)               │
-          │  OSSEC (limited)                     │  Wazuh (needs ELK)
-          │                                      │  Security Onion
-          │                                      │
-High      │                                      │  Splunk
-          │                                      │  Sentinel
-          │                                      │  QRadar
-          └─────────────────────────────────────┘
+```mermaid
+quadrantChart
+    title Cost vs Complexity Positioning
+    x-axis Low Complexity --> High Complexity
+    y-axis Low Cost --> High Cost
+    quadrant-1 "High Cost / Low Complexity"
+    quadrant-2 "High Cost / High Complexity"
+    quadrant-3 "Low Cost / Low Complexity"
+    quadrant-4 "Low Cost / High Complexity"
+    Trace "Trace (single binary)": [0.1, 0.1]
+    OSSEC "OSSEC (limited)": [0.15, 0.05]
+    Wazuh "Wazuh (needs ELK)": [0.7, 0.08]
+    SecurityOnion "Security Onion": [0.6, 0.1]
+    Splunk "Splunk": [0.8, 0.8]
+    Sentinel "Sentinel": [0.75, 0.7]
+    QRadar "QRadar": [0.7, 0.75]
 ```
 
 Every existing SIEM falls into one of two camps:
@@ -103,19 +107,22 @@ Every existing SIEM falls into one of two camps:
 
 ## Competitive Positioning Matrix
 
-```
-                              FEATURE DEPTH →
-                              Shallow                Deep
-EASE OF USE  ┌─────────────────────────────────────────┐
-  High       │  Trace (★)                              │
-             │                                         │  Wazuh
-             │                                         │
-  Medium     │                                         │  Security Onion
-             │                                         │  Elastic Security
-             │                                         │
-  Low        │                                         │  Splunk
-             │                                         │  QRadar
-             └─────────────────────────────────────────┘
+```mermaid
+quadrantChart
+    title Feature Depth vs Ease of Use
+    x-axis Shallow Features --> Deep Features
+    y-axis Low Ease of Use --> High Ease of Use
+    quadrant-1 "High Ease / Shallow"
+    quadrant-2 "High Ease / Deep"
+    quadrant-3 "Low Ease / Shallow"
+    quadrant-4 "Low Ease / Deep"
+    Trace "Trace (★)": [0.8, 0.9]
+    Wazuh "Wazuh": [0.85, 0.4]
+    SecurityOnion "Security Onion": [0.7, 0.3]
+    Elastic "Elastic Security": [0.9, 0.35]
+    Splunk "Splunk": [0.9, 0.1]
+    Sentinel "Sentinel": [0.85, 0.15]
+    QRadar "QRadar": [0.8, 0.1]
 ```
 
 Trace is uniquely positioned in the **high ease-of-use / medium feature-depth** quadrant — no competitor occupies this space.

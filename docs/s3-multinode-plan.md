@@ -23,22 +23,16 @@
 
 ### Design
 
-```
-┌──────────────┐     ┌──────────────┐
-│  WriteBatch   │     │  ColdReader  │
-│  parquet file │     │  reads from  │
-│  → local temp │     │  S3 → temp   │
-│  → upload S3  │     │  → parse     │
-│  → rename     │     │  → return    │
-│  → SHA-256    │     └──────┬───────┘
-└──────┬───────┘            │
-       │                    │
-       └────────┬───────────┘
-                │
-        ┌───────▼───────┐
-        │    MinIO/S3    │
-        │  (shared cold) │
-        └───────────────┘
+```mermaid
+flowchart LR
+    subgraph Write[Write Path]
+        WB[WriteBatch<br/>parquet → local temp → upload S3 → rename → SHA-256]
+    end
+    subgraph Read[Read Path]
+        CR[ColdReader<br/>S3 → temp → parse → return]
+    end
+    WB --> S3[MinIO / S3<br/>shared cold storage]
+    S3 --> CR
 ```
 
 The Parquet writer writes to a local temp file as before, then uploads to S3. The manifest stores the `s3://` path. The cold reader downloads from S3 to a temp file on first read, caches locally.

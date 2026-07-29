@@ -41,30 +41,28 @@ Trace is currently single-node. All data (hot SQLite store, cold Parquet files, 
 
 **Best for:** Small to medium deployments (<50K events/sec, strong consistency required)
 
-```
-         ┌──────────────────────────────────────────────┐
-         │                  Clients / Agents              │
-         └──────────┬───────────────────────┬───────────┘
-                    │                       │
-            ┌───────▼───────┐       ┌───────▼───────┐
-            │  LB: Write    │       │  LB: Read     │
-            │  → Leader     │       │  → Any node   │
-            └───────┬───────┘       └───────┬───────┘
-                    │                       │
-         ┌──────────┼───────────────────────┼──────────┐
-         │          │                       │          │
-    ┌────▼────┐ ┌──▼──┐ ┌──▼──┐     ┌────▼────┐      │
-    │ Node 1  │ │Node2│ │Node3│     │  MinIO  │      │
-    │ (Leader)│ │     │ │     │     │ (S3 API)│      │
-    │ rqlite  │◄────►│◄────►│      └────┬────┘      │
-    │ flusher │ │     │ │     │          │           │
-    │ parquet──────┬──────┬──────────► events/      │
-    └──────────┘    │     │           └──────────────┘
-                    │     │
-              ┌─────▼─────▼─────┐
-              │  Parquet files   │
-              │  (shared via S3) │
-              └─────────────────┘
+```mermaid
+flowchart TB
+    subgraph Clients[Clients / Agents]
+        W[Write LB → Leader]
+        R[Read LB → Any Node]
+    end
+    subgraph Cluster[Raft Cluster]
+        N1[Node 1 - Leader<br/>rqlite + flusher]
+        N2[Node 2<br/>rqlite]
+        N3[Node 3<br/>rqlite]
+    end
+    subgraph Storage[Cold Storage]
+        M[MinIO / S3 API]
+        PF[Parquet files<br/>(shared via S3)]
+    end
+    W --> N1
+    R --> N1 & N2 & N3
+    N1 <--> N2 <--> N3
+    N1 -->|parquet| M
+    N2 -->|parquet| M
+    N3 -->|parquet| M
+    M --> PF
 ```
 
 ---
@@ -96,35 +94,26 @@ Trace is currently single-node. All data (hot SQLite store, cold Parquet files, 
 
 **Best for:** High-volume deployments (>100K events/sec), teams with DevOps capability
 
-```
-         ┌─────────────────────────────────────┐
-         │            Agents / Producers        │
-         └────────────┬────────────────┬───────┘
-                      │                │
-              ┌───────▼────────────────▼───────┐
-              │     Kafka / NATS JetStream      │
-              │  topic: "trace-events" (12 part)│
-              │  - partition 0: agent-0*       │
-              │  - partition 1: agent-1*       │
-              │  - ...                         │
-              │  - partition 11: agent-11*     │
-              └───────┬────────────────┬───────┘
-                      │                │
-         ┌────────────┼────────────────┼────────────┐
-         │            │                │            │
-    ┌────▼────┐  ┌────▼────┐    ┌──────▼──────┐    │
-    │Consumer │  │Consumer │    │   etcd      │    │
-    │ 0,1,2   │  │ 3,4,5   │    │ (consensus) │    │
-    │ flusher │  │ flusher │    │ - watermark │    │
-    │ parquet │  │ parquet │    │ - manifest  │    │
-    └────┬────┘  └────┬────┘    └──────┬──────┘    │
-         │            │                │           │
-         └────────────┼────────────────┼───────────┘
-                      │                │
-                 ┌────▼────────────────▼────┐
-                 │    MinIO / S3 (cold tier) │
-                 │    events/{tenant}/{date} │
-                 └──────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Producers[Agents / Producers]
+        A1[Agent-0*] -->|partition 0| K
+        A2[Agent-1*] -->|partition 1| K
+    end
+    K[Kafka / NATS JetStream<br/>topic: trace-events<br/>12 partitions]
+    subgraph Consumers[Consumer Group]
+        C1[Consumer 0,1,2<br/>flusher + parquet]
+        C2[Consumer 3,4,5<br/>flusher + parquet]
+    end
+    subgraph Consensus[Metadata]
+        ETCD[etcd<br/>watermark + manifest]
+    end
+    subgraph Cold[Cold Tier]
+        M[MinIO / S3<br/>events/{tenant}/{date}]
+    end
+    K --> C1 & C2
+    C1 & C2 -->|parquet| M
+    C1 & C2 -->|watermark| ETCD
 ```
 
 ---
@@ -185,31 +174,16 @@ Trace is currently single-node. All data (hot SQLite store, cold Parquet files, 
 
 **Best for:** Distributed edge deployments (agents in different offices/regions), innovative teams
 
-```
-┌───────────────────────────────────────────────────────────┐
-│                    Gossip Protocol                         │
-│  Node A ◄──────────────────► Node B ◄────────────────────►│
-│  Node C ◄──────────────────► Node D ◄────────────────────►│
-└───────────────────────────────────────────────────────────┘
-
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Node A    │     │   Node B    │     │   Node C    │
-│ (NY Office) │     │ (London)    │     │ (Tokyo)     │
-├─────────────┤     ├─────────────┤     ├─────────────┤
-│ Agents: 1-10│     │Agents: 11-20│     │Agents: 21-30│
-│ hot.db      │     │ hot.db      │     │ hot.db      │
-│ events/     │     │ events/     │     │ events/     │
-│ manifest.db │     │ manifest.db │     │ manifest.db │
-└──────┬──────┘     └──────┬──────┘     └──────┬──────┘
-       │                   │                   │
-       └───────────────────┼───────────────────┘
-                           │
-              ┌────────────▼────────────┐
-              │  Async sync (rsync /    │
-              │  IPFS / Delta-sharing)  │
-              │  - Parquet files synced  │
-              │  - Manifests merged      │
-              └─────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Gossip[Gossip Protocol]
+        NA[Node A<br/>NY Office<br/>Agents: 1-10<br/>hot.db + events/ + manifest.db]
+        NB[Node B<br/>London<br/>Agents: 11-20<br/>hot.db + events/ + manifest.db]
+        NC[Node C<br/>Tokyo<br/>Agents: 21-30<br/>hot.db + events/ + manifest.db]
+    end
+    NA <-->|gossip| NB
+    NB <-->|gossip| NC
+    NA & NB & NC --> SYNC[Async sync<br/>rsync / IPFS / Delta-sharing<br/>Parquet files + manifests]
 ```
 
 ---

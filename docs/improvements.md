@@ -11,8 +11,13 @@ Wazuh is a dependency with a server cluster and agents for every endpoint. Inste
 
 The SIEM engine is a plugin that can be swapped or disabled. No Wazuh server to maintain, no agents to deploy across the fleet. Log sources declare themselves — the engine adapts.
 
-```
-Log Source ──► Decoder ──► Normalized Event ──► Rule Engine ──► Alert ──► Dispatch Agent
+```mermaid
+flowchart LR
+    LS[Log Source] --> DEC[Decoder]
+    DEC --> NE[Normalized Event]
+    NE --> RE[Rule Engine]
+    RE --> AL[Alert]
+    AL --> DA[Dispatch Agent]
 ```
 
 ## 2. SOAR — built as playbooks + agent orchestration
