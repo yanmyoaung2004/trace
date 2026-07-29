@@ -123,4 +123,48 @@
 | **User Experience** | Mobile web, `trace web`, status, theme, notifications, i18n | ~7 days |
 | **Architecture** | Pluggable decoders, plugin marketplace, doctor, benchmark, canary | ~10 days |
 
+---
+
+## Already Built — Not Wired
+
+These 13 features have complete code but are not integrated into the main system.
+They're ready to wire — just need to plug them in.
+
+### Monitor Package (`internal/edr_agent/monitor/`)
+
+| Feature | File | What it does | Wire to |
+|---------|------|-------------|---------|
+| **Kill chain reconstruction** | `killchain.go` | Correlates process/file/network events into kill-chain alerts with confidence scoring | `agent.go` → `analysisLoop()` |
+| **Flood detection** | `flood.go` | Detects event floods (too many events/sec) with adaptive thresholds, suppresses during storms | `agent.go` → `analysisLoop()` |
+| **Memory scanner** | `memory.go` | Scans process memory for YARA matches via `/proc/pid/mem` (Linux) | `agent.go` → optional monitor |
+| **Hash sharing (P2P)** | `hashshare.go` | Peer-to-peer hash verdict sharing via UDP multicast. Share YARA results between agents | `agent.go` → after `scanCache` init |
+| **False positive learning** | `fplearn.go` | Auto-throttles noisy YARA rules on specific processes after repeated dismissals | `agent.go` → YARA scan handlers |
+| **Entropy baseline** | `entropy.go` | Maintains PE section entropy baselines, detects anomalies via Z-score with time decay | `agent.go` → `analysisLoop()` |
+| **Process hollowing (Windows)** | `process_hollowing_windows.go` | Detects process hollowing via PEB base address changes and W^X violations | `agent.go` → under `windows` build |
+| **ETW session (alt)** | `etw_windows.go` | Separate ETW tracing session using `StartTraceW`/`OpenTraceW` (different from channel monitor) | `agent.go` → as alt ETW monitor |
+| **USB monitor (Windows)** | `usb_windows.go` | Detects USB drive insertion/removal via `RegisterDeviceNotificationW` with polling fallback | `agent.go` → under `windows` conditional |
+| **Authenticode verification** | `authenticode_windows.go` | Verifies PE digital signatures via `WinVerifyTrust` API | PE analysis pipeline |
+| **AMSI integration** | `amsi_windows.go` | Scans buffers/strings via Windows Antimalware Scan Interface | YARA scanning pipeline |
+
+### Sift Package (`internal/sift/`)
+
+| Feature | File | What it does | Wire to |
+|---------|------|-------------|---------|
+| **Behavior scan action** | `rootkit_behavior.go` | 8 runtime checks (hidden process, kernel module, fileless malware, container escape, etc.) | `sift.Agent.Execute()` switch or register `RootkitScanner` as standalone plugin |
+
+### Audit Package (`internal/audit/`)
+
+| Feature | File | What it does | Wire to |
+|---------|------|-------------|---------|
+| **Audit trail logger** | `logger.go` | HMAC-chained, tamper-evident audit log with SQLite persistence and integrity verification | `root.go:initServices()` or server initialization to log admin actions, case mutations, response actions |
+
+### Effort to wire all 13
+
+| Group | Count | Effort |
+|-------|-------|--------|
+| Simple (one-line start) | 5 (USB, flood, hashshare, fplearn, entropy) | ~2 hours |
+| Medium (integrates with pipeline) | 5 (killchain, memory, hollowing, ETW, behavior scan) | ~1 day |
+| Complex (requires config + UI) | 3 (authenticode, AMSI, audit) | ~2 days |
+| **Total** | **13** | **~3 days** |
+
 **Total: ~74 days of work. Pick what excites you most.**
