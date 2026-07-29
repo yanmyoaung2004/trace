@@ -32,6 +32,7 @@ import (
 	"github.com/yanmyoaung2004/trace/internal/response"
 	"github.com/yanmyoaung2004/trace/internal/taskqueue"
 	"github.com/yanmyoaung2004/trace/internal/telemetry"
+	"github.com/yanmyoaung2004/trace/internal/audit"
 	"github.com/yanmyoaung2004/trace/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -51,6 +52,7 @@ type App struct {
 	huntScheduler   *hunt.Scheduler
 	caseManager     *cases.Manager
 	telemetry       *telemetry.Telemetry
+	auditLogger     *audit.Logger
 	tse             *TSE
 }
 
@@ -458,6 +460,17 @@ func (a *App) initServices() error {
 			return len(invs)
 		},
 	)
+
+	// Audit trail logger
+	if a.sqlDB != nil {
+		logger, err := audit.New(a.sqlDB, nil)
+		if err != nil {
+			log.Printf("[audit] init: %v (disabled)", err)
+		} else {
+			a.auditLogger = logger
+			log.Printf("[audit] logger active")
+		}
+	}
 
 	return nil
 }
