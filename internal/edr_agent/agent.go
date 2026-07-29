@@ -66,6 +66,15 @@ type Agent struct {
 	dedup      *monitor.Deduplicator
 	updater    *updater.Updater
 	logCollect *monitor.LogCollector
+	usbMon     *monitor.USBMonitor
+	floodDet   *monitor.FloodDetector
+	entropyBase *monitor.EntropyBaseline
+	hashShare  *monitor.HashShare
+	fpLearn    *monitor.FPLearning
+	killChain  *monitor.KillChainReconstructor
+	memScanner *monitor.MemoryScanner
+	hollowDet  *monitor.HollowingDetector
+	etwSession *monitor.ETWSession
 
 	stats      AgentStats
 }
@@ -256,6 +265,60 @@ func (a *Agent) Start(ctx context.Context) error {
 		}
 	}
 
+	// USB monitor (Windows)
+	if runtime.GOOS == "windows" {
+		a.usbMon = monitor.NewUSBMonitor(a.eventCh)
+		if err := a.usbMon.Start(); err != nil {
+			log.Printf("[trace-agent] USB monitor: %v (disabled)", err)
+		} else {
+			log.Printf("[trace-agent] USB monitor active")
+		}
+	}
+
+	// ETW session (Windows, alt tracing)
+	if runtime.GOOS == "windows" {
+		a.etwSession = monitor.NewETWSession(a.eventCh)
+		if err := a.etwSession.Start(); err != nil {
+			log.Printf("[trace-agent] ETW session: %v (disabled)", err)
+		} else {
+			log.Printf("[trace-agent] ETW session active")
+		}
+	}
+
+	// Flood detector
+	a.floodDet = monitor.NewFloodDetector(a.eventCh)
+	log.Printf("[trace-agent] flood detector active")
+
+	// Entropy baseline
+	a.entropyBase = monitor.NewEntropyBaseline(a.config.DataDir)
+	log.Printf("[trace-agent] entropy baseline active")
+
+	// Hash sharing (P2P)
+	a.hashShare = monitor.NewHashShare(a.scanCache, a.agentID, a.config.DataDir)
+
+	// False positive learning
+	a.fpLearn = monitor.NewFPLearning(filepath.Join(a.config.DataDir, "fplearn"))
+	log.Printf("[trace-agent] FP learning active")
+
+	// Kill chain reconstruction
+	a.killChain = monitor.NewKillChainReconstructor(a.eventCh)
+
+	// Memory scanner
+	if a.config.MemoryScanEnabled {
+		a.memScanner = monitor.NewMemoryScanner()
+		log.Printf("[trace-agent] memory scanner active")
+	}
+
+	// Process hollowing detection (Windows)
+	if runtime.GOOS == "windows" {
+		a.hollowDet = monitor.NewHollowingDetector(a.eventCh)
+		if err := a.hollowDet.Start(); err != nil {
+			log.Printf("[trace-agent] hollowing detector: %v (disabled)", err)
+		} else {
+			log.Printf("[trace-agent] hollowing detector active")
+		}
+	}
+
 	go a.configLoop(ctx)
 	go a.updateLoop(ctx)
 	go a.loop(ctx)
@@ -330,11 +393,20 @@ func (a *Agent) Stop(ctx context.Context) error {
 	if a.etwChannels != nil {
 		a.etwChannels.Stop()
 	}
+	if a.etwSession != nil {
+		a.etwSession.Stop()
+	}
 	if a.vulnScanner != nil {
 		a.vulnScanner.Stop()
 	}
 	if a.logCollect != nil {
 		a.logCollect.Stop()
+	}
+	if a.usbMon != nil {
+		a.usbMon.Stop()
+	}
+	if a.hollowDet != nil {
+		a.hollowDet.Stop()
 	}
 	if a.procTree != nil {
 		a.procTree.Close()

@@ -52,7 +52,8 @@ type Config struct {
 	TLSKeyFile  string `json:"tls_key_file"`
 	CAFile      string `json:"ca_file"`
 
-	LogCollectPaths []string `json:"log_collect_paths"`
+	LogCollectPaths   []string `json:"log_collect_paths"`
+	MemoryScanEnabled bool     `json:"memory_scan_enabled"`
 }
 
 func DefaultConfig() *Config {
