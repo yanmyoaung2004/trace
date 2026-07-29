@@ -1,221 +1,241 @@
-# Wazuh Feature Comparison — Test Guide
+# Wazuh-Like Multi-Computer Test Guide
 
-## Overview
+## Scenario
 
-This guide shows how to test each Wazuh-like capability in Trace.
-Start with `trace demo` to get a running environment, then run each test.
+```
+Machine A (Server) — 192.168.1.100
+  └─ Runs: trace server (central manager)
+  └─ Ports: :8080 (HTTP API), :8443 (dashboard), :514 (syslog)
 
----
-
-## 1. Log Collection (Wazuh → syslog/file)
-
-| Wazuh | Trace | How to test |
-|-------|-------|-------------|
-| Syslog collector | `trace serve --siem --syslog-addr :514` | Send a test syslog message and verify it's received |
-
-```bash
-# Start SIEM with syslog listener
-trace serve --siem --syslog-addr :514
-
-# From another terminal, send a test syslog message
-echo "Sep 27 10:00:00 server sshd[1234]: Failed password for root from 10.0.0.5 port 22 ssh2" | nc -u localhost 514
-
-# Agent log collector (Linux)
-# Agent tails /var/log/auth.log, /var/log/syslog
-trace-agent --config agent.yaml
-# Events appear in web dashboard at /alerts
+Machine B (Agent)  — 192.168.1.101  
+  └─ Runs: trace-agent (monitored endpoint)
+  └─ Connects to: Machine A:8080
 ```
 
 ---
 
-## 2. File Integrity Monitoring (Wazuh → FIM)
+## Step 0: Build the binaries
 
-| Wazuh | Trace | How to test |
-|-------|-------|-------------|
-| FIM | Agent FIM monitor watches file changes | Create or modify a watched file and verify event |
+Run these on both machines (or build once and copy):
 
 ```bash
-# Start demo with agent
-trace demo --port 9999
+# Build server binary
+cd dev
+go build -o trace-server ./cmd/trace/
 
-# Create a file in the watched directory
-echo "test content" > C:\Temp\trace-demo-test\test-file.txt
-# or on Linux:
-echo "test content" > /tmp/test-file.txt
+# Build agent binary
+go build -o trace-agent ./cmd/trace-agent/
 
-# Check the dashboard at http://localhost:9999
-# Events should appear as "file_create" type
+# Copy to both machines
+scp trace-server user@192.168.1.100:~/
+scp trace-agent user@192.168.1.101:~/
 ```
 
 ---
 
-## 3. Vulnerability Detection (Wazuh → Vulnerability detector)
-
-| Wazuh | Trace | How to test |
-|-------|-------|-------------|
-| Vulnerability detector | Agent vuln scanner + builtin CVE database | Agent scans installed packages, matches against CVEs |
+## Step 1: Start the server (Machine A)
 
 ```bash
-# Start agent with vuln scanning enabled (default)
-trace-agent --config agent.yaml
-# Agent logs: [vuln] scanning packages...
+# Start central server with web dashboard
+./trace-server server --http-addr :8080
 
-# Query vuln status
-trace-agent --status
-# Or via server API
-curl http://localhost:9999/api/v1/edr/vuln/feed
+# Or with TLS + TSE storage
+./trace-server server \
+  --http-addr :8443 \
+  --tse-storage-path ./data/tse
+
+# Verify it's running
+curl http://localhost:8080/healthz
+# → ok
 ```
 
 ---
 
-## 4. Compliance / SCA (Wazuh → Security Configuration Assessment)
-
-| Wazuh | Trace | How to test |
-|-------|-------|-------------|
-| SCA | Compliance reporting with CIS benchmarks | Generate a compliance report |
+## Step 2: Install and connect the agent (Machine B)
 
 ```bash
-# List available frameworks
-trace compliance list
+# On Machine B, start agent pointing to Machine A
+./trace-agent \
+  --server http://192.168.1.100:8080 \
+  --verbose
+```
 
-# Generate a compliance report
-trace compliance report --framework pci_dss_v4.0
-# Output: Score: 86% (12/14 controls passed)
+The agent auto-registers with the server. Watch the server logs on Machine A:
+```
+[trace-agent] registered with server (id: abc123...)
+```
 
-# Export to HTML
-trace compliance report --framework pci_dss_v4.0 --output report.html
-start report.html
+**Verify connection** — on Machine A:
+```bash
+curl http://localhost:8080/api/v1/edr/agents
+# → [{"id":"abc...","hostname":"machine-b","status":"active",...}]
 
-# Check a specific control
-trace compliance assess --framework pci_dss_v4.0 --control 8.2.1
+# Or via CLI
+./trace-server edr list
 ```
 
 ---
 
-## 5. Malware Detection (Wazuh → YARA + Anti-malware)
+## Step 3: Test — Event Collection
 
-| Wazuh | Trace | How to test |
-|-------|-------|-------------|
-| YARA | Built-in YARA rules (17) + custom `.yar` files | Scan files with YARA |
+### File monitoring
 
+On Machine B, create a file:
 ```bash
-# Scan a file with YARA
-trace investigate -f /path/to/file.exe
-# Shows: YARA matches, PE metadata, hash lookup
+echo "suspicious content" > /tmp/test-file.txt
+```
 
-# Add custom YARA rules
-mkdir -p ~/.trace/yara
-cat > ~/.trace/yara/my_rules.yar << 'EOF'
-rule MyCustomRule {
-  meta:
-    description = "Custom test rule"
-  strings:
-    $test = "suspicious" nocase
-  condition:
-    $test
-}
-EOF
+On Machine A, check the events:
+```bash
+curl "http://localhost:8080/api/v1/edr/events?agent_id=abc&limit=5"
+```
 
-# Scan again — custom rules are merged with built-in
-trace investigate -f suspicious.txt
+### Process monitoring
 
-# Hash lookup (VirusTotal if API key configured)
-# Set TRACE_VT_API_KEY or add to config
-trace investigate --playbook hash-lookup --param hash=d41d8cd98f00b204e9800998ecf8427e
+On Machine B, run something:
+```bash
+whoami
+ping 8.8.8.8
+```
+
+On Machine A, view process events:
+```bash
+./trace-server edr events <agent-id> --type process_create
 ```
 
 ---
 
-## 6. Active Response (Wazuh → Active response)
+## Step 4: Test — YARA Malware Detection
 
-| Wazuh | Trace | How to test |
-|-------|-------|-------------|
-| Active response | Response actions via EDR agent | Dispatch action to agent |
+On Machine B, the agent automatically YARA-scans files.
+Create a file that matches a built-in YARA rule:
 
 ```bash
-# List registered agents
-trace edr list
+echo "Invoke-Expression (New-Object Net.WebClient).DownloadString" > /tmp/ps_script.ps1
+```
 
-# Dispatch a response action
-trace edr dispatch <agent-id> kill_process --pid 1234
-trace edr dispatch <agent-id> quarantine_file --path /tmp/malware.exe
-trace edr dispatch <agent-id> block_ip --ip 10.0.0.5
-trace edr dispatch <agent-id> run_script --script "echo 'cleanup done'"
+The YARA rule `Suspicious_PowerShell` will match this. After the agent's scan interval:
 
-# View action status
-trace edr events <agent-id>
+On Machine A:
+```bash
+./trace-server edr events <agent-id> --type yara_match
 ```
 
 ---
 
-## 7. Security Events (Wazuh → Event correlation)
+## Step 5: Test — Vulnerability Scanning
 
-| Wazuh | Trace | How to test |
-|-------|-------|-------------|
-| Event correlation | 464 SIEM rules with MITRE mapping | Trigger a rule and verify alert |
+On Machine B, the agent scans installed packages every 6 hours.
+Trigger an immediate scan (or wait):
 
+On Machine A, check for vuln events:
 ```bash
-# Start SIEM
-trace serve --siem
+curl "http://localhost:8080/api/v1/edr/vulns?agent_id=abc&min_severity=7"
 
-# Feed test data
-echo "sshd[1234]: Failed password for root from 10.0.0.5" | trace serve --siem-stdin
-
-# Check alerts
-trace case list
-# Or web dashboard at http://localhost:8443/alerts
+# Or view the built-in CVE feed
+curl http://localhost:8080/api/v1/edr/vuln/feed
 ```
 
 ---
 
-## 8. Central Management (Wazuh → Wazuh server/dashboard)
+## Step 6: Test — Active Response
 
-| Wazuh | Trace | How to test |
-|-------|-------|-------------|
-| Server/Dashboard | Web dashboard + sync server | Open browser and explore |
+From Machine A, dispatch a response action to Machine B:
 
 ```bash
-# Start server
-trace server --http-addr :8443
+# List agents to get the ID
+./trace-server edr list
 
-# Open web UI
-start http://localhost:8443
+# Block an IP
+./trace-server edr dispatch <agent-id> block_ip --ip 185.220.101.24
 
-# Available pages:
-# /         - Dashboard with stats, charts, investigation list
-# /alerts   - SIEM alerts with severity filter
-# /cases    - Case management
-# /correlations - Cross-node IOC correlations
-# /api/tse  - TSE storage engine metrics
+# Kill a process
+./trace-server edr dispatch <agent-id> kill_process --pid 1234
+
+# Run a script
+./trace-server edr dispatch <agent-id> run_script --script "echo 'cleanup done' > /tmp/response.log"
+
+# Check action result
+./trace-server edr events <agent-id> --type action_result
 ```
 
 ---
 
-## Quick Test Script
+## Step 7: Test — Configuration Management
+
+Push config from server to agent:
 
 ```bash
-# Run this to test all major Wazuh-like features in one go
-echo "=== 1. SIEM Alert ==="
-trace compliance report --framework pci_dss_v4.0
+# On Machine A, set agent defaults
+curl -X PUT http://localhost:8080/api/v1/edr/config \
+  -H "Authorization: Bearer <admin-key>" \
+  -H "Content-Type: application/json" \
+  -d '{"monitor_process":true,"monitor_file":true,"vuln_scan_enabled":true}'
+
+# Agent fetches this within 30 minutes, or on restart
+```
+
+---
+
+## Step 8: Test — Agent Auto-Update
+
+```bash
+# On Machine A, build and stage a new agent version
+./trace-server build agent --upload ./updates
+
+# Agent checks for updates every 6 hours
+# To force an immediate check, restart the agent on Machine B
+```
+
+---
+
+## Step 9: Web Dashboard
+
+Open a browser on any machine and navigate to:
+```
+http://192.168.1.100:8080
+```
+
+You'll see:
+- Investigation list
+- Alert dashboard charts
+- Connected agents
+- TSE storage metrics
+- Cases and correlations
+
+---
+
+## Full End-to-End Test Script
+
+Run this on Machine A to verify everything is connected:
+
+```bash
+echo "=== Wazuh-Like Test Suite ==="
 echo ""
 
-echo "=== 2. PE Analysis ==="
-trace investigate -f C:\Windows\System32\notepad.exe
-echo ""
+echo "1. Server health..."
+curl -sf http://localhost:8080/healthz && echo " ✓"
 
-echo "=== 3. YARA Scan ==="
-echo test > /tmp/eicar.txt
-trace investigate -f /tmp/eicar.txt
-echo ""
+echo "2. Connected agents..."
+curl -sf http://localhost:8080/api/v1/edr/agents | grep -c "hostname"
+echo " agent(s) connected"
 
-echo "=== 4. Case Management ==="
-trace case list
-echo ""
+echo "3. Agent events..."
+AGENT_ID=$(curl -sf http://localhost:8080/api/v1/edr/agents | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+curl -sf "http://localhost:8080/api/v1/edr/events?agent_id=$AGENT_ID&limit=3" | grep -c "event_type"
+echo " event types found"
 
-echo "=== 5. TSE Storage ==="
-trace tse status --storage-path ./data/tse
-echo ""
+echo "4. Compliance report..."
+./trace-server compliance report --framework pci_dss_v4.0 | grep "Score"
 
-echo "=== 6. Shell Completion ==="
-trace completion bash | head -3
+echo "5. CVE feed..."
+curl -sf http://localhost:8080/api/v1/edr/vuln/feed | grep -c "cve_id"
+echo " CVEs in feed"
+
+echo "6. Dashboard..."
+curl -sf http://localhost:8080/ | head -1 | grep -c html
+echo " HTML pages served"
+
+echo ""
+echo "=== All tests complete ==="
 ```
