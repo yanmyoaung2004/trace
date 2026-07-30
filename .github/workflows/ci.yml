@@ -60,7 +60,7 @@ jobs:
         run: go test ./internal/storage/sqlite -fuzz=FuzzBuildHotQuery -fuzztime=10s
 
       - name: SIEM fuzz (short)
-        run: go test ./internal/siem/... -fuzz=FuzzAutoDecoder -fuzztime=10s
+        run: go test ./internal/siem -fuzz=FuzzAutoDecoder -fuzztime=10s
 
       - name: Docker meta
         id: meta
