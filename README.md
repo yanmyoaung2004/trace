@@ -25,13 +25,16 @@ Most SOC tools fall into two camps:
 
 Trace is different. It's an **all-in-one SOC platform** that fits in 10MB:
 
-```
-┌──────────────────────────────────────────────────┐
-│  File Watcher → Decoder (1,567 formats)          │
-│  → Rule Engine (462 rules with MITRE mapping)    │
-│  → Alert → Investigation → Playbook → Response   │
-│  → Case Management → PDF Report                  │
-└──────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    FW[File Watcher] --> DEC[Decoder<br/>1,567 formats]
+    DEC --> RE[Rule Engine<br/>462 rules, MITRE mapped]
+    RE --> AL[Alert]
+    AL --> INV[Investigation]
+    INV --> PB[Playbook]
+    PB --> RES[Response]
+    RES --> CASE[Case Management]
+    CASE --> PDF[PDF Report]
 ```
 
 No agents to deploy. No databases to tune. One command, and you have a working SOC.
@@ -141,8 +144,12 @@ trace edr dispatch <agent-id> isolate
 
 Embedded columnar event store for long-term retention. `trace serve --tse` to enable.
 
-```
-Events -> SQLite (hot, ~1-2h) -> Flusher (watermark) -> Parquet (cold, ZSTD) -> DuckDB (auto)
+```mermaid
+flowchart LR
+    EV[Events] --> SQL[SQLite Hot Tier<br/>~1-2h]
+    SQL --> FL[Flusher<br/>watermark]
+    FL --> PQ[Parquet Cold Tier<br/>ZSTD]
+    PQ --> D[DuckDB<br/>auto]
 ```
 
 | Component | Role |
@@ -168,33 +175,16 @@ trace tse config show
 
 ## Architecture
 
-```
-                    User Query
-                       │
-                 Dispatch Agent
-              (Planner / Orchestrator)
-                       │
-        ┌──────────────┴──────────────┐
-        │                             │
-    Archive Agent               Sift Agent
-   (Threat Intel)           (Malware Analysis)
-        │                             │
-    MITRE ATT&CK                 YARA + PE
-    CVE Database                 VirusTotal
-    Web Search                   Rootkits
-        │                             │
-        └──────────────┬──────────────┘
-                       │
-              ┌────────┴────────┐
-              │                 │
-         SIEM Engine      Response Agent
-      462 rules, 7       Block, quarantine,
-      decoders, alerts   kill, EDR, rollback
-              │                 │
-              └────────┬────────┘
-                       │
-              Investigation + Case
-              (Timeline, IOCs, Report, PDF)
+```mermaid
+flowchart TB
+    UQ[User Query] --> DA[Dispatch Agent<br/>Planner / Orchestrator]
+    DA --> AA[Archive Agent<br/>Threat Intel]
+    DA --> SA[Sift Agent<br/>Malware Analysis]
+    AA --> MITRE[MITRE ATT&CK<br/>CVE Database<br/>Web Search]
+    SA --> YARA[YARA + PE Analysis<br/>VirusTotal<br/>Rootkit Detection]
+    DA --> SIEM[SIEM Engine<br/>462 rules, 7 decoders, alerts]
+    DA --> RA[Response Agent<br/>Block, quarantine, kill, EDR, rollback]
+    AA & SA & SIEM & RA --> IC[Investigation + Case<br/>Timeline, IOCs, Report, PDF]
 ```
 
 ## Ingested From Wazuh
