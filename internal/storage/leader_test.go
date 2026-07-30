@@ -6,21 +6,29 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
 func s3TestServer(t *testing.T) (*httptest.Server, *S3Client) {
 	t.Helper()
+	var mu sync.Mutex
 	store := make(map[string][]byte)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := strings.TrimPrefix(r.URL.Path, "/test-bucket/")
 		switch r.Method {
 		case "PUT":
-			store[key], _ = io.ReadAll(r.Body)
+			data, _ := io.ReadAll(r.Body)
+			mu.Lock()
+			store[key] = data
+			mu.Unlock()
 			w.WriteHeader(http.StatusOK)
 		case "GET":
-			if data, ok := store[key]; ok {
+			mu.Lock()
+			data, ok := store[key]
+			mu.Unlock()
+			if ok {
 				w.WriteHeader(http.StatusOK)
 				w.Write(data)
 			} else {
