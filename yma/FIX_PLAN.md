@@ -307,3 +307,20 @@ New tests each workstream must add (examples, not exhaustive): AuthZ 403 matrix;
 | F5 | Compactor group-commit is straight-line `AddFile`/`UpdateFileStatus` calls (parser-safe); restore to single-transaction `AddFileTx`/`UpdateFileStatusTx` form as a follow-up | Storage |
 | F6 | Disk-full enforce (95%) + backup streaming/filtered rotation; `-race`, kill-9/soak/stress/malware/e2e gates on CI/Linux | Verification |
 | F7 | `sift/hash.go` 9-hash dup deletion + `seed-iocs.json` single store; per-call TI creds from config; ReDoS/malformed-YAML fuzz; 429/500/timeout/cache integration tests | Detection |
+
+# Wave A Completion — 2026-09-21 (follow-ups closed)
+
+> Fleet enroll unblocked + F1–F7 + Phase 4 remainder implemented. Full short suite green, zero `FAIL`. One commit per area below; `yma/FOLLOWUPS_PLAN.md` holds the execution plan.
+
+| Commit | Closes |
+| ------ | ------ |
+| `08a9d37` fix(fleet) — `provision_token` in `RegisterRequest`/config/`--provision-token`/`TRACE_AGENT_PROVISION_TOKEN`, token-only enroll (no client `api_key`, no client keygen), envelope-aware register, 0600 persist + resume, updater `SetAPIKey`, stubs + docs updated | Fleet blocker |
+| `044d416` fix(signing) + `57799de` verify-before-download — server check dual-publishes `signature`, agent verifies Check-response binding fail-closed (env fallback), installers + ceremony docs; no-key/unsigned now refuses before any download | F4 |
+| `7ee0b11` fix(supply-hygiene) — pinned tags, `ruleset.lock` repinned to 6 vendored outputs, `x/mod` direct | F1, F2, F3 |
+| `1846e8b` fix(compactor) — group-commit restored to single `Transaction` with `AddFileTx`/`UpdateFileStatusTx` | F5 |
+| `4e3468e` fix(disk-backup) — 95% enforce + `trace_tse_disk_rejected_total`, streaming backup, filtered rotation, backup flags + goldens + gate docs | F6 (disk/backup part) |
+| `718c806` fix(detection) — `hash.go` dup deleted → `seed-iocs.json` single store (21 entries + CIDR), exact+CIDR `LookupBuiltin`, config-wired Splunk/Elastic creds (input secrets rejected), fuzz + 429/500/timeout/cache tests | F7 |
+| `e1f0422` feat(asset-risk) — `internal/asset` inventory+join+score, compliance/case CSV/CEF, scheduled reports, entity correlation graph, `asset` CLI, TUI risk panel | Phase 4 remainder |
+| `57324f2` docs(yma) — tracks `FOLLOWUPS_PLAN.md` | Docs |
+
+Remaining open (post-merge): real ghcr digest after first tagged push (F1 tail); signing-key ceremony execution (F4 ops step, code ready); `-race`/kill-9/soak/stress/malware/e2e/DuckDB gates on CI/Linux (Windows MinGW has no 64-bit cgo here).
