@@ -2,6 +2,7 @@ package compactor
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
 	"os"
@@ -142,7 +143,18 @@ func (c *Compactor) compactGroup(ctx context.Context, tenantID, date string, fil
 		return fmt.Errorf("write compacted: %w", err)
 	}
 
-	// Atomic manifest commit: add daily file, mark hourly files as superseded
+	// Atomic manifest commit: daily insert + hourly supersede in one Transaction.
+	// Crash reasoning: the daily Parquet file is fully written BEFORE this tx,
+	// so a crash before commit leaves an orphan daily file on disk (covered by
+	// startup OrphanGC: on-disk but status NOT committed => removed) while the
+	// hourly files stay 'committed' and remain queryable. A crash inside the tx
+	// rolls back, same state. A crash after commit but before CleanupSuperseded
+	// leaves hourly files 'superseded' yet present on disk; they stay queryable
+	// until CleanupSuperseded deletes them past the grace period, and the daily
+	// file is already committed, so no data loss or double-count in either path.
+	// (F5 group-commit: must use the Tx variants inside Transaction; the
+	// non-Tx variants run on a separate connection and would diverge from the
+	// atomic commit.)
 	now := time.Now().UnixMicro()
 	dailyFile := storage.ParquetFileRecord{
 		FileID:           uuid.New().String(),
@@ -163,17 +175,23 @@ func (c *Compactor) compactGroup(ctx context.Context, tenantID, date string, fil
 		UpdatedAt:        now,
 	}
 
-	if err := c.manifest.AddFile(ctx, dailyFile); err != nil {
-		return fmt.Errorf("add daily: %w", err)
-	}
-	for _, f := range files {
-		if err := c.manifest.UpdateFileStatus(ctx, f.FileID, "superseded"); err != nil {
-			return fmt.Errorf("supersede %s: %w", f.FileID, err)
+	if err := c.manifest.Transaction(ctx, func(tx *sql.Tx) error {
+		if err := c.manifest.AddFileTx(ctx, tx, dailyFile); err != nil {
+			return fmt.Errorf("add daily: %w", err)
 		}
+		for _, f := range files {
+			if err := c.manifest.UpdateFileStatusTx(ctx, tx, f.FileID, "superseded"); err != nil {
+				return fmt.Errorf("supersede %s: %w", f.FileID, err)
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 	log.Printf("[tse] compacted %s/%s files=%d events=%d size=%s",
 		tenantID, date, len(files), fileResult.RowCount, formatBytes(fileResult.CompressedSize))
 	return nil
+
 }
 // CleanupSuperseded deletes superseded files from disk after the grace period.
 // It also records the superseded age/count metric for lifecycle observability.
