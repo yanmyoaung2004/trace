@@ -191,8 +191,16 @@ With running server:
 				cfg.TSE.S3Endpoint = val
 			case "s3_region":
 				cfg.TSE.S3Region = val
+			case "backup_enabled":
+				cfg.TSE.BackupEnabled = val == "true" || val == "1" || val == "yes"
+			case "backup_dir":
+				cfg.TSE.BackupDir = val
+			case "backup_interval":
+				cfg.TSE.BackupInterval = val
+			case "backup_retention":
+				fmt.Sscanf(val, "%d", &cfg.TSE.BackupMaxRetention)
 			default:
-				return fmt.Errorf("unknown config key: %s (valid: storage_path, compression, compression_level, row_group_size, hot_window, flush_interval, cold_ttl, retention.days)", key)
+				return fmt.Errorf("unknown config key: %s (valid: storage_path, compression, compression_level, row_group_size, hot_window, flush_interval, cold_ttl, retention.days, admin_token, s3_bucket, s3_endpoint, s3_region, backup_enabled, backup_dir, backup_interval, backup_retention)", key)
 			}
 			if err := config.Save(path, cfg); err != nil {
 				return err

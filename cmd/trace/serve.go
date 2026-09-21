@@ -102,6 +102,22 @@ Examples:
 				if ssl, _ := cmd.Flags().GetBool("tse-s3-ssl"); ssl {
 					app.cfg.TSE.S3UseSSL = true
 				}
+				// W4: --tse-backup* flags (bindings approved by Main; config keys
+				// + env already exist in internal/config).
+				if cmd.Flags().Changed("tse-backup-enabled") {
+					v, _ := cmd.Flags().GetBool("tse-backup-enabled")
+					app.cfg.TSE.BackupEnabled = v
+				}
+				if d, _ := cmd.Flags().GetString("tse-backup-dir"); d != "" {
+					app.cfg.TSE.BackupDir = d
+				}
+				if iv, _ := cmd.Flags().GetString("tse-backup-interval"); iv != "" {
+					app.cfg.TSE.BackupInterval = iv
+				}
+				if cmd.Flags().Changed("tse-backup-retention") {
+					r, _ := cmd.Flags().GetInt("tse-backup-retention")
+					app.cfg.TSE.BackupMaxRetention = r
+				}
 				tse, err := initTSE(&app.cfg.TSE)
 				if err != nil {
 					return fmt.Errorf("init TSE: %w", err)
@@ -343,6 +359,10 @@ Examples:
 	cmd.Flags().String("tse-s3-endpoint", "", "S3/MinIO endpoint (e.g. minio:9000)")
 	cmd.Flags().String("tse-s3-region", "", "S3 region (e.g. us-east-1)")
 	cmd.Flags().Bool("tse-s3-ssl", false, "Use HTTPS for S3 connections")
+	cmd.Flags().Bool("tse-backup-enabled", false, "Enable periodic TSE snapshot backups")
+	cmd.Flags().String("tse-backup-dir", "", "Local directory for TSE snapshot backups")
+	cmd.Flags().String("tse-backup-interval", "", "Backup interval (e.g. 6h)")
+	cmd.Flags().Int("tse-backup-retention", 0, "Max tse-snapshot-*.tar.gz files to retain (0=unlimited)")
 	cmd.Flags().String("syslog-addr", "", "syslog listener address (e.g. :514)")
 	cmd.Flags().StringSlice("log-dir", nil, "directories to watch for log files")
 	cmd.Flags().String("export", "", "start HTML report server on given address (e.g. :8080)")

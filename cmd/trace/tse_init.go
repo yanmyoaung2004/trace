@@ -60,6 +60,9 @@ type TSE struct {
 // WriteEvents submits events through the ingest queue for rate-limited processing.
 // The queue applies backpressure: channel → spill-to-disk → drop.
 // Events are batch-written to SQLite by the background batch writer.
+// W4: the queue WriteBatch enforces the 95% disk-full gate first (ErrDiskFull
+// + trace_tse_disk_rejected_total); callers must propagate the error so SIEM
+// and server ingest paths observe rejections instead of silent buffering.
 func (t *TSE) WriteEvents(ctx context.Context, events []*storage.Event) error {
 	return t.Queue.WriteBatch(ctx, events)
 }
@@ -157,17 +160,17 @@ func initTSE(cfg *config.TSEConfig) (*TSE, error) {
 	// Batch writer drains the queue and writes to SQLite in batches
 	bw := batch.NewBatchWriter(1000, 250*time.Millisecond)
 
-	// Check disk at startup
-	if du, err := storage.CheckDisk(storagePath); err == nil {
+	// Check disk at startup (W4: GetDiskUsage honors the test hook; production
+	// uses the OS check. Throttled warn helper avoids log spam on hot paths —
+	// here it always logs once since LastWarn starts at zero).
+	if du, err := storage.GetDiskUsage(storagePath); err == nil {
 		log.Printf("[tse] disk: %d/%d GB (%.0f%%)",
 			(du.TotalBytes-du.FreeBytes)/1073741824,
 			du.TotalBytes/1073741824,
 			du.UsedRatio*100)
-		if storage.IsDiskWarning(du) {
-			log.Printf("[tse] WARNING: disk usage >%.0f%%", storage.DiskWarnRatio*100)
-		}
+		storage.LogDiskWarn(du)
 		if storage.IsDiskFull(du) {
-			log.Printf("[tse] CRITICAL: disk usage >%.0f%%", storage.DiskFullRatio*100)
+			log.Printf("[tse] CRITICAL: disk usage >%.0f%%, writes will be rejected with ErrDiskFull", storage.DiskFullRatio*100)
 		}
 	} else {
 		log.Printf("[tse] disk check unavailable: %v", err)
@@ -192,7 +195,7 @@ func initTSE(cfg *config.TSEConfig) (*TSE, error) {
 	// Register disk check for write rejection and Prometheus metrics
 	storage.StoragePathFunc = func() string { return storagePath }
 	metrics.SetDiskChecker(func() *metrics.DiskInfo {
-		du, err := storage.CheckDisk(storagePath)
+		du, err := storage.GetDiskUsage(storagePath)
 		if err != nil {
 			return nil
 		}

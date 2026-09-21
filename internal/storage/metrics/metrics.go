@@ -27,6 +27,7 @@ var promMetrics = []struct {
 	{"cold_file_count", "trace_tse_cold_file_count", "Current number of cold parquet files"},
 	{"flush_errors", "trace_tse_flush_errors_total", "Total flush errors"},
 	{"query_errors", "trace_tse_query_errors_total", "Total query errors"},
+	{"disk_full_rejected", "trace_tse_disk_rejected_total", "Total ingest batches rejected at 95% disk-full gate"},
 	{"superseded_pending", "trace_tse_superseded_pending", "Superseded files awaiting grace expiry"},
 	{"superseded_oldest_age_sec", "trace_tse_superseded_oldest_age_seconds", "Age of oldest pending superseded file"},
 	{"wal_bytes", "trace_tse_wal_bytes", "Hot WAL size in bytes"},
@@ -101,6 +102,7 @@ type Metrics struct {
 
 	FlushErrors         atomic.Int64
 	QueryErrors         atomic.Int64
+	DiskFullRejected    atomic.Uint64 // ingest batches refused by the 95% disk-full gate (W4)
 
 	SupersededPending   atomic.Int64 // superseded files awaiting grace expiry
 	SupersededOldestAgeSec atomic.Int64 // age of oldest pending superseded file
@@ -143,8 +145,9 @@ func (m *Metrics) Snapshot() map[string]any {
 		"parquet_bytes_written": m.ParquetBytesWritten.Load(),
 		"hot_table_count":       m.HotTableCount.Load(),
 		"cold_file_count":       m.ColdFileCount.Load(),
-		"flush_errors":          m.FlushErrors.Load(),
-		"query_errors":          m.QueryErrors.Load(),
+		"flush_errors":        m.FlushErrors.Load(),
+		"query_errors":        m.QueryErrors.Load(),
+		"disk_full_rejected":  m.DiskFullRejected.Load(),
 		"superseded_pending":    m.SupersededPending.Load(),
 		"superseded_oldest_age_sec": m.SupersededOldestAgeSec.Load(),
 		"wal_bytes":             m.WALBytes.Load(),

@@ -1253,3 +1253,57 @@ go test ./... -count=1
 ```
 
 If all three commands pass, the system is healthy.
+
+---
+
+### 11. W4 Disk + Backup + Gates Status (2026-09-21)
+
+> W6 (F6) scope: disk-full enforce, backup streaming/rotation, `trace serve
+> --tse-backup-*` flags, and gate status. No gate was executed on this Windows
+> workstation per assignment (report blockers, do not attempt to run).
+
+#### Disk-full gate (implemented, unit-covered)
+
+- Enforce 95% / warn 85% wired into the ingest accept path:
+  `IngestQueue.WriteBatch` (primary, before memory/spill admit) and
+  `SQLiteHotStore.WriteBatch` (backstop for direct writers). Both return
+  `storage.ErrDiskFull` and increment the new
+  `trace_tse_disk_rejected_total` counter (`DiskFullRejected` in
+  `internal/storage/metrics`).
+- 85% warnings throttle to at most one log line per minute
+  (`storage.LogDiskWarn`); tests simulate 85/95% via the `DiskCheckFunc`
+  hook (`internal/storage/disk_test.go`,
+  `internal/storage/queue/queue_test.go`,
+  `internal/storage/sqlite/hot_store_test.go`).
+- Observe: `trace tse metrics`, Prometheus `/metrics`
+  (`trace_tse_disk_usage_ratio`, `trace_tse_disk_rejected_total`).
+
+#### Backup streaming + rotation (implemented, unit-covered)
+
+- S3 upload streams from disk (`os.Open` + `UploadReader`, no whole-file
+  `os.ReadFile`); local snapshots already stream to temp + atomic rename
+  (`internal/storage/snapshot/create.go`).
+- Rotation only deletes finished `tse-snapshot-*.tar.gz` files
+  (`SnapshotPrefix`/`SnapshotSuffix`, oldest-first); foreign files, DB dumps,
+  and in-flight `.tmp-*` files are never removed
+  (`TestSchedulerRotationKeepsForeignFiles`).
+- `BackupDatabase` rotation likewise only touches `trace-db-*.sqlite`.
+- Configure: `trace serve --tse --tse-backup-enabled --tse-backup-dir
+  ./backups --tse-backup-interval 6h --tse-backup-retention 7`
+  (or `trace tse config set backup_dir|backup_interval|backup_retention|backup_enabled ...`).
+
+#### Gate status (not run here — deferred)
+
+| Gate | Script / entry | Status on this host |
+|------|----------------|---------------------|
+| kill-9 / crash recovery | `deploy/crash-test.sh`, `internal/storage/harness/crash_test.go`, `cmd/tse-crash-test` | NOT RUN — Windows workstation; crash harness targets Unix SIGKILL semantics. Defer to CI/Linux. |
+| Soak | `deploy/soak-test.sh` | NOT RUN — 24h agent soak needs a live deployment; defer to nightly/CI. |
+| Stress / volume | `deploy/stress-test.sh` | NOT RUN — synthetic workload run; defer to CI/Linux perf lane. |
+| Malware / YARA | `deploy/malware-test.sh` | NOT RUN — needs built `trace-agent --yara-scan` + fixture files; covered by unit YARA tests in the interim. |
+| E2E | `deploy/e2e-test.sh`, `docs/end-to-end-demo.sh` | NOT RUN — provisions demo env + builds both binaries; defer to CI. |
+| DuckDB CGO | `internal/storage/cold` (`-tags duckdb`, `github.com/marcboeker/go-duckdb v1.8.5`) | NOT RUN / BLOCKED — Windows MinGW CGO toolchain unavailable here; default build uses pure-Go `ParquetReader`. Defer DuckDB equivalence tests (`duckdb_test.go`, `//go:build cgo`) to CI/Linux; do NOT attempt MinGW install on this host. |
+
+Large-snapshot restore drill: use `trace tse snapshot --storage-path <dir>
+--output <file>` then `trace tse recover --from <file> --storage-path
+<dir>` on a host with spare disk; record sizes + timings in the release
+notes (drill itself deferred with the gates above).

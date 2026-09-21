@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/yanmyoaung2004/trace/internal/storage"
+	"github.com/yanmyoaung2004/trace/internal/storage/metrics"
 	_ "modernc.org/sqlite"
 )
 
@@ -88,12 +89,16 @@ func (s *SQLiteHotStore) WriteBatch(ctx context.Context, events []*storage.Event
 		return nil
 	}
 
-	// Check disk space before accepting new events (enforce 95%, warn 85%).
+	// W4: enforce the 95% disk-full gate at commit depth (direct writers that
+	// bypass the queue) and emit the 85% warn at most once per minute.
+	// The queue WriteBatch is the primary ingest gate; this is the backstop.
 	if storage.StoragePathFunc != nil {
-		if du, err := storage.CheckDisk(storage.StoragePathFunc()); err == nil {
+		if du, err := storage.GetDiskUsage(storage.StoragePathFunc()); err == nil {
 			if storage.IsDiskFull(du) {
+				metrics.Global.DiskFullRejected.Add(1)
 				return storage.ErrDiskFull
 			}
+			storage.LogDiskWarn(du)
 		}
 	}
 

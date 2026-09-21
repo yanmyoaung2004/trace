@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -111,15 +113,11 @@ func (s *Scheduler) runBackup(ctx context.Context, f *flusher.Flusher, m *manife
 	}
 	log.Printf("[backup] local snapshot created: %s (%d bytes)", localPath, fileSize(localPath))
 
-	// Upload to S3 if configured
+	// Upload to S3 if configured: stream from disk (W4: no whole-file
+	// ReadFile buffering — a snapshot can be gigabytes).
 	if s.s3 != nil {
 		s3Key := fmt.Sprintf("backups/tse-snapshot-%s.tar.gz", ts)
-		data, err := os.ReadFile(localPath)
-		if err != nil {
-			log.Printf("[backup] read for S3 upload: %v", err)
-			return
-		}
-		if err := s.s3.Upload(s3Key, data); err != nil {
+		if err := s.uploadToS3(localPath, s3Key); err != nil {
 			log.Printf("[backup] S3 upload failed: %v", err)
 			return
 		}
@@ -134,6 +132,27 @@ func (s *Scheduler) runBackup(ctx context.Context, f *flusher.Flusher, m *manife
 	log.Printf("[backup] completed in %s", time.Since(start))
 }
 
+// SnapshotPrefix is the only filename prefix the rotator may delete. Anything
+// else in the backup dir (user files, db dumps, stray temps, in-flight .tmp-*
+// files) is never removed by rotation.
+const SnapshotPrefix = "tse-snapshot-"
+
+// SnapshotSuffix bounds rotation to finished gzip tarballs.
+const SnapshotSuffix = ".tar.gz"
+
+func (s *Scheduler) uploadToS3(localPath, s3Key string) error {
+	f, err := os.Open(localPath)
+	if err != nil {
+		return fmt.Errorf("open for S3 upload: %w", err)
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("stat for S3 upload: %w", err)
+	}
+	return s.s3.UploadReader(s3Key, f, fi.Size())
+}
+
 func (s *Scheduler) rotateLocal() {
 	entries, err := os.ReadDir(s.cfg.BackupDir)
 	if err != nil {
@@ -141,14 +160,24 @@ func (s *Scheduler) rotateLocal() {
 	}
 	var backups []string
 	for _, e := range entries {
-		if !e.IsDir() {
-			backups = append(backups, e.Name())
+		name := e.Name()
+		if e.IsDir() {
+			continue
 		}
+		// Filter: only finished snapshots are rotation-eligible.
+		if !strings.HasPrefix(name, SnapshotPrefix) || !strings.HasSuffix(name, SnapshotSuffix) {
+			continue
+		}
+		backups = append(backups, name)
 	}
+	sort.Strings(backups) // timestamped names sort oldest-first
 	for len(backups) > s.cfg.MaxBackups {
 		oldest := backups[0]
 		backups = backups[1:]
-		os.Remove(filepath.Join(s.cfg.BackupDir, oldest))
+		if err := os.Remove(filepath.Join(s.cfg.BackupDir, oldest)); err != nil {
+			log.Printf("[backup] prune %s: %v (keeping remainder)", oldest, err)
+			break
+		}
 		log.Printf("[backup] pruned old backup: %s", oldest)
 	}
 }

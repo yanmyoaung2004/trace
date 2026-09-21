@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -26,23 +28,39 @@ func BackupDatabase(db *sql.DB, dbPath, backupDir string, maxBackups int) (strin
 
 	log.Printf("[backup] database backed up: %s (%d bytes)", backupPath, fileSize(backupPath))
 
-	// Rotate old backups
+	// Rotate old backups: only trace-db-*.sqlite files are eligible.
+	// Never delete foreign files sharing the backup dir.
 	if maxBackups > 0 {
-		entries, err := os.ReadDir(backupDir)
-		if err == nil {
-			var backups []string
-			for _, e := range entries {
-				if !e.IsDir() {
-					backups = append(backups, e.Name())
-				}
-			}
-			for len(backups) > maxBackups {
-				oldest := backups[0]
-				backups = backups[1:]
-				os.Remove(filepath.Join(backupDir, oldest))
-			}
-		}
+		rotateDatabaseBackups(backupDir, maxBackups)
 	}
 
 	return backupPath, nil
+}
+
+// rotateDatabaseBackups prunes oldest trace-db-*.sqlite files beyond max.
+func rotateDatabaseBackups(backupDir string, maxBackups int) {
+	entries, err := os.ReadDir(backupDir)
+	if err != nil {
+		return
+	}
+	var backups []string
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() {
+			continue
+		}
+		if !strings.HasPrefix(name, "trace-db-") || !strings.HasSuffix(name, ".sqlite") {
+			continue
+		}
+		backups = append(backups, name)
+	}
+	sort.Strings(backups) // timestamped names sort oldest-first
+	for len(backups) > maxBackups {
+		oldest := backups[0]
+		backups = backups[1:]
+		if err := os.Remove(filepath.Join(backupDir, oldest)); err != nil {
+			log.Printf("[backup] prune %s: %v (keeping remainder)", oldest, err)
+			break
+		}
+	}
 }

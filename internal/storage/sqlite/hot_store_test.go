@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/yanmyoaung2004/trace/internal/storage"
+	"github.com/yanmyoaung2004/trace/internal/storage/metrics"
 )
 
 func newTestHotStore(tb testing.TB) *SQLiteHotStore {
@@ -310,4 +312,25 @@ func TestCheckpointer(t *testing.T) {
 	go cp.Run(ctx)
 	time.Sleep(50 * time.Millisecond)
 	cancel()
+}
+
+func TestSQLiteHotStore_WriteBatchRejectsDiskFull(t *testing.T) {
+	prev := storage.DiskCheckFunc
+	defer func() { storage.DiskCheckFunc = prev }()
+	storage.DiskCheckFunc = func(path string) (*storage.DiskUsage, error) {
+		return &storage.DiskUsage{TotalBytes: 100, FreeBytes: 3, UsedRatio: 0.97}, nil
+	}
+	prevPath := storage.StoragePathFunc
+	storage.StoragePathFunc = func() string { return t.TempDir() }
+	defer func() { storage.StoragePathFunc = prevPath }()
+
+	s := newTestHotStore(t)
+	before := metrics.Global.DiskFullRejected.Load()
+	err := s.WriteBatch(context.Background(), []*storage.Event{testEvent("full-1")})
+	if !errors.Is(err, storage.ErrDiskFull) {
+		t.Fatalf("expected ErrDiskFull, got %v", err)
+	}
+	if got := metrics.Global.DiskFullRejected.Load(); got != before+1 {
+		t.Fatalf("expected disk_full_rejected %d, got %d", before+1, got)
+	}
 }

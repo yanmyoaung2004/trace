@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/yanmyoaung2004/trace/internal/storage"
+	"github.com/yanmyoaung2004/trace/internal/storage/metrics"
 )
 
 // DefaultQueueCapacity is the default ring buffer capacity.
@@ -291,7 +292,24 @@ var _ storage.Writer = (*IngestQueue)(nil)
 
 // WriteBatch implements storage.Writer by sending events through the queue.
 // This allows the queue to be used as the ingest entry point.
+// W4: the 95% disk-full gate is enforced here (before memory/spill admit, so
+// a full volume cannot be papered over by buffering), while the hot-store
+// WriteBatch re-checks at commit depth for direct writers that bypass the
+// queue. Rejections increment metrics.Global.DiskFullRejected. Warn at 85%
+// logs at most once per minute via storage.LogDiskWarn.
 func (q *IngestQueue) WriteBatch(ctx context.Context, events []*storage.Event) error {
+	if len(events) == 0 {
+		return nil
+	}
+	if storage.StoragePathFunc != nil {
+		if du, err := storage.GetDiskUsage(storage.StoragePathFunc()); err == nil {
+			if storage.IsDiskFull(du) {
+				metrics.Global.DiskFullRejected.Add(1)
+				return storage.ErrDiskFull
+			}
+			storage.LogDiskWarn(du)
+		}
+	}
 	for _, e := range events {
 		if err := q.Enqueue(ctx, e); err != nil {
 			return err

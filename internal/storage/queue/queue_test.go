@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/yanmyoaung2004/trace/internal/storage"
+	"github.com/yanmyoaung2004/trace/internal/storage/metrics"
 )
 
 func TestIngestQueue_EnqueueDequeue(t *testing.T) {
@@ -232,5 +234,55 @@ func TestDiskSpill_NonExistentDir(t *testing.T) {
 	_, err := NewDiskSpill(d, 0)
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestIngestQueue_WriteBatchRejectsDiskFull(t *testing.T) {
+	prev := storage.DiskCheckFunc
+	defer func() { storage.DiskCheckFunc = prev }()
+	storage.DiskCheckFunc = func(path string) (*storage.DiskUsage, error) {
+		return &storage.DiskUsage{TotalBytes: 100, FreeBytes: 4, UsedRatio: 0.96}, nil
+	}
+	prevPath := storage.StoragePathFunc
+	storage.StoragePathFunc = func() string { return t.TempDir() }
+	defer func() { storage.StoragePathFunc = prevPath }()
+
+	before := metrics.Global.DiskFullRejected.Load()
+	q, err := NewIngestQueue(10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer q.Close()
+
+	err = q.WriteBatch(context.Background(), []*storage.Event{{ID: "e1"}})
+	if !errors.Is(err, storage.ErrDiskFull) {
+		t.Fatalf("expected ErrDiskFull, got %v", err)
+	}
+	if got := metrics.Global.DiskFullRejected.Load(); got != before+1 {
+		t.Fatalf("expected disk_full_rejected %d, got %d", before+1, got)
+	}
+	if q.Len() != 0 {
+		t.Fatalf("expected no events admitted at 95%% gate, len=%d", q.Len())
+	}
+}
+
+func TestIngestQueue_WriteBatchWarnAdmits(t *testing.T) {
+	prev := storage.DiskCheckFunc
+	defer func() { storage.DiskCheckFunc = prev }()
+	storage.DiskCheckFunc = func(path string) (*storage.DiskUsage, error) {
+		return &storage.DiskUsage{TotalBytes: 100, FreeBytes: 12, UsedRatio: 0.88}, nil
+	}
+	prevPath := storage.StoragePathFunc
+	storage.StoragePathFunc = func() string { return t.TempDir() }
+	defer func() { storage.StoragePathFunc = prevPath }()
+
+	q, err := NewIngestQueue(10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer q.Close()
+
+	if err := q.WriteBatch(context.Background(), []*storage.Event{{ID: "warn-1"}}); err != nil {
+		t.Fatalf("expected warn-level writes to be admitted, got %v", err)
 	}
 }

@@ -151,8 +151,13 @@ type Config struct {
 	EmailTo             string `json:"email_to,omitempty" env:"TRACE_EMAIL_TO"`
 	PagerDutyRoutingKey string `json:"pagerduty_routing_key,omitempty" env:"TRACE_PAGERDUTY_ROUTING_KEY" fileenv:"TRACE_PAGERDUTY_ROUTING_KEY_FILE"`
 	WebhookURL          string `json:"webhook_url,omitempty" env:"TRACE_WEBHOOK_URL" fileenv:"TRACE_WEBHOOK_URL_FILE"`
+	SplunkURL           string `json:"splunk_url,omitempty" env:"TRACE_SPLUNK_URL" fileenv:"TRACE_SPLUNK_URL_FILE"`
+	SplunkUsername      string `json:"splunk_username,omitempty" env:"TRACE_SPLUNK_USERNAME"`
+	SplunkPassword      string `json:"splunk_password,omitempty" env:"TRACE_SPLUNK_PASSWORD" fileenv:"TRACE_SPLUNK_PASSWORD_FILE"`
+	SplunkToken         string `json:"splunk_token,omitempty" env:"TRACE_SPLUNK_TOKEN" fileenv:"TRACE_SPLUNK_TOKEN_FILE"`
+	ElasticURL          string `json:"elastic_url,omitempty" env:"TRACE_ELASTIC_URL" fileenv:"TRACE_ELASTIC_URL_FILE"`
+	ElasticAPIKey       string `json:"elastic_api_key,omitempty" env:"TRACE_ELASTIC_API_KEY" fileenv:"TRACE_ELASTIC_API_KEY_FILE"`
 }
-
 func repoDir() string {
 	exe, err := os.Executable()
 	if err != nil {
@@ -430,6 +435,18 @@ func (c *Config) ApplyFlags(flags map[string]string) {
 			c.TSE.NodeRole = v
 		case "tse-compression":
 			c.TSE.Compression = v
+		case "tse-backup-enabled":
+			if b, err := strconv.ParseBool(v); err == nil {
+				c.TSE.BackupEnabled = b
+			}
+		case "tse-backup-dir":
+			c.TSE.BackupDir = v
+		case "tse-backup-interval":
+			c.TSE.BackupInterval = v
+		case "tse-backup-retention":
+			if n, err := strconv.Atoi(v); err == nil {
+				c.TSE.BackupMaxRetention = n
+			}
 		case "syslog-addr":
 			c.SIEM.SyslogUDPAddr = v
 			c.SIEM.SyslogTCPAddr = v
@@ -551,6 +568,8 @@ var knownTopKeys = map[string]bool{
 	"telegram_chat_id": true, "smtp_host": true, "smtp_port": true, "smtp_user": true,
 	"smtp_password": true, "smtp_from": true, "email_to": true,
 	"pagerduty_routing_key": true, "webhook_url": true,
+	"splunk_url": true, "splunk_username": true, "splunk_password": true,
+	"splunk_token": true, "elastic_url": true, "elastic_api_key": true,
 }
 
 func unknownKeyWarnings(raw map[string]any, cfg *Config) []string {

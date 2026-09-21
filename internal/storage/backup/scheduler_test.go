@@ -109,3 +109,59 @@ func TestFileSize(t *testing.T) {
 		t.Errorf("expected 0 for missing file, got %d", sz2)
 	}
 }
+
+func TestSchedulerRotationKeepsForeignFiles(t *testing.T) {
+	dir := t.TempDir()
+	backupDir := filepath.Join(dir, "backups")
+	os.MkdirAll(backupDir, 0700)
+
+	for i := range 5 {
+		name := fmt.Sprintf("tse-snapshot-%04d.tar.gz", i)
+		if err := os.WriteFile(filepath.Join(backupDir, name), []byte("data"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Foreign files must never be deleted by rotation.
+	foreign := []string{"notes.txt", "trace-db-20260101.sqlite", "tse-snapshot-9999.tar.gz.tmp-abc", "other-snapshot-1.tar.gz"}
+	for _, name := range foreign {
+		if err := os.WriteFile(filepath.Join(backupDir, name), []byte("keep"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	s := NewScheduler(Config{BackupDir: backupDir, MaxBackups: 2})
+	s.rotateLocal()
+
+	entries, err := os.ReadDir(backupDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, e := range entries {
+		seen[e.Name()] = true
+	}
+	for _, name := range foreign {
+		if !seen[name] {
+			t.Errorf("foreign file %q was deleted by rotation", name)
+		}
+	}
+	snapshots := 0
+	for name := range seen {
+		if len(name) >= len(SnapshotPrefix)+len(SnapshotSuffix) {
+			snapshots++
+		}
+	}
+	// Count only finished snapshots: 2 retained + .tmp excluded via prefix/suffix filter.
+	kept := 0
+	for name := range seen {
+		if len(name) > len(SnapshotPrefix) && name[:len(SnapshotPrefix)] == SnapshotPrefix && len(name) >= len(SnapshotSuffix) && name[len(name)-len(SnapshotSuffix):] == SnapshotSuffix {
+			kept++
+		}
+	}
+	if kept != 2 {
+		t.Errorf("expected 2 retained snapshots, got %d", kept)
+	}
+	if snapshots == 0 {
+		t.Error("expected some snapshot files to remain")
+	}
+}
