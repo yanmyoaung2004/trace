@@ -15,11 +15,12 @@ import (
 	"strings"
 )
 
-// CLI flags: -in <ruleset root> -out <repo root>. Both default to the
-// historical layout (ruleset checkout next to the repo) but no path is
-// absolute or machine-specific anymore. -verify checks ruleset.lock
-// without writing outputs (CI gate). -write=false + -verify is the
-// reproducible check: same inputs => same bytes.
+// CLI flags: -in <ruleset root> -out <repo root>. Neither defaults to an
+// absolute or machine-specific path. ruleset.lock pins the reviewed
+// vendored outputs (repo-relative internal/... paths) and, when a ruleset
+// checkout is present, its input files. -verify enforces the lock without
+// writing outputs (CI gate) and diffs regenerated files (drift check:
+// same inputs => same bytes).
 var (
 	flagIn     = flag.String("in", "", "wazuh ruleset root (contains rules/ decoders/ lists/ mitre/ rootcheck/ sca/)")
 	flagOut    = flag.String("out", "", "repo root output base (generated files land under internal/...)")
@@ -74,8 +75,10 @@ func repoRoot() string {
 	}
 }
 
-// lockEntry pins one input file (sha256) so CI can prove the ruleset is
-// the reviewed one. ruleset.lock lives next to main.go and is committed.
+// lockEntry pins one file (sha256). Paths starting with "internal/" are
+// vendored outputs resolved against the repo root (reviewed snapshots);
+// any other path is a ruleset input resolved against the ruleset root.
+// ruleset.lock lives next to main.go and is committed.
 type lockEntry struct {
 	Path   string `json:"path"`
 	SHA256 string `json:"sha256"`
@@ -126,21 +129,30 @@ func writeOutput(path string, data []byte, drift *[]string) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
-// verifyLock checks every locked input file still hashes to the pinned
-// value. Missing lock file fails closed in -verify mode (CI must review
-// the ruleset before pinning); in normal mode it warns once.
-func verifyLock(root string) error {
+// verifyLock checks every locked file still hashes to the pinned value.
+// Output entries (internal/...) resolve against outBase; input entries
+// resolve against rulesRoot (skipped when no ruleset checkout is present;
+// main() reports that case). Missing lock file fails closed in -verify
+// mode (CI must review before pinning); in normal mode it warns once.
+func verifyLock(rulesRoot, outBase string) error {
 	entries, err := loadLock(converterDir())
 	if err != nil {
 		if *flagVerify {
-			return fmt.Errorf("ruleset.lock missing/unreadable: %w (pin the reviewed ruleset first)", err)
+			return fmt.Errorf("ruleset.lock missing/unreadable: %w (pin the reviewed outputs first)", err)
 		}
 		fmt.Fprintln(os.Stderr, "Warning: no ruleset.lock; outputs unpinned (run with -verify in CI after pinning).")
 		return nil
 	}
 	var bad []string
 	for _, e := range entries {
-		got, err := hashFile(filepath.Join(root, filepath.FromSlash(e.Path)))
+		p := filepath.FromSlash(e.Path)
+		full := filepath.Join(rulesRoot, p)
+		if e.Path == "internal" || strings.HasPrefix(e.Path, "internal/") {
+			full = filepath.Join(outBase, p)
+		} else if st, err := os.Stat(rulesRoot); err != nil || !st.IsDir() {
+			continue
+		}
+		got, err := hashFile(full)
 		if err != nil || got != strings.ToLower(e.SHA256) {
 			bad = append(bad, e.Path)
 		}
@@ -821,13 +833,16 @@ func main() {
 	outputDir := filepath.Join(outBase, "internal", "siem")
 
 	fmt.Printf("Ruleset: %s\nOutput:  %s\n", root, outBase)
-	if st, err := os.Stat(rulesDir); err != nil || !st.IsDir() {
-		fmt.Fprintf(os.Stderr, "rules dir not found: %s (pass -in <ruleset root> or set WAZUH_RULESET_DIR)\n", rulesDir)
+	if err := verifyLock(root, outBase); err != nil {
+		fmt.Fprintf(os.Stderr, "ruleset lock: %v\n", err)
 		os.Exit(1)
 	}
-
-	if err := verifyLock(root); err != nil {
-		fmt.Fprintf(os.Stderr, "ruleset lock: %v\n", err)
+	if st, err := os.Stat(rulesDir); err != nil || !st.IsDir() {
+		if *flagVerify {
+			fmt.Println("verify: vendored outputs match ruleset.lock (no ruleset checkout; regeneration skipped).")
+			return
+		}
+		fmt.Fprintf(os.Stderr, "rules dir not found: %s (pass -in <ruleset root> or set WAZUH_RULESET_DIR)\n", rulesDir)
 		os.Exit(1)
 	}
 
@@ -970,7 +985,7 @@ func main() {
 	convertSCA(root, outBase, &drift)
 
 	if *flagVerify {
-		if err := verifyLock(root); err != nil {
+		if err := verifyLock(root, outBase); err != nil {
 			fmt.Fprintf(os.Stderr, "verify: %v\n", err)
 			os.Exit(1)
 		}

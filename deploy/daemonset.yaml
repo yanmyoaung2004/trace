@@ -88,7 +88,13 @@ spec:
       dnsPolicy: ClusterFirst
       containers:
       - name: agent
-        # Pinned by digest (update the tag+digest together on release).
+        # Pinned immutable tag (never a floating tag). The @sha256 digest below is
+        # still REPLACE-ME (zeros): replace with the real ghcr digest after
+        # the first tagged push, keeping tag+digest together, e.g.:
+        #   TAG=v0.1.1
+        #   DIGEST=$(crane digest ghcr.io/yanmyoaung2004/trace-agent:${TAG})
+        #   # then set: image: ghcr.io/yanmyoaung2004/trace-agent:${TAG}@${DIGEST}
+        # Until then this DaemonSet must not be applied as-is.
         image: ghcr.io/yanmyoaung2004/trace-agent:v0.1.1@sha256:0000000000000000000000000000000000000000000000000000000000000000
         imagePullPolicy: Always
         args: ["--config", "/etc/trace-agent/config.yaml"]

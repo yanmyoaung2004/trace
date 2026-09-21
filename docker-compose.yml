@@ -2,7 +2,7 @@
 # never committed. Copy .env.example to .env and fill in:
 #   MINIO_ROOT_USER, MINIO_ROOT_PASSWORD (required)
 #   TRACE_API_KEY (agent enrollment key; optional for local dev)
-# Image digests are pinned (no :latest). Ports: server :8080 everywhere
+# Image digests are pinned (no floating tags). Ports: server :8080 everywhere
 # (single ServerAddr default; see Dockerfile CMD + daemonset + agent.yaml).
 
 services:
