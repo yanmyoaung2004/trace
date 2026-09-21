@@ -25,18 +25,24 @@ func groupEvents(events []*storage.Event) map[groupKey][]*storage.Event {
 }
 
 // readyGroups returns groups that have enough data to flush.
-// A group is ready when it has accumulated at least targetSize bytes
-// OR the hour boundary has passed (with a 5-minute straggler window).
+// A group is ready when it accumulates row/byte volume (row/byte trigger)
+// or ages past the hour boundary plus a straggler window (max-age trigger,
+// P-H7). Small groups no longer stall behind a 256MB default.
 func readyGroups(groups map[groupKey][]*storage.Event, targetSize int64) []groupKey {
 	var ready []groupKey
 	now := time.Now().UnixMicro()
 	stragglerWindow := int64(5 * time.Minute) // 5 min in microseconds
+	const minRowsReady = 1000
+	const minBytesReady = int64(1 << 20) // 1MB floors the 256MB target
 
 	for key, events := range groups {
 		totalSize := estimateSize(events)
 		hourEnd := key.Hour + int64(time.Hour/time.Microsecond)
 
-		if totalSize >= targetSize || (now > hourEnd+stragglerWindow) {
+		aged := now > hourEnd+stragglerWindow
+		byVolume := int64(len(events)) >= minRowsReady || totalSize >= minBytesReady
+		byTarget := totalSize >= targetSize
+		if byTarget || (byVolume && aged) || (aged && len(events) > 0) {
 			ready = append(ready, key)
 		}
 	}

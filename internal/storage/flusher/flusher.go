@@ -2,14 +2,16 @@ package flusher
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/yanmyoaung2004/trace/internal/storage"
 	"github.com/yanmyoaung2004/trace/internal/storage/manifest"
 	"github.com/yanmyoaung2004/trace/internal/storage/metrics"
@@ -135,12 +137,14 @@ func (f *Flusher) Watermark(ctx context.Context) (*storage.Watermark, error) {
 //  2. Read events from SQLite hot tables (id > watermark)
 //  3. Group by (tenant_id, hour_of_timestamp)
 //  4. For each ready group: sort, write Parquet, commit manifest
-//  5. Drop flushed hot tables
+//  5. Advance watermark only past contiguously flushed ranges (R3); per-group
+//     watermark commits are replaced by one commit covering the contiguous
+//     prefix of the sorted batch. FileIDs are deterministic
+//     (tenant/hour/minTS-maxTS) so a retry reuses the same identity instead of
+//     minting duplicate files (R3).
 func (f *Flusher) flush(ctx context.Context) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
 	start := time.Now()
-	// 1. Read watermark
+	// 1. Read watermark (no lock needed for read).
 	wm, err := f.manifest.Watermark(ctx)
 	if err != nil {
 		return fmt.Errorf("watermark: %w", err)
@@ -162,9 +166,17 @@ func (f *Flusher) flush(ctx context.Context) error {
 	// 3. Group by (tenant_id, hour)
 	groups := groupEvents(result.Events)
 
-	// 4. Process ready groups
+	// 4. Process ready groups (prepare Parquet files without holding f.mu;
+	// only the manifest commit takes the lock — narrow scope, P-H7).
 	ready := readyGroups(groups, f.targetSize)
-
+	type committed struct {
+		key        groupKey
+		fileRecord storage.ParquetFileRecord
+		maxID      string
+		maxTS      int64
+		minID      string
+	}
+	var done []committed
 	for _, key := range ready {
 		group := groups[key]
 		sort.Slice(group, func(i, j int) bool {
@@ -184,10 +196,9 @@ func (f *Flusher) flush(ctx context.Context) error {
 			return fmt.Errorf("write parquet: %w", err)
 		}
 
-		// 5. Commit to manifest (single transaction)
 		now := time.Now().UnixMicro()
 		fileRecord := storage.ParquetFileRecord{
-			FileID:           uuid.New().String(),
+			FileID:           deterministicFileID(key.TenantID, key.Hour, fileResult.MinTimestampUs, fileResult.MaxTimestampUs, fileResult.MinEventID, fileResult.MaxEventID),
 			Path:             fileResult.Path,
 			TenantID:         key.TenantID,
 			Level:            0,
@@ -204,25 +215,96 @@ func (f *Flusher) flush(ctx context.Context) error {
 			CreatedAt:        now,
 			UpdatedAt:        now,
 		}
-
-		if err := f.manifest.Transaction(ctx, func(tx *sql.Tx) error {
-			if err := f.manifest.AddFileTx(ctx, tx, fileRecord); err != nil {
-				return fmt.Errorf("add file: %w", err)
-			}
-			if err := f.manifest.UpdateWatermarkTx(ctx, tx, fileResult.MaxEventID, fileResult.MaxTimestampUs); err != nil {
-				return fmt.Errorf("update watermark: %w", err)
-			}
-			return nil
-		}); err != nil {
-			return fmt.Errorf("manifest tx: %w", err)
-		}
+		done = append(done, committed{key: key, fileRecord: fileRecord, maxID: fileResult.MaxEventID, maxTS: fileResult.MaxTimestampUs, minID: fileResult.MinEventID})
 
 		log.Printf("[tse] flush committed %s events=%d size=%s ids=%s..%s took=%v",
 			partitionKey, fileResult.RowCount, formatSize(fileResult.CompressedSize),
 			fileResult.MinEventID[:8], fileResult.MaxEventID[:8], time.Since(start).Round(time.Millisecond))
 	}
 
+	if len(done) == 0 {
+		return nil
+	}
+
+	// 5. Commit to manifest in a single transaction; advance the watermark
+	// only past the contiguous ID prefix of this batch (R3: no gaps).
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	curWM, err := f.manifest.Watermark(ctx)
+	if err != nil {
+		return fmt.Errorf("watermark re-read: %w", err)
+	}
+	_ = curWM
+	// Sort committed groups by min ID so contiguity is well-defined.
+	sort.Slice(done, func(i, j int) bool { return done[i].minID < done[j].minID })
+	contig := done
+	// The batch was read as id > watermark ordered by id; groups flushed are a
+	// subset (ready only). Advance to the max ID only if every event up to it
+	// was flushed: check that no unflushed (unready) event sorts below it.
+	unreadyMax := ""
+	for key, events := range groups {
+		readyKey := false
+		for _, r := range ready {
+			if r == key {
+				readyKey = true
+				break
+			}
+		}
+		if readyKey {
+			continue
+		}
+		for _, e := range events {
+			if e.ID > unreadyMax {
+				unreadyMax = e.ID
+			}
+		}
+	}
+	advanceTo := -1
+	for i, d := range contig {
+		if unreadyMax != "" && unreadyMax < d.maxID {
+			// An unready event sorts below this group's max: stop here.
+			break
+		}
+		advanceTo = i
+	}
+	if err := f.manifest.Transaction(ctx, func(tx *sql.Tx) error {
+		for _, d := range done {
+			// Idempotent retry: deterministic FileID means re-insert may hit
+			// the PK; treat as already-committed.
+			if err := f.manifest.AddFileTx(ctx, tx, d.fileRecord); err != nil {
+				if !isPKConflict(err) {
+					return fmt.Errorf("add file: %w", err)
+				}
+			}
+		}
+		if advanceTo >= 0 {
+			top := contig[advanceTo]
+			if err := f.manifest.UpdateWatermarkTx(ctx, tx, top.maxID, top.maxTS); err != nil {
+				return fmt.Errorf("update watermark: %w", err)
+			}
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("manifest tx: %w", err)
+	}
+
 	return nil
+}
+
+// deterministicFileID derives a stable FileID from (tenant, hour, min/max TS,
+// min/max event ID) so flush retries reuse the same identity (R3).
+func deterministicFileID(tenant string, hour, minTS, maxTS int64, minID, maxID string) string {
+	h := sha256.Sum256([]byte(fmt.Sprintf("%s|%d|%d|%d|%s|%s", tenant, hour, minTS, maxTS, minID, maxID)))
+	return hex.EncodeToString(h[:])[:32]
+}
+
+// isPKConflict reports SQLite primary-key/unique conflicts for idempotent retry.
+func isPKConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "UNIQUE constraint") || strings.Contains(msg, "PRIMARY KEY") || strings.Contains(msg, "constraint failed")
 }
 
 const alertErrorThreshold = 5

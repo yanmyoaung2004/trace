@@ -2,10 +2,12 @@ package cold
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	pq "github.com/parquet-go/parquet-go"
@@ -55,9 +57,15 @@ func (r *ParquetReader) QueryFiles(ctx context.Context, files []storage.FileInfo
 		if ctx.Err() != nil {
 			break
 		}
-
-		// Resolve path — download from S3 if needed
+		if q.Limit > 0 && len(allEvents) >= q.Limit*2 {
+			break // early terminate across files (P-H2)
+		}
+		// Resolve path — download from S3 if needed. The staged temp uses a
+		// crypto-random unique name (O_EXCL, 0600); the resolved local path is
+		// opened below, never the s3:// URI (fix s3:// open bug + hex(len)
+		// collision class: temps keyed on random bytes, not content length).
 		filePath := fi.Path
+		var stagedTmp string
 		if storage.IsS3Path(filePath) {
 			if r.s3 == nil {
 				warnings = append(warnings, fmt.Sprintf("S3 not configured, can't read %s", filePath))
@@ -69,12 +77,13 @@ func (r *ParquetReader) QueryFiles(ctx context.Context, files []storage.FileInfo
 				warnings = append(warnings, fmt.Sprintf("s3 download %s: %v", filePath, err))
 				continue
 			}
-			tmpFile := filepath.Join(os.TempDir(), "trace-s3-"+fmt.Sprintf("%x", len(data))+".parquet")
-			if err := os.WriteFile(tmpFile, data, 0644); err != nil {
-				warnings = append(warnings, fmt.Sprintf("s3 temp write: %v", err))
+			tmpFile, err := stageS3Bytes(data)
+			if err != nil {
+				warnings = append(warnings, fmt.Sprintf("s3 temp stage: %v", err))
 				continue
 			}
-			defer os.Remove(tmpFile)
+			stagedTmp = tmpFile
+			defer os.Remove(stagedTmp)
 			filePath = tmpFile
 		}
 
@@ -96,7 +105,7 @@ func (r *ParquetReader) QueryFiles(ctx context.Context, files []storage.FileInfo
 		}
 		f.Close()
 
-		f, err = os.Open(fi.Path)
+		f, err = os.Open(filePath)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("re-open %s: %v", fi.Path, err))
 			continue
@@ -117,42 +126,65 @@ func (r *ParquetReader) QueryFiles(ctx context.Context, files []storage.FileInfo
 			}
 
 			rgReader := pq.NewGenericRowGroupReader[parquet.TraceEventParquet](rg)
-			rgRows := make([]parquet.TraceEventParquet, rg.NumRows())
-			n, err := rgReader.Read(rgRows)
-			if err != nil && err != io.EOF {
-				rgReader.Close()
-				warnings = append(warnings, fmt.Sprintf("read row group in %s: %v", fi.Path, err))
-				continue
+			// Stream in bounded batches (P-H2) with early termination at the
+			// query limit instead of materializing whole row groups.
+			const batchRows = 4096
+			buf := make([]parquet.TraceEventParquet, batchRows)
+			streamDone := false
+			for !streamDone {
+				if ctx.Err() != nil {
+					break
+				}
+				if q.Limit > 0 && len(allEvents) >= q.Limit*2 {
+					streamDone = true
+					break
+				}
+				n, rerr := rgReader.Read(buf)
+				for _, row := range buf[:n] {
+					if q.TenantID != "" && row.TenantID != q.TenantID {
+						continue
+					}
+					if q.SinceUs > 0 && row.TimestampUs < q.SinceUs {
+						continue
+					}
+					if q.UntilUs > 0 && row.TimestampUs >= q.UntilUs {
+						continue
+					}
+					if q.MinSeverity > 0 && int(row.Severity) < q.MinSeverity {
+						continue
+					}
+					if len(q.AgentIDs) > 0 && !contains(q.AgentIDs, row.AgentID) {
+						continue
+					}
+					if len(q.EventTypes) > 0 && !contains(q.EventTypes, row.EventType) {
+						continue
+					}
+					if q.MinID != "" && row.ID <= q.MinID {
+						continue
+					}
+					if q.MaxID != "" && row.ID > q.MaxID {
+						continue
+					}
+					if q.Cursor != "" && row.ID <= q.Cursor {
+						continue
+					}
+					allEvents = append(allEvents, parquetToEvent(row))
+					if q.Limit > 0 && len(allEvents) >= q.Limit*2 {
+						streamDone = true
+						break
+					}
+				}
+				if rerr == io.EOF || n == 0 {
+					break
+				}
+				if rerr != nil {
+					warnings = append(warnings, fmt.Sprintf("read row group in %s: %v", fi.Path, rerr))
+					break
+				}
 			}
-			rgRows = rgRows[:n]
 			rgReader.Close()
-
-			for _, row := range rgRows {
-				if q.SinceUs > 0 && row.TimestampUs < q.SinceUs {
-					continue
-				}
-				if q.UntilUs > 0 && row.TimestampUs >= q.UntilUs {
-					continue
-				}
-				if q.MinSeverity > 0 && int(row.Severity) < q.MinSeverity {
-					continue
-				}
-				if len(q.AgentIDs) > 0 && !contains(q.AgentIDs, row.AgentID) {
-					continue
-				}
-				if len(q.EventTypes) > 0 && !contains(q.EventTypes, row.EventType) {
-					continue
-				}
-				if q.MinID != "" && row.ID <= q.MinID {
-					continue
-				}
-				if q.MaxID != "" && row.ID > q.MaxID {
-					continue
-				}
-				if q.Cursor != "" && row.ID <= q.Cursor {
-					continue
-				}
-				allEvents = append(allEvents, parquetToEvent(row))
+			if q.Limit > 0 && len(allEvents) >= q.Limit*2 {
+				break
 			}
 		}
 
@@ -175,6 +207,33 @@ func (r *ParquetReader) QueryFiles(ctx context.Context, files []storage.FileInfo
 	result.Total = len(result.Events)
 
 	return result, nil
+}
+
+// stageS3Bytes stages downloaded S3 bytes in a unique O_EXCL 0600 temp file.
+// The name derives from crypto-random bytes (never hex(len)): concurrent
+// downloads of same-sized objects no longer collide (cold temp fix).
+func stageS3Bytes(data []byte) (string, error) {
+	var rb [8]byte
+	if _, err := rand.Read(rb[:]); err != nil {
+		return "", fmt.Errorf("s3 temp rand: %w", err)
+	}
+	tmpFile := fmt.Sprintf("%s%c%s-%s.parquet", os.TempDir(), os.PathSeparator, "trace-s3", hex.EncodeToString(rb[:]))
+	f, err := os.OpenFile(tmpFile, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return "", fmt.Errorf("s3 temp create: %w", err)
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(tmpFile)
+		return "", fmt.Errorf("s3 temp write: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmpFile)
+		return "", fmt.Errorf("s3 temp fsync: %w", err)
+	}
+	f.Close()
+	return tmpFile, nil
 }
 
 // rgMayMatch checks if a row group could contain matching rows for the query.
@@ -248,18 +307,32 @@ func columnMinMax(chunk pq.ColumnChunk) (int64, int64) {
 	return min, max
 }
 
-// columnMinMaxStr returns the min and max string values from a column chunk's index.
-func columnMinMaxStr(chunk pq.ColumnChunk) (string, string) {
-	colIdx, err := chunk.ColumnIndex()
-	if err != nil {
-		return "", ""
+func parquetToEvent(pe parquet.TraceEventParquet) *storage.Event {
+	e := &storage.Event{
+		ID:          pe.ID,
+		AgentID:     pe.AgentID,
+		Timestamp:   pe.TimestampUs,
+		IngestedAt:  pe.IngestedAt,
+		EventType:   pe.EventType,
+		Severity:    int(pe.Severity),
+		ProcessName: pe.ProcessName,
+		Cmdline:     pe.Cmdline,
+		ParentPID:   int(pe.ParentPID),
+		SHA256:      pe.SHA256,
+		DestIP:      pe.DestIP,
+		SrcIP:       pe.SrcIP,
+		UserName:    pe.UserName,
+		Hostname:    pe.Hostname,
+		DataRaw:     pe.DataRaw,
 	}
-	n := colIdx.NumPages()
-	if n == 0 {
-		return "", ""
+	if pe.Annotations != "" {
+		var m map[string]string
+		if err := json.Unmarshal([]byte(pe.Annotations), &m); err == nil {
+			e.Annotations = m
+		}
 	}
-	min := colIdx.MinValue(0).String()
-	max := colIdx.MaxValue(0).String()
+	return e
+}
 	for i := 1; i < n; i++ {
 		if v := colIdx.MinValue(i).String(); v < min {
 			min = v
@@ -276,27 +349,6 @@ func max(a, b int) int {
 		return a
 	}
 	return b
-}
-
-func parquetToEvent(pe parquet.TraceEventParquet) *storage.Event {
-	return &storage.Event{
-		ID:          pe.ID,
-		TenantID:    pe.TenantID,
-		AgentID:     pe.AgentID,
-		Timestamp:   pe.TimestampUs,
-		IngestedAt:  pe.IngestedAt,
-		EventType:   pe.EventType,
-		Severity:    int(pe.Severity),
-		ProcessName: pe.ProcessName,
-		Cmdline:     pe.Cmdline,
-		ParentPID:   int(pe.ParentPID),
-		SHA256:      pe.SHA256,
-		DestIP:      pe.DestIP,
-		SrcIP:       pe.SrcIP,
-		UserName:    pe.UserName,
-		Hostname:    pe.Hostname,
-		DataRaw:     pe.DataRaw,
-	}
 }
 
 func contains(slice []string, val string) bool {

@@ -2,11 +2,16 @@ package batch
 
 import (
 	"context"
+	"log"
 	"sync"
 	"time"
 
 	"github.com/yanmyoaung2004/trace/internal/storage"
+	"github.com/yanmyoaung2004/trace/internal/storage/metrics"
 )
+
+// maxFlushAttempts bounds in-memory retries before DLQ-drop (R7).
+const maxFlushAttempts = 5
 
 // BatchWriter accumulates events into batches and flushes them via a sink function.
 // It implements the core batching pattern: accumulate N events OR wait M duration,
@@ -18,6 +23,7 @@ type BatchWriter struct {
 	batch        []*storage.Event
 	flushTimer   *time.Timer
 	flushing     bool
+	attempts     int
 	done         chan struct{}
 }
 
@@ -87,6 +93,11 @@ func (w *BatchWriter) Run(ctx context.Context, input <-chan *storage.Event, sink
 }
 
 // flush sends the current batch to the sink and resets accumulation.
+// Bounded attempts (R7): a failing batch is retried in-memory up to
+// maxAttempts; afterwards it is moved to the DLQ drop counter path (logged
+// with size) instead of re-prepending forever and head-of-line blocking the
+// stream. Poison rows should be quarantined by the sink via DLQ; the writer
+// guarantees the stream keeps moving.
 func (w *BatchWriter) flush(ctx context.Context, sink func(context.Context, []*storage.Event) error) {
 	w.mu.Lock()
 	if len(w.batch) == 0 {
@@ -104,9 +115,25 @@ func (w *BatchWriter) flush(ctx context.Context, sink func(context.Context, []*s
 
 	// Reset the flush timer
 	if err := sink(ctx, batch); err != nil {
-		// Re-queue failed events (push them back to the front)
 		w.mu.Lock()
-		w.batch = append(batch, w.batch...)
+		w.attempts++
+		n := w.attempts
+		w.mu.Unlock()
+		if n >= maxFlushAttempts {
+			w.mu.Lock()
+			w.attempts = 0
+			w.mu.Unlock()
+			log.Printf("[tse] batch DLQ: dropping %d events after %d attempts: %v", len(batch), n, err)
+			metrics.Global.EventsDropped.Add(uint64(len(batch)))
+		} else {
+			// Re-queue failed events (push them back to the front)
+			w.mu.Lock()
+			w.batch = append(batch, w.batch...)
+			w.mu.Unlock()
+		}
+	} else {
+		w.mu.Lock()
+		w.attempts = 0
 		w.mu.Unlock()
 	}
 

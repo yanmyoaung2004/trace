@@ -1,7 +1,10 @@
 package parquet
 
+import "encoding/json"
+
 // TraceEventParquet is the struct used for Parquet read/write operations.
 // It mirrors storage.Event but with parquet-compatible types.
+// Annotations ride as a JSON string (D4); empty means none.
 type TraceEventParquet struct {
 	ID          string `parquet:"id,dictionary,optional"`
 	TenantID    string `parquet:"tenant_id,dictionary,optional"`
@@ -19,6 +22,19 @@ type TraceEventParquet struct {
 	UserName    string `parquet:"user_name,dictionary,optional"`
 	Hostname    string `parquet:"hostname,dictionary,optional"`
 	DataRaw     []byte `parquet:"data_raw,optional"`
+	Annotations string `parquet:"annotations,dictionary,optional"`
+}
+
+// AnnotationsJSON encodes annotations deterministically (empty = "").
+func AnnotationsJSON(m map[string]string) string {
+	if len(m) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 // ParquetOptions configures Parquet file writing.

@@ -3,10 +3,12 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -48,7 +50,7 @@ func NewSQLiteHotStore(path string) (*SQLiteHotStore, error) {
 
 	pragmas := []string{
 		"PRAGMA journal_mode=WAL",
-		"PRAGMA synchronous=OFF",
+		"PRAGMA synchronous=NORMAL",
 		"PRAGMA busy_timeout=5000",
 		"PRAGMA cache_size=-262144",
 		"PRAGMA temp_store=MEMORY",
@@ -76,33 +78,17 @@ func NewSQLiteHotStore(path string) (*SQLiteHotStore, error) {
 	return s, nil
 }
 
-// WriteBatch inserts a batch of events into an hourly table using a single multi-row INSERT.
+// WriteBatch inserts a batch of events into hourly tables, splitting by hour.
+// All hour groups commit in a single transaction; chunks exist only to respect
+// the driver variable limit. Any error rolls back the whole batch (no partial
+// commits) to preserve at-least-once + idempotent replay.
 // It implements storage.Writer.
 func (s *SQLiteHotStore) WriteBatch(ctx context.Context, events []*storage.Event) error {
 	if len(events) == 0 {
 		return nil
 	}
 
-	// SQLite has a limit of 999 variables per SQL statement.
-	// With 16 columns per row, split if batch exceeds 62 events (62*16=992).
-	const maxVars = 999
-	const varsPerEvent = 16
-	maxEventBatch := maxVars / varsPerEvent
-
-	if len(events) > maxEventBatch {
-		for i := 0; i < len(events); i += maxEventBatch {
-			end := i + maxEventBatch
-			if end > len(events) {
-				end = len(events)
-			}
-			if err := s.WriteBatch(ctx, events[i:end]); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-
-	// Check disk space before accepting new events
+	// Check disk space before accepting new events (enforce 95%, warn 85%).
 	if storage.StoragePathFunc != nil {
 		if du, err := storage.CheckDisk(storage.StoragePathFunc()); err == nil {
 			if storage.IsDiskFull(du) {
@@ -111,12 +97,22 @@ func (s *SQLiteHotStore) WriteBatch(ctx context.Context, events []*storage.Event
 		}
 	}
 
-	// Determine which hourly table this batch belongs to
-	tableName := hourlyTableName(events[0].Timestamp, s.tableFmt)
-
-	// Ensure the table exists
-	if err := s.ensureTable(ctx, tableName); err != nil {
-		return fmt.Errorf("ensure table: %w", err)
+	// Split by hour (fix events[0]-only mis-partition).
+	byHour := make(map[string][]*storage.Event)
+	for _, e := range events {
+		t := hourlyTableName(e.Timestamp, s.tableFmt)
+		byHour[t] = append(byHour[t], e)
+	}
+	// Deterministic order for stable tests.
+	tables := make([]string, 0, len(byHour))
+	for t := range byHour {
+		tables = append(tables, t)
+	}
+	sort.Strings(tables)
+	for _, t := range tables {
+		if err := s.ensureTable(ctx, t); err != nil {
+			return fmt.Errorf("ensure table: %w", err)
+		}
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -125,8 +121,32 @@ func (s *SQLiteHotStore) WriteBatch(ctx context.Context, events []*storage.Event
 	}
 	defer tx.Rollback()
 
-	// Multi-row INSERT: single statement for all events
-	numCols := 16
+	// SQLite driver variable limit: chunk only to respect it.
+	const maxVars = 999
+	const varsPerEvent = 17
+	maxEventBatch := maxVars / varsPerEvent
+	if maxEventBatch < 1 {
+		maxEventBatch = 1
+	}
+	for _, t := range tables {
+		group := byHour[t]
+		for i := 0; i < len(group); i += maxEventBatch {
+			end := i + maxEventBatch
+			if end > len(group) {
+				end = len(group)
+			}
+			if err := s.insertChunkTx(ctx, tx, t, group[i:end]); err != nil {
+				return err
+			}
+		}
+	}
+
+	return tx.Commit()
+}
+
+// insertChunkTx executes one multi-row INSERT inside the caller's transaction.
+func (s *SQLiteHotStore) insertChunkTx(ctx context.Context, tx *sql.Tx, tableName string, events []*storage.Event) error {
+	numCols := 17
 	rowPlaceholders := "(" + strings.Repeat("?,", numCols-1) + "?)"
 	allPlaceholders := strings.Repeat(rowPlaceholders+",", len(events)-1) + rowPlaceholders
 	args := make([]any, 0, len(events)*numCols)
@@ -138,13 +158,13 @@ func (s *SQLiteHotStore) WriteBatch(ctx context.Context, events []*storage.Event
 			nullableInt(e.ParentPID), nullableString(e.SHA256),
 			nullableString(e.DestIP), nullableString(e.SrcIP),
 			nullableString(e.UserName), nullableString(e.Hostname),
-			e.DataRaw,
+			e.DataRaw, nullableString(annotationsJSON(e)),
 		)
 	}
 
 	query := fmt.Sprintf(
 		`INSERT INTO %s (id, tenant_id, agent_id, ts_us, ingested_at, event_type, severity,
-		 process_name, cmdline, parent_pid, sha256, dest_ip, src_ip, user_name, hostname, data_raw)
+		 process_name, cmdline, parent_pid, sha256, dest_ip, src_ip, user_name, hostname, data_raw, annotations)
 		 VALUES %s ON CONFLICT(id) DO NOTHING`,
 		tableName, allPlaceholders,
 	)
@@ -152,11 +172,11 @@ func (s *SQLiteHotStore) WriteBatch(ctx context.Context, events []*storage.Event
 	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
 		return fmt.Errorf("multi-row insert: %w", err)
 	}
-
-	return tx.Commit()
+	return nil
 }
 
-// Query retrieves events from the hot tier by querying all live hourly tables.
+// Query retrieves events from the hot tier, pruning hourly tables by hour
+// suffix (D2) and pushing tenant + per-table LIMIT down (P-H1).
 // It implements storage.Reader.
 func (s *SQLiteHotStore) Query(ctx context.Context, q storage.Query) (*storage.Result, error) {
 	q = q.ApplyDefaults()
@@ -166,11 +186,12 @@ func (s *SQLiteHotStore) Query(ctx context.Context, q storage.Query) (*storage.R
 	copy(tables, s.liveTables)
 	s.mu.Unlock()
 
+	tables = pruneHotTables(tables, s.tableFmt, q.SinceUs, q.UntilUs)
 	if len(tables) == 0 {
 		return &storage.Result{}, nil
 	}
 
-	// Build a UNION ALL query over all relevant tables
+	// Build a UNION ALL query over pruned tables
 	query, args := buildHotQuery(tables, q)
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
@@ -182,14 +203,14 @@ func (s *SQLiteHotStore) Query(ctx context.Context, q storage.Query) (*storage.R
 	result := &storage.Result{}
 	for rows.Next() {
 		var e storage.Event
-		var processName, cmdline, sha256, destIP, srcIP, userName, hostname sql.NullString
+		var processName, cmdline, sha256, destIP, srcIP, userName, hostname, annotations sql.NullString
 		var parentPid sql.NullInt64
 
 		if err := rows.Scan(
 			&e.ID, &e.TenantID, &e.AgentID, &e.Timestamp, &e.IngestedAt,
 			&e.EventType, &e.Severity,
 			&processName, &cmdline, &parentPid, &sha256,
-			&destIP, &srcIP, &userName, &hostname, &e.DataRaw,
+			&destIP, &srcIP, &userName, &hostname, &e.DataRaw, &annotations,
 		); err != nil {
 			return &storage.Result{Warnings: append(result.Warnings, fmt.Sprintf("scan: %v", err))}, nil
 		}
@@ -203,6 +224,12 @@ func (s *SQLiteHotStore) Query(ctx context.Context, q storage.Query) (*storage.R
 		if parentPid.Valid {
 			e.ParentPID = int(parentPid.Int64)
 		}
+		if annotations.Valid && annotations.String != "" {
+			var m map[string]string
+			if err := json.Unmarshal([]byte(annotations.String), &m); err == nil {
+				e.Annotations = m
+			}
+		}
 		result.Events = append(result.Events, &e)
 	}
 
@@ -215,6 +242,19 @@ func (s *SQLiteHotStore) Query(ctx context.Context, q storage.Query) (*storage.R
 	result.Total = len(result.Events)
 
 	return result, nil
+}
+
+// DB exposes the writer connection for the WAL checkpointer (R2).
+// Callers must not close it; Close on the store owns the lifecycle.
+func (s *SQLiteHotStore) DB() *sql.DB { return s.db }
+
+// WALSizeBytes reports the current hot.db-wal size, -1 when unknown (R2 metric).
+func (s *SQLiteHotStore) WALSizeBytes() int64 {
+	fi, err := os.Stat(s.path + "-wal")
+	if err != nil {
+		return -1
+	}
+	return fi.Size()
 }
 
 // Close releases all database connections.
@@ -251,11 +291,20 @@ func (s *SQLiteHotStore) ensureTable(ctx context.Context, tableName string) erro
 			src_ip      TEXT,
 			user_name   TEXT,
 			hostname    TEXT,
-			data_raw    BLOB
+			data_raw    BLOB,
+			annotations TEXT
 		)
 	`, tableName))
 	if err != nil {
 		return err
+	}
+	// Migration for pre-annotation tables: add column if missing.
+	// Uses a savepoint-safe ALTER; duplicate-column error is ignored since
+	// concurrent writers may race ensureTable on the same new table.
+	if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %s ADD COLUMN annotations TEXT`, tableName)); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column") {
+			return err
+		}
 	}
 
 	// Mark as ensured after successful DDL
@@ -263,12 +312,18 @@ func (s *SQLiteHotStore) ensureTable(ctx context.Context, tableName string) erro
 	s.ensured[tableName] = true
 	s.mu.Unlock()
 
-	// Create index only if it doesn't exist
-	_, err = s.db.ExecContext(ctx, fmt.Sprintf(`
-		CREATE INDEX IF NOT EXISTS idx_%s_ts ON %s(ts_us)
-	`, tableName, tableName))
-	if err != nil {
-		return err
+	// Composite indexes for tenant/time + type/time predicate pushdown (D1).
+	// Added after write-bench consideration: reads are per-hour tables so the
+	// extra index cost is one small B-tree per hour, not a global one.
+	for _, idx := range []struct{ name, cols string }{
+		{"ts", "(ts_us)"},
+		{"tenant_ts", "(tenant_id, ts_us)"},
+		{"type_ts", "(event_type, ts_us)"},
+	} {
+		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(
+			`CREATE INDEX IF NOT EXISTS idx_%s_%s ON %s%s`, tableName, idx.name, tableName, idx.cols)); err != nil {
+			return err
+		}
 	}
 
 	// Track as live table
@@ -343,13 +398,44 @@ func (s *SQLiteHotStore) LiveTables(ctx context.Context) ([]string, error) {
 	return tables, nil
 }
 
-// hourlyTableName returns the hourly table name for a given timestamp.
-func hourlyTableName(tsUs int64, format string) string {
-	t := time.UnixMicro(tsUs)
-	return fmt.Sprintf(format, t.Format("2006010215"))
+// pruneHotTables drops hourly tables whose hour cannot overlap [sinceUs, untilUs).
+// Tables carry an hour suffix yyyyMMddHH; unbounded queries keep all tables.
+func pruneHotTables(tables []string, tableFmt string, sinceUs, untilUs int64) []string {
+	if sinceUs <= 0 && untilUs <= 0 {
+		return tables
+	}
+	// Derive table stem by formatting a known suffix: everything before it.
+	sample := fmt.Sprintf(tableFmt, "2006010215")
+	stem := strings.TrimSuffix(sample, "2006010215")
+	kept := make([]string, 0, len(tables))
+	for _, t := range tables {
+		suffix := strings.TrimPrefix(t, stem)
+		if len(suffix) != 10 {
+			kept = append(kept, t) // unknown shape: keep rather than drop
+			continue
+		}
+		hourStart, err := time.Parse("2006010215", suffix)
+		if err != nil {
+			kept = append(kept, t)
+			continue
+		}
+		startUs := hourStart.UnixMicro()
+		endUs := hourStart.Add(time.Hour).UnixMicro()
+		if sinceUs > 0 && endUs <= sinceUs {
+			continue
+		}
+		if untilUs > 0 && startUs >= untilUs {
+			continue
+		}
+		kept = append(kept, t)
+	}
+	return kept
 }
 
 // buildHotQuery constructs a UNION ALL query across hourly tables.
+// Each branch carries the tenant predicate (D3) and a per-table LIMIT so the
+// cross-table ORDER BY+LIMIT does not sort unbounded rows (P-H1). The global
+// LIMIT still applies after the merge.
 func buildHotQuery(tables []string, q storage.Query) (string, []any) {
 	var args []any
 	query := ""
@@ -362,11 +448,15 @@ func buildHotQuery(tables []string, q storage.Query) (string, []any) {
 			SELECT id, tenant_id, agent_id, ts_us, ingested_at,
 				event_type, severity,
 				process_name, cmdline, parent_pid, sha256,
-				dest_ip, src_ip, user_name, hostname, data_raw
+				dest_ip, src_ip, user_name, hostname, data_raw, annotations
 			FROM %s WHERE 1=1
 		`, table)
 
 		// Apply filters
+		if q.TenantID != "" {
+			query += " AND tenant_id = ?"
+			args = append(args, q.TenantID)
+		}
 		if q.MinID != "" {
 			query += " AND id > ?"
 			args = append(args, q.MinID)
@@ -405,6 +495,9 @@ func buildHotQuery(tables []string, q storage.Query) (string, []any) {
 			query += " AND id > ?"
 			args = append(args, q.Cursor)
 		}
+		if q.Limit > 0 {
+			query += fmt.Sprintf(" LIMIT %d", q.Limit)
+		}
 	}
 
 	query += " ORDER BY id"
@@ -416,7 +509,19 @@ func buildHotQuery(tables []string, q storage.Query) (string, []any) {
 	return query, args
 }
 
-// placeholders generates a SQL placeholder string like "?,?,?,".
+// annotationsJSON serializes event annotations for the hot annotations column (D4).
+func annotationsJSON(e *storage.Event) string {
+	if len(e.Annotations) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(e.Annotations)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// placeholders generates a SQL placeholder string like "?,?,?".
 func placeholders(n int) string {
 	if n <= 0 {
 		return ""

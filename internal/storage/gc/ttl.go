@@ -62,7 +62,10 @@ func (t *TTLManager) Run(ctx context.Context) error {
 }
 
 // applyOnce checks all committed files against TTL policies and marks
-// expired ones with status='expired'.
+// expired ones with status='expired'. A file expires only if its MaxTS is
+// strictly below the cutoff (D9): half-open files straddling the boundary
+// survive. TTL owns expiry marking; GC owns physical deletion (single owner:
+// TTL never deletes, GC never marks TTL-expired).
 func (t *TTLManager) applyOnce(ctx context.Context) {
 	now := time.Now()
 	for _, policy := range t.policies {
@@ -74,6 +77,9 @@ func (t *TTLManager) applyOnce(ctx context.Context) {
 		}
 
 		for _, f := range files {
+			if f.MaxTS >= cutoff {
+				continue
+			}
 			if err := t.manifest.UpdateFileStatus(ctx, f.FileID, "expired"); err != nil {
 				log.Printf("[ttl] expire %s: %v", f.FileID, err)
 			}

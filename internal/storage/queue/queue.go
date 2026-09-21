@@ -1,7 +1,9 @@
 package queue
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -31,7 +33,7 @@ type OnDropFunc func()
 
 // IngestQueue is a bounded MPMC queue with backpressure:
 // 1. Block briefly (channel send with timeout)
-// 2. Spill to disk (segment files)
+// 2. Spill to disk (append-only segment files storing FULL events)
 // 3. Drop with counter and alert (absolute last resort)
 type IngestQueue struct {
 	ch        chan *storage.Event
@@ -146,14 +148,21 @@ var (
 	ErrQueueClosed  = fmt.Errorf("queue: closed")
 )
 
-// DiskSpill stores overflow events to disk as segment files.
+// DiskSpill stores overflow events to disk as append-only segment files.
+// Each segment holds a JSON-lines sequence of FULL events (P-H5 fix: the old
+// one-file-per-event spill stored only the ID and was lossy + IOPS-heavy).
 type DiskSpill struct {
-	dir   string
-	limit int64
-	mu    sync.Mutex
+	dir      string
+	limit    int64
+	mu       sync.Mutex
 	segments []string
+	cur      *os.File
+	curSize  int64
 	total    int64
 }
+
+// segmentMaxBytes caps a single spill segment before rotation.
+const segmentMaxBytes = 16 << 20
 
 // NewDiskSpill creates a disk spill directory.
 func NewDiskSpill(dir string, limit int64) (*DiskSpill, error) {
@@ -163,40 +172,64 @@ func NewDiskSpill(dir string, limit int64) (*DiskSpill, error) {
 	return &DiskSpill{dir: dir, limit: limit}, nil
 }
 
-// Write serializes an event to a spill segment file.
+// Write appends a full event to the current spill segment (fsync per write
+// keeps crash recovery simple; segment rotation bounds file size).
 func (s *DiskSpill) Write(e *storage.Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.limit > 0 && s.total >= s.limit {
+	data, err := json.Marshal(e)
+	if err != nil {
+		return fmt.Errorf("spill marshal: %w", err)
+	}
+	data = append(data, '\n')
+	if s.limit > 0 && s.total+int64(len(data)) > s.limit {
 		return fmt.Errorf("spill full (%d/%d bytes)", s.total, s.limit)
 	}
-
-	name := filepath.Join(s.dir, "spill-"+uuid.New().String()+".evt")
-	data := []byte(e.ID + "\n") // minimal — real impl would use encoding/gob
-	if err := os.WriteFile(name, data, 0600); err != nil {
+	if s.cur == nil || s.curSize >= segmentMaxBytes {
+		if err := s.rotateLocked(); err != nil {
+			return err
+		}
+	}
+	if _, err := s.cur.Write(data); err != nil {
 		return fmt.Errorf("spill write: %w", err)
 	}
-	s.segments = append(s.segments, name)
+	if err := s.cur.Sync(); err != nil {
+		return fmt.Errorf("spill fsync: %w", err)
+	}
+	s.curSize += int64(len(data))
 	s.total += int64(len(data))
 	return nil
 }
 
-// Replay reads all spilled segments and re-injects them into the queue.
+// rotateLocked closes the current segment and opens a new one (O_EXCL, 0600).
+func (s *DiskSpill) rotateLocked() error {
+	if s.cur != nil {
+		s.cur.Close()
+		s.cur = nil
+	}
+	name := filepath.Join(s.dir, "spill-"+uuid.New().String()+".log")
+	f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return fmt.Errorf("spill create: %w", err)
+	}
+	s.cur = f
+	s.curSize = 0
+	s.segments = append(s.segments, name)
+	return nil
+}
+
+// Replay reads all spilled segments and re-injects full events into the queue.
 func (s *DiskSpill) Replay(ctx context.Context, inject func(*storage.Event) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.cur != nil {
+		s.cur.Close()
+		s.cur = nil
+	}
 
 	for _, seg := range s.segments {
-		data, err := os.ReadFile(seg)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return fmt.Errorf("spill replay: %w", err)
-		}
-		evt := &storage.Event{ID: string(data)}
-		if err := inject(evt); err != nil {
+		if err := s.replaySegment(ctx, seg, inject); err != nil {
 			return err
 		}
 		os.Remove(seg)
@@ -206,10 +239,41 @@ func (s *DiskSpill) Replay(ctx context.Context, inject func(*storage.Event) erro
 	return nil
 }
 
+// replaySegment streams one JSON-lines segment without holding unbounded RAM.
+func (s *DiskSpill) replaySegment(ctx context.Context, seg string, inject func(*storage.Event) error) error {
+	f, err := os.Open(seg)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("spill replay: %w", err)
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 1<<20), 1<<20)
+	for sc.Scan() {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		var evt storage.Event
+		if err := json.Unmarshal(sc.Bytes(), &evt); err != nil {
+			continue // skip corrupt line, keep draining
+		}
+		e := evt
+		if err := inject(&e); err != nil {
+			return err
+		}
+	}
+	return sc.Err()
+}
+
 // Close cleans up all spill segments.
 func (s *DiskSpill) Close() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	if s.cur != nil {
+		s.cur.Close()
+		s.cur = nil
+	}
 	var lastErr error
 	for _, seg := range s.segments {
 		if err := os.Remove(seg); err != nil && !os.IsNotExist(err) {
@@ -218,6 +282,7 @@ func (s *DiskSpill) Close() error {
 	}
 	s.segments = nil
 	s.total = 0
+	s.curSize = 0
 	return lastErr
 }
 

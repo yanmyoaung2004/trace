@@ -13,8 +13,8 @@ import (
 	"github.com/yanmyoaung2004/trace/internal/storage"
 	"github.com/yanmyoaung2004/trace/internal/storage/cold"
 	manifestpkg "github.com/yanmyoaung2004/trace/internal/storage/manifest"
+	"github.com/yanmyoaung2004/trace/internal/storage/metrics"
 	"github.com/yanmyoaung2004/trace/internal/storage/parquet"
-)
 
 // Compactor merges hourly Parquet files into daily files after 48 hours.
 // It follows the same atomic-manifest-commit discipline as the flusher.
@@ -46,6 +46,7 @@ func NewCompactor(
 }
 
 // Run starts the compaction loop. Blocks until context is cancelled.
+// Each tick runs one compaction cycle plus superseded cleanup (D11).
 func (c *Compactor) Run(ctx context.Context) error {
 	log.Printf("[compactor] started (interval=%v)", c.interval)
 
@@ -58,6 +59,9 @@ func (c *Compactor) Run(ctx context.Context) error {
 			return ctx.Err()
 		case <-ticker.C:
 			c.compactOnce(ctx)
+			if err := c.CleanupSuperseded(ctx); err != nil {
+				log.Printf("[compactor] cleanup superseded: %v", err)
+			}
 		}
 	}
 }
@@ -159,24 +163,23 @@ func (c *Compactor) compactGroup(ctx context.Context, tenantID, date string, fil
 		UpdatedAt:        now,
 	}
 
-	c.manifest.Transaction(ctx, func(tx *sql.Tx) error {
-		if err := c.manifest.AddFile(ctx, dailyFile); err != nil {
+	if err := c.manifest.Transaction(ctx, func(tx *sql.Tx) error {
+		if err := c.manifest.AddFileTx(ctx, tx, dailyFile); err != nil {
 			return fmt.Errorf("add daily: %w", err)
 		}
 		for _, f := range files {
-			if err := c.manifest.UpdateFileStatus(ctx, f.FileID, "superseded"); err != nil {
+			if err := c.manifest.UpdateFileStatusTx(ctx, tx, f.FileID, "superseded"); err != nil {
 				return fmt.Errorf("supersede %s: %w", f.FileID, err)
 			}
 		}
 		return nil
 	})
-
 	log.Printf("[tse] compacted %s/%s files=%d events=%d size=%s",
 		tenantID, date, len(files), fileResult.RowCount, formatBytes(fileResult.CompressedSize))
 	return nil
 }
-
 // CleanupSuperseded deletes superseded files from disk after the grace period.
+// It also records the superseded age/count metric for lifecycle observability.
 func (c *Compactor) CleanupSuperseded(ctx context.Context) error {
 	files, err := c.manifest.FilesFor(ctx, "", 0, 0, "superseded")
 	if err != nil {
@@ -184,14 +187,30 @@ func (c *Compactor) CleanupSuperseded(ctx context.Context) error {
 	}
 
 	cutoff := time.Now().Add(-c.grace).UnixMicro()
+	var pending, deleted int
+	var oldestAge time.Duration
+	now := time.Now()
 	for _, f := range files {
 		if f.MaxTS < cutoff {
 			if err := os.Remove(f.Path); err != nil && !os.IsNotExist(err) {
 				log.Printf("[compactor] remove superseded: %v", err)
+				continue
 			}
-			c.manifest.UpdateFileStatus(ctx, f.FileID, "deleted")
+			if err := c.manifest.UpdateFileStatus(ctx, f.FileID, "deleted"); err != nil {
+				log.Printf("[compactor] mark deleted %s: %v", f.FileID, err)
+				continue
+			}
+			deleted++
+		} else {
+			pending++
+			if age := now.Sub(time.UnixMicro(f.MaxTS)); age > oldestAge {
+				oldestAge = age
+			}
 		}
 	}
+	metrics.Global.ParquetFilesDeleted.Add(int64(deleted))
+	metrics.Global.SupersededPending.Store(int64(pending))
+	metrics.Global.SupersededOldestAgeSec.Store(int64(oldestAge / time.Second))
 	return nil
 }
 

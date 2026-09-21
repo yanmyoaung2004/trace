@@ -87,7 +87,9 @@ func New(cfg Config) (*Router, error) {
 
 		f := flusher.NewFlusher(hot, m, pw, 0, int64(cfg.FlushSize), cfg.FlushMaxRows, filepath.Join(shardDir, cfg.EventsDir))
 
-		cr := cold.NewDefaultReader()
+		crPool := cold.NewReaderPool(cold.DefaultMaxConcurrent)
+		crPool.SetReader(cold.NewDefaultReader())
+		var cr cold.ColdReader = crPool
 		rou := router.NewRouter(hot, cr, m)
 
 		r.shards = append(r.shards, &Instance{

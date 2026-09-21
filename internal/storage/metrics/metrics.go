@@ -27,6 +27,10 @@ var promMetrics = []struct {
 	{"cold_file_count", "trace_tse_cold_file_count", "Current number of cold parquet files"},
 	{"flush_errors", "trace_tse_flush_errors_total", "Total flush errors"},
 	{"query_errors", "trace_tse_query_errors_total", "Total query errors"},
+	{"superseded_pending", "trace_tse_superseded_pending", "Superseded files awaiting grace expiry"},
+	{"superseded_oldest_age_sec", "trace_tse_superseded_oldest_age_seconds", "Age of oldest pending superseded file"},
+	{"wal_bytes", "trace_tse_wal_bytes", "Hot WAL size in bytes"},
+	{"retention_dropped_tables", "trace_tse_retention_dropped_tables_total", "Hot tables dropped by retention"},
 }
 
 // PrometheusText returns all metrics in Prometheus exposition format.
@@ -92,12 +96,16 @@ type Metrics struct {
 	ParquetFilesCreated atomic.Int64
 	ParquetFilesDeleted  atomic.Int64
 	ParquetBytesWritten  atomic.Int64
-
 	HotTableCount       atomic.Int64
 	ColdFileCount       atomic.Int64
 
 	FlushErrors         atomic.Int64
 	QueryErrors         atomic.Int64
+
+	SupersededPending   atomic.Int64 // superseded files awaiting grace expiry
+	SupersededOldestAgeSec atomic.Int64 // age of oldest pending superseded file
+	WALBytes            atomic.Int64 // hot.db-wal size bytes (-1 unknown)
+	RetentionDroppedTables atomic.Int64 // hot tables dropped by retention
 }
 
 // Global is the shared metrics instance.
@@ -137,5 +145,9 @@ func (m *Metrics) Snapshot() map[string]any {
 		"cold_file_count":       m.ColdFileCount.Load(),
 		"flush_errors":          m.FlushErrors.Load(),
 		"query_errors":          m.QueryErrors.Load(),
+		"superseded_pending":    m.SupersededPending.Load(),
+		"superseded_oldest_age_sec": m.SupersededOldestAgeSec.Load(),
+		"wal_bytes":             m.WALBytes.Load(),
+		"retention_dropped_tables": m.RetentionDroppedTables.Load(),
 	}
 }

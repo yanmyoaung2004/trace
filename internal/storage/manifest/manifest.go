@@ -58,49 +58,71 @@ func NewManifest(path string) (*Manifest, error) {
 	return m, nil
 }
 
-// migrate creates or updates the database schema.
+// migrate creates or updates the database schema via ordered, idempotent
+// migrations tracked in schema_migrations (D7).
 func (m *Manifest) migrate() error {
-	queries := []string{
-		`CREATE TABLE IF NOT EXISTS parquet_files (
-			file_id TEXT PRIMARY KEY,
-			path TEXT NOT NULL UNIQUE,
-			tenant_id TEXT NOT NULL,
-			level INTEGER NOT NULL DEFAULT 0,
-			min_ts_us INTEGER NOT NULL,
-			max_ts_us INTEGER NOT NULL,
-			min_event_id TEXT NOT NULL,
-			max_event_id TEXT NOT NULL,
-			row_count INTEGER NOT NULL,
-			compressed_size INTEGER NOT NULL,
-			uncompressed_size INTEGER NOT NULL,
-			sha256 TEXT NOT NULL,
-			compression TEXT NOT NULL DEFAULT 'zstd',
-			schema_version INTEGER NOT NULL DEFAULT 1,
-			status TEXT NOT NULL DEFAULT 'writing',
-			created_at INTEGER NOT NULL,
-			updated_at INTEGER NOT NULL
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_pf_lookup ON parquet_files(tenant_id, status, min_ts_us, max_ts_us)`,
-		`CREATE INDEX IF NOT EXISTS idx_pf_status ON parquet_files(status)`,
-
-		`CREATE TABLE IF NOT EXISTS watermark (
-			id INTEGER PRIMARY KEY CHECK (id = 1),
-			last_id TEXT NOT NULL,
-			last_ts INTEGER NOT NULL,
-			updated_at INTEGER NOT NULL
-		)`,
-		`INSERT OR IGNORE INTO watermark (id, last_id, last_ts, updated_at) VALUES (1, '', 0, 0)`,
-
-		`CREATE TABLE IF NOT EXISTS hot_tables (
-			table_name TEXT PRIMARY KEY,
-			hour_start INTEGER NOT NULL,
-			status TEXT NOT NULL DEFAULT 'active'
-		)`,
+	if _, err := m.db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+		version INTEGER PRIMARY KEY,
+		applied_at INTEGER NOT NULL
+	)`); err != nil {
+		return fmt.Errorf("migrate bootstrap: %w", err)
+	}
+	migrations := []struct {
+		version int
+		stmts   []string
+	}{
+		{1, []string{
+			`CREATE TABLE IF NOT EXISTS parquet_files (
+				file_id TEXT PRIMARY KEY,
+				path TEXT NOT NULL UNIQUE,
+				tenant_id TEXT NOT NULL,
+				level INTEGER NOT NULL DEFAULT 0,
+				min_ts_us INTEGER NOT NULL,
+				max_ts_us INTEGER NOT NULL,
+				min_event_id TEXT NOT NULL,
+				max_event_id TEXT NOT NULL,
+				row_count INTEGER NOT NULL,
+				compressed_size INTEGER NOT NULL,
+				uncompressed_size INTEGER NOT NULL,
+				sha256 TEXT NOT NULL,
+				compression TEXT NOT NULL DEFAULT 'zstd',
+				schema_version INTEGER NOT NULL DEFAULT 1,
+				status TEXT NOT NULL DEFAULT 'writing',
+				created_at INTEGER NOT NULL,
+				updated_at INTEGER NOT NULL
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_pf_lookup ON parquet_files(tenant_id, status, min_ts_us, max_ts_us)`,
+			`CREATE INDEX IF NOT EXISTS idx_pf_status ON parquet_files(status)`,
+			`CREATE TABLE IF NOT EXISTS watermark (
+				id INTEGER PRIMARY KEY CHECK (id = 1),
+				last_id TEXT NOT NULL,
+				last_ts INTEGER NOT NULL,
+				updated_at INTEGER NOT NULL
+			)`,
+			`INSERT OR IGNORE INTO watermark (id, last_id, last_ts, updated_at) VALUES (1, '', 0, 0)`,
+			`CREATE TABLE IF NOT EXISTS hot_tables (
+				table_name TEXT PRIMARY KEY,
+				hour_start INTEGER NOT NULL,
+				status TEXT NOT NULL DEFAULT 'active'
+			)`,
+		}},
 	}
 
-	for _, q := range queries {
-		if _, err := m.db.Exec(q); err != nil {
-			return fmt.Errorf("migrate query: %w", err)
+	for _, mg := range migrations {
+		var count int
+		if err := m.db.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version = ?`, mg.version).Scan(&count); err != nil {
+			return fmt.Errorf("migrate check v%d: %w", mg.version, err)
+		}
+		if count > 0 {
+			continue
+		}
+		for _, q := range mg.stmts {
+			if _, err := m.db.Exec(q); err != nil {
+				return fmt.Errorf("migrate v%d: %w", mg.version, err)
+			}
+		}
+		if _, err := m.db.Exec(`INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)`, mg.version, time.Now().UnixMicro()); err != nil {
+			return fmt.Errorf("migrate record v%d: %w", mg.version, err)
 		}
 	}
 	return nil
@@ -242,6 +264,17 @@ func (m *Manifest) DropHotTable(ctx context.Context, tableName string) error {
 // UpdateFileStatus changes the status of a Parquet file.
 func (m *Manifest) UpdateFileStatus(ctx context.Context, fileID, status string) error {
 	_, err := m.db.ExecContext(ctx,
+		"UPDATE parquet_files SET status = ?, updated_at = ? WHERE file_id = ?",
+		status, time.Now().UnixMicro(), fileID,
+	)
+	return err
+}
+
+// UpdateFileStatusTx changes the status of a Parquet file inside a transaction.
+// Must be used for mutations inside Transaction; the non-Tx variant would run
+// on a separate connection and diverge from the atomic commit (D10).
+func (m *Manifest) UpdateFileStatusTx(ctx context.Context, tx *sql.Tx, fileID, status string) error {
+	_, err := tx.ExecContext(ctx,
 		"UPDATE parquet_files SET status = ?, updated_at = ? WHERE file_id = ?",
 		status, time.Now().UnixMicro(), fileID,
 	)

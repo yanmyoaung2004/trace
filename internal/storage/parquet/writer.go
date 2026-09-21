@@ -68,17 +68,27 @@ func (w *ParquetWriter) WriteBatch(ctx context.Context, events []*storage.Event,
 		return parqEvents[i].TimestampUs < parqEvents[j].TimestampUs
 	})
 
+	// Unique temp name from content hash input (not hex(len)): timestamp +
+	// pid + content hash avoids the hex(len) collision class (cold P-H6).
 	ts := time.Now().UnixMicro()
-	fileName := fmt.Sprintf("part-%x.parquet", ts)
-	tempPath := filepath.Join(w.tempDir, fileName+"."+fmt.Sprintf("%d", os.Getpid()))
+	h := sha256.Sum256([]byte(fmt.Sprintf("%d-%d-%s-%d", ts, os.Getpid(), partitionKey, len(parqEvents))))
+	fileName := fmt.Sprintf("part-%x-%x.parquet", ts, h[:4])
+	// Resolve temp dir (never s3://): fall back to os temp when unset.
+	tempDir := w.tempDir
+	if tempDir == "" || storage.IsS3Path(tempDir) {
+		tempDir = os.TempDir()
+	}
+	tempPath := filepath.Join(tempDir, fileName)
+
 	finalPath := filepath.Join(w.outputDir, partitionKey, fileName)
 
 	if err := os.MkdirAll(filepath.Dir(finalPath), 0700); err != nil {
 		return nil, fmt.Errorf("output dir: %w", err)
 	}
-	os.MkdirAll(w.tempDir, 0700)
+	os.MkdirAll(tempDir, 0700)
 
-	fw, err := os.Create(tempPath)
+	// O_EXCL unique 0600 temp: no symlink following, no world-read.
+	fw, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("create temp: %w", err)
 	}
@@ -89,13 +99,12 @@ func (w *ParquetWriter) WriteBatch(ctx context.Context, events []*storage.Event,
 		pq.PageBufferSize(64*1024),
 	)
 
-	for _, row := range parqEvents {
-		if _, err := pw.Write([]TraceEventParquet{row}); err != nil {
-			pw.Close()
-			fw.Close()
-			os.Remove(tempPath)
-			return nil, fmt.Errorf("write: %w", err)
-		}
+	// Batch column writes (P-M4): one Write call, not per-row.
+	if _, err := pw.Write(parqEvents); err != nil {
+		pw.Close()
+		fw.Close()
+		os.Remove(tempPath)
+		return nil, fmt.Errorf("write: %w", err)
 	}
 
 	if err := pw.Close(); err != nil {
@@ -127,7 +136,6 @@ func (w *ParquetWriter) WriteBatch(ctx context.Context, events []*storage.Event,
 		os.Remove(tempPath)
 		return nil, fmt.Errorf("rename: %w", err)
 	}
-
 	minID := parqEvents[0].ID
 	maxID := parqEvents[len(parqEvents)-1].ID
 	minTS := parqEvents[0].TimestampUs
@@ -145,14 +153,16 @@ func (w *ParquetWriter) WriteBatch(ctx context.Context, events []*storage.Event,
 		MaxEventID:       maxID,
 	}
 
-	// Upload to S3 if configured
+	// Upload to S3 if configured: stream from disk (P-H6, no ReadFile buffer).
 	if w.s3 != nil {
 		s3Key := strings.TrimPrefix(finalPath, w.outputDir+"/")
-		data, err := os.ReadFile(finalPath)
+		f, err := os.Open(finalPath)
 		if err != nil {
-			return nil, fmt.Errorf("read for s3 upload: %w", err)
+			return nil, fmt.Errorf("open for s3 upload: %w", err)
 		}
-		if err := w.s3.Upload(s3Key, data); err != nil {
+		err = w.s3.UploadReader(s3Key, f, info.Size())
+		f.Close()
+		if err != nil {
 			return nil, fmt.Errorf("s3 upload: %w", err)
 		}
 		result.Path = fmt.Sprintf("s3://%s/%s", w.s3.GetBucket(), s3Key)
@@ -190,10 +200,13 @@ func eventToParquet(e *storage.Event) TraceEventParquet {
 		UserName:    e.UserName,
 		Hostname:    e.Hostname,
 		DataRaw:     e.DataRaw,
+		Annotations: AnnotationsJSON(e.Annotations),
 	}
 }
 
 func parquetCompression(codec string) compress.Codec {
+	// CompressionLevel is applied by the caller via ParquetOptions where the
+	// parquet-go codec supports it; zstd default level comes from options.
 	switch codec {
 	case "snappy":
 		return &pqsnappy.Codec{}

@@ -2,11 +2,15 @@ package batch
 
 import (
 	"context"
+	"errors"
 	"log"
 	"sync"
 
 	"github.com/yanmyoaung2004/trace/internal/storage"
 )
+
+// ErrClosed is returned by Submit after Close.
+var ErrClosed = errors.New("writer goroutine: closed")
 
 // WriterGoroutine is a dedicated goroutine that owns a single storage.Writer
 // connection. N producer goroutines feed batches into a channel, and the
@@ -19,6 +23,8 @@ type WriterGoroutine struct {
 	done    chan struct{}
 	errOnce sync.Once
 	err     error
+	mu      sync.Mutex
+	closed  bool
 }
 
 type writeRequest struct {
@@ -48,7 +54,14 @@ func NewWriterGoroutine(ctx context.Context, writer storage.Writer, queueDepth i
 
 // Submit sends a batch to the writer goroutine and waits for the result.
 // It blocks until the batch has been written or the context is cancelled.
+// After Close, Submit returns ErrClosed without panicking (closed-flag drain).
 func (w *WriterGoroutine) Submit(ctx context.Context, batch []*storage.Event) error {
+	w.mu.Lock()
+	closed := w.closed
+	w.mu.Unlock()
+	if closed {
+		return ErrClosed
+	}
 	req := writeRequest{
 		ctx:   ctx,
 		batch: batch,
@@ -80,8 +93,17 @@ func (w *WriterGoroutine) Err() error {
 }
 
 // Close shuts down the writer goroutine and the underlying writer.
+// It sets the closed flag first so concurrent Submit calls fail closed
+// instead of panicking on send-to-closed-channel, then drains.
 func (w *WriterGoroutine) Close() error {
+	w.mu.Lock()
+	if w.closed {
+		w.mu.Unlock()
+		return w.writer.Close()
+	}
+	w.closed = true
 	close(w.ch)
+	w.mu.Unlock()
 	w.wg.Wait()
 	close(w.done)
 	return w.writer.Close()
@@ -98,14 +120,6 @@ func (w *WriterGoroutine) loop(ctx context.Context) {
 				w.err = err
 			})
 			log.Printf("[tse] writer goroutine error: %v", err)
-		}
-	}
-
-	// Drain remaining requests on shutdown
-	for req := range w.ch {
-		select {
-		case req.errCh <- w.Err():
-		default:
 		}
 	}
 }
