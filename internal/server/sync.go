@@ -2,25 +2,17 @@ package server
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"database/sql"
-	"encoding/hex"
 	"encoding/json"
-	"fmt"
-	"log"
 	"net/http"
-	"net"
-	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
+	"log/slog"
+
+	"github.com/yanmyoaung2004/trace/internal/cases"
 	"github.com/yanmyoaung2004/trace/internal/investigation"
 	"github.com/yanmyoaung2004/trace/internal/storage"
-	"github.com/yanmyoaung2004/trace/internal/storage/metrics"
 )
 
 type SyncHandler struct {
@@ -29,15 +21,18 @@ type SyncHandler struct {
 	updateDir   string
 	configStore *remoteConfigStore
 	tseWriter   EventWriter
+	auth        *Auth
+	metrics     *serverMetrics
+	audit       AuditSink
+	auditHTTP   http.HandlerFunc
+	cases       CasesLister
 }
 
-// EventWriter is implemented by the TSE engine for ingesting agent events.
-type EventWriter interface {
-	WriteEvents(ctx context.Context, events []*storage.Event) error
-}
-
-func NewSyncHandler(mgr *ServerManager) *SyncHandler {
-	return &SyncHandler{manager: mgr}
+// CasesLister is the seam for scoped paginated case reads, implemented by
+// DetectReliabilityFixer's cases.Manager.ListPage (cursor=base64 created_at|id).
+// Nil keeps the route returning 501 until injected.
+type CasesLister interface {
+	ListPage(ctx context.Context, orgID, status, severity string, limit int, cursor string) ([]*cases.Case, string, error)
 }
 
 func (h *SyncHandler) WithLogDir(dir string) *SyncHandler {
@@ -59,109 +54,99 @@ func (h *SyncHandler) WithTSEWriter(w EventWriter) *SyncHandler {
 	h.tseWriter = w
 	return h
 }
+
+// WithMetrics overrides the default server metrics (ServeHTTP injects shared).
+func (h *SyncHandler) WithMetrics(sm *serverMetrics) *SyncHandler {
+	if sm != nil {
+		h.metrics = sm
+		h.auth = newAuth(h.manager, sm).WithAuditSink(h.audit)
+	}
+	return h
+}
+
+// WithAuditLog attaches the audit backend (ConfigAuditFixer adapter).
+func (h *SyncHandler) WithAuditLog(s AuditSink) *SyncHandler {
+	h.audit = s
+	if h.auth != nil {
+		h.auth.WithAuditSink(s)
+	}
+	return h
+}
+
+// WithAuditHandler mounts GET /api/v1/audit (ConfigAuditFixer handler).
+func (h *SyncHandler) WithAuditHandler(fn http.HandlerFunc) *SyncHandler {
+	h.auditHTTP = fn
+	return h
+}
+
+// WithCasesLister injects the scoped case lister (DetectReliabilityFixer).
+func (h *SyncHandler) WithCasesLister(l CasesLister) *SyncHandler {
+	h.cases = l
+	return h
+}
+
 func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
-	protected := func(handler http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			apiKey := r.URL.Query().Get("api_key")
-			if apiKey == "" {
-				if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
-					apiKey = strings.TrimPrefix(auth, "Bearer ")
-				}
+	auth := h.auth
+	if auth == nil {
+		auth = newAuth(h.manager, h.metrics)
+		h.auth = auth
+	}
+	auditGate := func(next http.HandlerFunc) http.HandlerFunc {
+		if h.auditHTTP == nil {
+			return func(w http.ResponseWriter, r *http.Request) {
+				writeAPIError(w, r, http.StatusNotImplemented, "audit API not configured")
 			}
-			if apiKey != "" {
-				if userID, role, orgID, scope, err := h.manager.AuthenticateOrgFull(r.Context(), apiKey); err == nil && userID != "" {
-					ctx := context.WithValue(r.Context(), ctxKeyRole, role)
-					ctx = context.WithValue(ctx, ctxKeyUserID, userID)
-					ctx = context.WithValue(ctx, ctxKeyScope, scope)
-					if orgID != "" {
-						ctx = context.WithValue(ctx, ctxKeyOrg, orgID)
-					}
-					r = r.WithContext(ctx)
-					handler(w, r)
-					return
-				}
-			}
-			writeError(w, http.StatusUnauthorized, "unauthorized — provide api_key query param or Authorization: Bearer <key>")
 		}
+		return auth.RequirePerm(PermAuditRead, h.auditHTTP)
 	}
 
-	// requirePermission checks that the authenticated user has the required permission.
-	requirePermission := func(perm Permission) func(http.HandlerFunc) http.HandlerFunc {
-		return func(handler http.HandlerFunc) http.HandlerFunc {
-			return protected(func(w http.ResponseWriter, r *http.Request) {
-				role := RoleFromContext(r.Context())
-				if !HasPermission(role, perm) {
-					writeError(w, http.StatusForbidden, "insufficient permissions")
-					return
-				}
-				handler(w, r)
-			})
-		}
-	}
+	mux.HandleFunc("/api/v1/register", auth.UserAuth(h.handleRegister))
+	mux.HandleFunc("/api/v1/heartbeat", auth.UserAuth(h.handleHeartbeat))
+	mux.HandleFunc("/api/v1/push", auth.RequirePerm(PermInvestWrite, h.handlePush))
+	mux.HandleFunc("/api/v1/nodes", auth.RequirePerm(PermCaseRead, h.handleNodes))
+	mux.HandleFunc("/api/v1/investigations/", auth.RequirePerm(PermInvestRead, h.handleInvestigationByID))
+	mux.HandleFunc("/api/v1/investigations", auth.RequirePerm(PermInvestRead, h.handleInvestigations))
+	mux.HandleFunc("/api/v1/correlations", auth.RequirePerm(PermInvestRead, h.handleCorrelations))
+	mux.HandleFunc("/api/v1/timeline/", auth.RequirePerm(PermInvestRead, h.handleTimeline))
+	mux.HandleFunc("/api/v1/cases", auth.RequirePerm(PermCaseRead, h.handleCases))
 
-	readOnly := func(handler http.HandlerFunc) http.HandlerFunc {
-		return requirePermission(PermCaseRead)(handler)
-	}
-
-	adminOnly := func(handler http.HandlerFunc) http.HandlerFunc {
-		return requirePermission(PermAdmin)(handler)
-	}
-
-	
-	agentProtected := func(handler http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			var agentKey string
-			if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
-				agentKey = strings.TrimPrefix(auth, "Bearer ")
-			} else {
-				agentKey = r.URL.Query().Get("api_key")
-			}
-			if agentKey == "" {
-				writeError(w, http.StatusUnauthorized, "unauthorized — provide Authorization: Bearer <agent-key>")
-				return
-			}
-			agentID, err := h.manager.AuthenticateAgent(r.Context(), agentKey)
-			if err != nil || agentID == "" {
-				writeError(w, http.StatusUnauthorized, "invalid agent key")
-				return
-			}
-			ctx := context.WithValue(r.Context(), ctxKeyAgentID, agentID)
-			r = r.WithContext(ctx)
-			handler(w, r)
-		}
-	}
-
-	mux.HandleFunc("/api/v1/register", protected(h.handleRegister))
-	mux.HandleFunc("/api/v1/heartbeat", protected(h.handleHeartbeat))
-	mux.HandleFunc("/api/v1/push", protected(h.handlePush))
-	mux.HandleFunc("/api/v1/nodes", readOnly(h.handleNodes))
-	mux.HandleFunc("/api/v1/investigations/", readOnly(h.handleInvestigationByID))
-	mux.HandleFunc("/api/v1/investigations", readOnly(h.handleInvestigations))
-	mux.HandleFunc("/api/v1/correlations", readOnly(h.handleCorrelations))
-	mux.HandleFunc("/api/v1/timeline/", readOnly(h.handleTimeline))
-
+	// EDR trust boundary: register/download/feed are authed (provision-token
+	// enroll, agent-or-user download, agent-self-or-perm vuln reads).
 	mux.HandleFunc("/api/v1/edr/register", h.handleEDRRegister)
-	mux.HandleFunc("/api/v1/edr/heartbeat", agentProtected(h.handleEDRHeartbeat))
-	mux.HandleFunc("/api/v1/edr/events", agentProtected(h.handleEDREvents))
-	mux.HandleFunc("/api/v1/edr/actions/pending", agentProtected(h.handleEDRActionsPending))
-	mux.HandleFunc("/api/v1/edr/actions/result", agentProtected(h.handleEDRActionResult))
-	mux.HandleFunc("/api/v1/edr/actions/dispatch", requirePermission(PermAgentWrite)(h.handleEDRDispatch))
-	mux.HandleFunc("/api/v1/edr/alerts/dismiss", requirePermission(PermAgentWrite)(h.handleEDRAlertDismiss))
-	mux.HandleFunc("/api/v1/edr/agents", requirePermission(PermAgentRead)(h.handleEDRAgentsList))
-	mux.HandleFunc("/api/v1/edr/agents/", requirePermission(PermAgentRead)(h.handleEDRAgentByID))
-	mux.HandleFunc("/api/v1/edr/vulns", agentProtected(h.handleEDRVulns))
-	mux.HandleFunc("/api/v1/edr/update/check", agentProtected(h.handleEDRUpdateCheck))
-	mux.HandleFunc("/api/v1/edr/update/download", h.handleEDRUpdateDownload)
-	mux.HandleFunc("/api/v1/edr/config", agentProtected(h.handleEDRConfig))
-	mux.HandleFunc("/api/v1/edr/vuln/feed", h.handleEDRVulnFeed)
-	mux.HandleFunc("/api/v1/compliance/snapshot", protected(h.handleComplianceSnapshot))
-	mux.HandleFunc("/api/v1/admin/orgs", adminOnly(h.handleOrgs))
-	mux.HandleFunc("/api/v1/admin/users", adminOnly(h.handleAdminUsers))
-	mux.HandleFunc("/api/v1/admin/users/", adminOnly(h.handleAdminUserByEmail))
+	mux.HandleFunc("/api/v1/edr/heartbeat", auth.AgentAuth(h.handleEDRHeartbeat))
+	mux.HandleFunc("/api/v1/edr/events", auth.FleetOrUser(PermAgentRead, h.handleEDREvents))
+	mux.HandleFunc("/api/v1/edr/actions/pending", auth.AgentAuth(h.handleEDRActionsPending))
+	mux.HandleFunc("/api/v1/edr/actions/result", auth.AgentAuth(h.handleEDRActionResult))
+	mux.HandleFunc("/api/v1/edr/actions/dispatch", auth.RequirePerm(PermAgentWrite, h.handleEDRDispatch))
+	mux.HandleFunc("/api/v1/edr/alerts/dismiss", auth.RequirePerm(PermAgentWrite, h.handleEDRAlertDismiss))
+	mux.HandleFunc("/api/v1/edr/agents", auth.RequirePerm(PermAgentRead, h.handleEDRAgentsList))
+	mux.HandleFunc("/api/v1/edr/agents/", h.handleEDRAgentByIDGate(auth))
+	mux.HandleFunc("/api/v1/edr/vulns", auth.FleetOrUser(PermAgentRead, h.handleEDRVulns))
+	mux.HandleFunc("/api/v1/edr/update/check", auth.AgentAuth(h.handleEDRUpdateCheck))
+	mux.HandleFunc("/api/v1/edr/update/download", auth.FleetOrUser("", h.handleEDRUpdateDownload))
+	mux.HandleFunc("/api/v1/edr/config", auth.FleetOrUser(PermAdmin, h.handleEDRConfig))
+	mux.HandleFunc("/api/v1/edr/vuln/feed", auth.FleetOrUser(PermAgentRead, h.handleEDRVulnFeed))
+	mux.HandleFunc("/api/v1/compliance/snapshot", auth.RequirePerm(PermCompliance, h.handleComplianceSnapshot))
+	mux.HandleFunc("/api/v1/admin/orgs", auth.RequirePerm(PermAdmin, h.handleOrgs))
+	mux.HandleFunc("/api/v1/admin/users", auth.RequirePerm(PermAdmin, h.handleAdminUsers))
+	mux.HandleFunc("/api/v1/admin/users/", auth.RequirePerm(PermAdmin, h.handleAdminUserByEmail))
+	mux.HandleFunc("/api/v1/admin/provision-tokens", auth.RequirePerm(PermAdmin, h.handleProvisionTokens))
+	mux.HandleFunc("/api/v1/audit", auditGate(nil))
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		writeData(w, r, http.StatusOK, map[string]string{"status": "ok"})
 	})
+}
+
+// handleEDRAgentByIDGate routes GET (read) vs DELETE (revoke) with per-route perms.
+func (h *SyncHandler) handleEDRAgentByIDGate(auth *Auth) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			auth.RequirePerm(PermAgentRevoke, h.handleEDRAgentByID)(w, r)
+			return
+		}
+		auth.RequirePerm(PermAgentRead, h.handleEDRAgentByID)(w, r)
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -176,47 +161,53 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 
 func (h *SyncHandler) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "POST required")
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
 	var req struct {
 		Hostname string `json:"hostname"`
 		Version  string `json:"version"`
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+		writeAPIError(w, r, http.StatusBadRequest, "invalid json")
 		return
 	}
-	if req.Hostname == "" {
-		writeError(w, http.StatusBadRequest, "hostname is required")
+	if strings.TrimSpace(req.Hostname) == "" || len(req.Hostname) > 256 {
+		writeAPIError(w, r, http.StatusBadRequest, "hostname is required")
 		return
 	}
-	node, err := h.manager.RegisterNode(r.Context(), req.Hostname, req.Version)
+	node, err := h.manager.RegisterNode(r.Context(), strings.TrimSpace(req.Hostname), req.Version)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeAPIError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
-	log.Printf("[sync] node registered: %s (%s)", node.ID[:12], node.Hostname)
-	writeJSON(w, http.StatusOK, node)
+	slog.Info("node registered", "node", shortID(node.ID), "host", node.Hostname)
+	writeData(w, r, http.StatusOK, node)
 }
 
 func (h *SyncHandler) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "POST required")
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
 	var req struct {
 		NodeID string `json:"node_id"`
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+		writeAPIError(w, r, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if !validResourceID(req.NodeID) {
+		writeAPIError(w, r, http.StatusBadRequest, "node_id required")
 		return
 	}
 	if err := h.manager.Heartbeat(r.Context(), req.NodeID); err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
+		writeAPIError(w, r, http.StatusNotFound, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{
+	writeData(w, r, http.StatusOK, map[string]string{
 		"status":      "ok",
 		"server_time": time.Now().UTC().Format(time.RFC3339),
 	})
@@ -224,1082 +215,185 @@ func (h *SyncHandler) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 
 func (h *SyncHandler) handlePush(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "POST required")
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
 	var req struct {
-		NodeID       string              `json:"node_id"`
+		NodeID        string             `json:"node_id"`
 		Investigation *InvestigationPush `json:"investigation"`
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+		writeAPIError(w, r, http.StatusBadRequest, "invalid json")
 		return
 	}
-	if req.NodeID == "" || req.Investigation == nil {
-		writeError(w, http.StatusBadRequest, "node_id and investigation are required")
+	if !validResourceID(req.NodeID) || req.Investigation == nil {
+		writeAPIError(w, r, http.StatusBadRequest, "node_id and investigation are required")
 		return
 	}
 	inv := req.Investigation
-	if err := h.manager.PushInvestigation(r.Context(), req.NodeID, inv.ID, inv.Status,
-		inv.Intent, inv.Playbook, inv.Summary, inv.Confidence, inv.Indicators, inv.Report); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	if len(inv.Intent) > 4096 {
+		writeAPIError(w, r, http.StatusBadRequest, "intent too long")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"accepted": true})
+	if err := h.manager.PushInvestigation(r.Context(), req.NodeID, inv.ID, inv.Status,
+		inv.Intent, inv.Playbook, inv.Summary, inv.Confidence, inv.Indicators, inv.Report); err != nil {
+		writeAPIError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+	auditWrite(h.audit, r.Context(), auditActor(r), "investigation.pushed", "investigation", inv.ID, "")
+	writeData(w, r, http.StatusOK, map[string]bool{"accepted": true})
 }
 
 type InvestigationPush struct {
-	ID          string    `json:"id"`
-	Status      string    `json:"status"`
-	Intent      string    `json:"intent"`
-	Playbook    string    `json:"playbook,omitempty"`
-	Confidence  *float64  `json:"confidence,omitempty"`
-	Summary     string    `json:"summary,omitempty"`
-	Indicators  []string  `json:"indicators,omitempty"`
-	Report      string    `json:"report,omitempty"`
+	ID         string   `json:"id"`
+	Status     string   `json:"status"`
+	Intent     string   `json:"intent"`
+	Playbook   string   `json:"playbook,omitempty"`
+	Confidence *float64 `json:"confidence,omitempty"`
+	Summary    string   `json:"summary,omitempty"`
+	Indicators []string `json:"indicators,omitempty"`
+	Report     string   `json:"report,omitempty"`
 }
 
 func (h *SyncHandler) handleNodes(w http.ResponseWriter, r *http.Request) {
-	nodes, err := h.manager.ListNodes(r.Context())
+	limit := parseLimit(r)
+	offset := parseCursor(r)
+	nodes, next, err := h.manager.ListNodes(r.Context(), limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeAPIError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if nodes == nil {
 		nodes = []NodeInfo{}
 	}
-	writeJSON(w, http.StatusOK, nodes)
+	nextCursor := ""
+	if next > 0 {
+		nextCursor = encodeCursor(next)
+	}
+	writeData(w, r, http.StatusOK, pageResponse(nodes, nextCursor))
 }
 
 func (h *SyncHandler) handleInvestigations(w http.ResponseWriter, r *http.Request) {
-	limit := 100
+	limit := parseLimit(r)
+	offset := parseCursor(r)
 	nodeID := r.URL.Query().Get("node_id")
+	if nodeID != "" && !validResourceID(nodeID) {
+		writeAPIError(w, r, http.StatusBadRequest, "invalid node_id")
+		return
+	}
 	statusFilter := r.URL.Query().Get("status")
+	if len(statusFilter) > 32 {
+		statusFilter = statusFilter[:32]
+	}
 	search := r.URL.Query().Get("search")
 
-	invs, err := h.manager.ListInvestigations(r.Context(), limit, nodeID, statusFilter, search)
+	invs, next, err := h.manager.ListInvestigations(r.Context(), limit, offset, nodeID, statusFilter, search)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeAPIError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if invs == nil {
 		invs = []ServerInvestigation{}
 	}
-	writeJSON(w, http.StatusOK, invs)
+	nextCursor := ""
+	if next > 0 {
+		nextCursor = encodeCursor(next)
+	}
+	writeData(w, r, http.StatusOK, pageResponse(invs, nextCursor))
 }
 
 func (h *SyncHandler) handleInvestigationByID(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/v1/investigations/")
 	id = strings.TrimSuffix(id, "/")
-	if id == "" {
-		writeError(w, http.StatusBadRequest, "id is required")
+	if !validResourceID(id) {
+		writeAPIError(w, r, http.StatusBadRequest, "id is required")
 		return
 	}
 	inv, err := h.manager.GetInvestigation(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "investigation not found")
+		writeAPIError(w, r, http.StatusNotFound, "investigation not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, inv)
+	writeData(w, r, http.StatusOK, inv)
 }
 
 func (h *SyncHandler) handleCorrelations(w http.ResponseWriter, r *http.Request) {
-	corrs, err := h.manager.GetCorrelations(r.Context(), 1)
+	limit := parseLimit(r)
+	offset := parseCursor(r)
+	corrs, next, err := h.manager.GetCorrelations(r.Context(), 1, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeAPIError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if corrs == nil {
 		corrs = []map[string]any{}
 	}
-	writeJSON(w, http.StatusOK, corrs)
+	nextCursor := ""
+	if next > 0 {
+		nextCursor = encodeCursor(next)
+	}
+	writeData(w, r, http.StatusOK, pageResponse(corrs, nextCursor))
 }
 
 func (h *SyncHandler) handleTimeline(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/v1/timeline/")
 	id = strings.TrimSuffix(id, "/")
-	if id == "" {
-		writeError(w, http.StatusBadRequest, "investigation ID is required")
+	if !validResourceID(id) || strings.Contains(id, "/") || strings.Contains(id, "\\") {
+		writeAPIError(w, r, http.StatusBadRequest, "invalid investigation ID")
 		return
 	}
-
 	if h.logDir == "" {
-		writeError(w, http.StatusNotFound, "log directory not configured")
+		writeAPIError(w, r, http.StatusNotFound, "log directory not configured")
 		return
 	}
-
-	entries, err := investigation.ReadInvestigationLog(h.logDir, id)
+	base, err := filepath.Abs(h.logDir)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeAPIError(w, r, http.StatusInternalServerError, "log directory error")
+		return
+	}
+	target := filepath.Join(base, id+".jsonl")
+	rel, err := filepath.Rel(base, target)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		writeAPIError(w, r, http.StatusBadRequest, "invalid investigation ID")
+		return
+	}
+	entries, err := investigation.ReadInvestigationLog(base, id)
+	if err != nil {
+		writeAPIError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if entries == nil {
 		entries = []investigation.LogEntry{}
 	}
-	writeJSON(w, http.StatusOK, entries)
+	writeData(w, r, http.StatusOK, entries)
 }
 
-// ── EDR Agent Handlers ──
-
-func (h *SyncHandler) handleEDRRegister(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		writeError(w, http.StatusMethodNotAllowed, "POST required")
+// handleCases serves scoped paginated case reads via the injected CasesLister
+// seam (DetectReliabilityFixer owns the manager implementation).
+func (h *SyncHandler) handleCases(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "GET required")
 		return
 	}
-	var req struct {
-		Hostname      string `json:"hostname"`
-		Platform      string `json:"platform"`
-		Arch          string `json:"arch"`
-		Version       string `json:"version"`
-		KernelVersion string `json:"kernel_version,omitempty"`
-		CPUCount      int    `json:"cpu_count"`
-		CPUName       string `json:"cpu_name"`
-		MemoryMB      int64  `json:"memory_mb"`
-		AgentVersion  string `json:"agent_version"`
-		Monitors      string `json:"monitors"`
-		OrgID         string `json:"org_id,omitempty"`
-		APIKey        string `json:"api_key"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if h.cases == nil {
+		writeAPIError(w, r, http.StatusNotImplemented, "cases API not configured")
 		return
 	}
-	if req.Hostname == "" {
-		writeError(w, http.StatusBadRequest, "hostname required")
-		return
+	limit := parseLimit(r)
+	cursor := r.URL.Query().Get("cursor")
+	status := r.URL.Query().Get("status")
+	severity := r.URL.Query().Get("severity")
+	if len(status) > 32 {
+		status = status[:32]
 	}
-
-	id := uuid.New().String()
-	now := time.Now().UTC().Format(time.RFC3339)
-	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
-	if ip == "" {
-		ip = r.RemoteAddr
+	if len(severity) > 32 {
+		severity = severity[:32]
 	}
-
-	// Hash the agent API key — generate one if not provided (auto-enrollment)
-	apiKeyHash := ""
-	returnedKey := ""
-	if req.APIKey != "" {
-		h := sha256.Sum256([]byte(req.APIKey))
-		apiKeyHash = hex.EncodeToString(h[:])
-	} else {
-		keyBytes := make([]byte, 32)
-		if _, err := rand.Read(keyBytes); err == nil {
-			returnedKey = hex.EncodeToString(keyBytes)
-			h := sha256.Sum256([]byte(returnedKey))
-			apiKeyHash = hex.EncodeToString(h[:])
-		}
-	}
-
-	_, err := h.manager.db.ExecContext(r.Context(),
-		`INSERT INTO edr_agents (id, hostname, platform, arch, version, agent_version, status, ip_address, cpu_count, cpu_name, memory_mb, kernel_version, monitors, org_id, api_key_hash, last_heartbeat, last_ip, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, req.Hostname, req.Platform, req.Arch, req.Version, req.AgentVersion, ip, req.CPUCount, req.CPUName, req.MemoryMB, req.KernelVersion, req.Monitors, req.OrgID, apiKeyHash, now, ip, now, now)
+	items, next, err := h.cases.ListPage(r.Context(), OrgIDFromContext(r.Context()), status, severity, limit, cursor)
 	if err != nil {
-		log.Printf("[edr] register error: %v", err)
-		writeError(w, http.StatusInternalServerError, "registration failed")
+		writeAPIError(w, r, http.StatusInternalServerError, "query error")
 		return
 	}
-
-	log.Printf("[edr] agent registered: %s (%s/%s)", req.Hostname, req.Platform, req.Arch)
-
-	resp := map[string]string{"agent_id": id, "status": "registered"}
-	if returnedKey != "" {
-		resp["api_key"] = returnedKey
-	}
-	writeJSON(w, http.StatusOK, resp)
-}
-
-func (h *SyncHandler) handleEDRHeartbeat(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		writeError(w, http.StatusMethodNotAllowed, "POST required")
-		return
-	}
-	var hb struct {
-		AgentID  string `json:"agent_id"`
-		Hostname string `json:"hostname"`
-		Status   string `json:"status"`
-		Version  string `json:"version"`
-		Uptime   int64  `json:"uptime"`
-		Stats    struct {
-			EventsCollected int64   `json:"events_collected"`
-			EventsSent      int64   `json:"events_sent"`
-			ActionsExecuted int64   `json:"actions_executed"`
-			ActionsFailed   int64   `json:"actions_failed"`
-			CPUPercent      float64 `json:"cpu_percent"`
-			MemoryMB        int64   `json:"memory_mb"`
-		} `json:"stats"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&hb); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
-		return
-	}
-
-	now := time.Now().UTC().Format(time.RFC3339)
-	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
-	if ip == "" {
-		ip = r.RemoteAddr
-	}
-
-	_, err := h.manager.db.ExecContext(r.Context(),
-		`UPDATE edr_agents SET status = ?, last_heartbeat = ?, last_ip = ?, updated_at = ? WHERE id = ?`,
-		hb.Status, now, ip, now, hb.AgentID)
-	if err != nil {
-		log.Printf("[edr] heartbeat error: %v", err)
-	}
-}
-
-func (h *SyncHandler) handleEDREvents(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "GET" {
-		h.handleEDREventsQuery(w, r)
-		return
-	}
-	if r.Method != "POST" {
-		writeError(w, http.StatusMethodNotAllowed, "POST or GET")
-		return
-	}
-	var body struct {
-		AgentID string `json:"agent_id"`
-		Events  []json.RawMessage `json:"events"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
-		return
-	}
-
-	tx, err := h.manager.db.BeginTx(r.Context(), nil)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db error")
-		return
-	}
-	defer tx.Rollback()
-
-	stmt, err := tx.PrepareContext(r.Context(),
-		`INSERT INTO edr_events (id, agent_id, event_type, severity, data, timestamp, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "prepare error")
-		return
-	}
-	defer stmt.Close()
-
-	stored := 0
-	for _, raw := range body.Events {
-		var evt struct {
-			ID        string `json:"id"`
-			Type      string `json:"type"`
-			Severity  int    `json:"severity"`
-			Timestamp string `json:"timestamp"`
-		}
-		if err := json.Unmarshal(raw, &evt); err != nil || evt.ID == "" {
-			continue
-		}
-		if _, err := stmt.ExecContext(r.Context(), evt.ID, body.AgentID, evt.Type, evt.Severity, string(raw), evt.Timestamp); err != nil {
-			log.Printf("[edr] event insert error: %v", err)
-			continue
-		}
-		stored++
-	}
-
-	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "commit error")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"stored": stored, "received": len(body.Events)})
-
-	// Optionally write events to TSE for long-term storage
-	if h.tseWriter != nil && stored > 0 {
-		go h.writeEventsToTSE(context.Background(), body.AgentID, body.Events)
-	}
-}
-
-func (h *SyncHandler) writeEventsToTSE(ctx context.Context, agentID string, events []json.RawMessage) {
-	tseEvents := make([]*storage.Event, 0, len(events))
-	for _, raw := range events {
-		var evt struct {
-			ID        string `json:"id"`
-			Type      string `json:"type"`
-			Severity  int    `json:"severity"`
-			Timestamp string `json:"timestamp"`
-			Data      string `json:"data,omitempty"`
-		}
-		if err := json.Unmarshal(raw, &evt); err != nil || evt.ID == "" {
-			continue
-		}
-		ts := time.Now().UnixMicro()
-		if t, err := time.Parse(time.RFC3339, evt.Timestamp); err == nil {
-			ts = t.UnixMicro()
-		}
-		tseEvents = append(tseEvents, &storage.Event{
-			ID:        evt.ID,
-			TenantID:  "default",
-			AgentID:   agentID,
-			Timestamp: ts,
-			EventType: evt.Type,
-			Severity:  evt.Severity,
-			DataRaw:   []byte(evt.Data),
-		})
-	}
-	if len(tseEvents) > 0 {
-		if err := h.tseWriter.WriteEvents(ctx, tseEvents); err != nil {
-			log.Printf("[server] tse write: %v", err)
-		}
-	}
-}
-
-func (h *SyncHandler) handleEDRActionsPending(w http.ResponseWriter, r *http.Request) {
-	agentID := r.URL.Query().Get("agent_id")
-	if agentID == "" {
-		writeError(w, http.StatusBadRequest, "agent_id required")
-		return
-	}
-
-	rows, err := h.manager.db.QueryContext(r.Context(),
-		`SELECT id, action_type, target, params, timeout_seconds FROM edr_actions
-		 WHERE agent_id = ? AND status = 'pending' ORDER BY created_at ASC LIMIT 10`, agentID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "query error")
-		return
-	}
-	defer rows.Close()
-
-	type action struct {
-		ID      string           `json:"id"`
-		Type    string           `json:"type"`
-		Target  string           `json:"target,omitempty"`
-		Params  map[string]any   `json:"params,omitempty"`
-		Timeout int              `json:"timeout_seconds"`
-	}
-
-	actions := []*action{}
-	for rows.Next() {
-		var a action
-		var paramsStr string
-		if err := rows.Scan(&a.ID, &a.Type, &a.Target, &paramsStr, &a.Timeout); err != nil {
-			continue
-		}
-		json.Unmarshal([]byte(paramsStr), &a.Params)
-		actions = append(actions, &a)
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"actions": actions})
-}
-
-func (h *SyncHandler) handleEDRAlertDismiss(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		writeError(w, http.StatusMethodNotAllowed, "POST required")
-		return
-	}
-	var req struct {
-		AlertID string `json:"alert_id"`
-		Reason  string `json:"reason,omitempty"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.AlertID == "" {
-		writeError(w, http.StatusBadRequest, "alert_id required")
-		return
-	}
-
-	// Look up the alert to find rule_name and process_name
-	var ruleName, processName string
-	h.manager.db.QueryRowContext(r.Context(),
-		`SELECT COALESCE(json_extract(data, '$.annotations.yara_rule'), json_extract(data, '$.annotations.correlation'), event_type),
-				COALESCE(json_extract(data, '$.process.name'), json_extract(data, '$.file.path'), 'unknown')
-		 FROM edr_events WHERE id = ?`, req.AlertID).Scan(&ruleName, &processName)
-	if ruleName == "" {
-		ruleName = "manual_" + req.AlertID[:8]
-	}
-	if processName == "" {
-		processName = "unknown"
-	}
-
-	// Upsert the counter
-	result, err := h.manager.db.ExecContext(r.Context(),
-		`INSERT INTO edr_fp_counters (rule_name, process_name, dismissals, throttled, last_seen)
-		 VALUES (?, ?, 1, 0, datetime('now'))
-		 ON CONFLICT(rule_name, process_name) DO UPDATE SET
-		   dismissals = dismissals + 1,
-		   throttled = CASE WHEN dismissals + 1 >= 10 THEN 1 ELSE 0 END,
-		   last_seen = datetime('now')`,
-		ruleName, processName)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "dismiss failed")
-		return
-	}
-
-	var dismissals int
-	var throttled bool
-	row := h.manager.db.QueryRowContext(r.Context(),
-		`SELECT dismissals, throttled FROM edr_fp_counters WHERE rule_name = ? AND process_name = ?`,
-		ruleName, processName)
-	row.Scan(&dismissals, &throttled)
-
-	_ = result
-	log.Printf("[edr] alert %s dismissed: rule=%s process=%s (count=%d, throttled=%v)",
-		req.AlertID, ruleName, processName, dismissals, throttled)
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status":       "dismissed",
-		"rule_name":    ruleName,
-		"process_name": processName,
-		"dismissals":   dismissals,
-		"throttled":    throttled,
-	})
-}
-
-func (h *SyncHandler) handleEDRActionResult(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		writeError(w, http.StatusMethodNotAllowed, "POST required")
-		return
-	}
-	var result struct {
-		AgentID    string         `json:"agent_id"`
-		ActionID   string         `json:"action_id"`
-		Status     string         `json:"status"`
-		Error      string         `json:"error,omitempty"`
-		Output     map[string]any `json:"output,omitempty"`
-		ExecutedAt string         `json:"executed_at"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&result); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
-		return
-	}
-
-	outputJSON, _ := json.Marshal(result.Output)
-	_, err := h.manager.db.ExecContext(r.Context(),
-		`UPDATE edr_actions SET status = ?, result = ?, error = ?, completed_at = ? WHERE id = ?`,
-		result.Status, string(outputJSON), result.Error, result.ExecutedAt, result.ActionID)
-	if err != nil {
-		log.Printf("[edr] action result error: %v", err)
-	}
-
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
-
-func (h *SyncHandler) handleEDRAgentsList(w http.ResponseWriter, r *http.Request) {
-	onlyActive := r.URL.Query().Get("all") != "true"
-	query := `SELECT id, hostname, platform, arch, agent_version, status, ip_address, last_heartbeat, cpu_count, cpu_name, memory_mb, created_at
-		 FROM edr_agents WHERE 1=1`
-	var args []any
-	if onlyActive {
-		query += ` AND status = 'active'`
-	}
-	if orgID := r.Context().Value(ctxKeyOrg); orgID != nil && orgID.(string) != "" {
-		query += ` AND (org_id = ? OR org_id = '')`
-		args = append(args, orgID.(string))
-	}
-	query += ` ORDER BY last_heartbeat DESC`
-	rows, err := h.manager.db.QueryContext(r.Context(), query, args...)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "query error")
-		return
-	}
-	defer rows.Close()
-
-	type agent struct {
-		ID            string `json:"id"`
-		Hostname      string `json:"hostname"`
-		Platform      string `json:"platform"`
-		Arch          string `json:"arch"`
-		Version       string `json:"version"`
-		Status        string `json:"status"`
-		IP            string `json:"ip"`
-		LastHeartbeat string `json:"last_heartbeat"`
-		CPUCount      int    `json:"cpu_count"`
-		CPUName       string `json:"cpu_name"`
-		MemoryMB      int64  `json:"memory_mb"`
-		CreatedAt     string `json:"created_at"`
-	}
-
-	agents := []*agent{}
-	for rows.Next() {
-		var a agent
-		if err := rows.Scan(&a.ID, &a.Hostname, &a.Platform, &a.Arch, &a.Version, &a.Status, &a.IP, &a.LastHeartbeat, &a.CPUCount, &a.CPUName, &a.MemoryMB, &a.CreatedAt); err != nil {
-			continue
-		}
-		agents = append(agents, &a)
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"agents": agents})
-}
-
-func (h *SyncHandler) handleEDRAgentByID(w http.ResponseWriter, r *http.Request) {
-	id := strings.TrimPrefix(r.URL.Path, "/api/v1/edr/agents/")
-	if id == "" {
-		writeError(w, http.StatusBadRequest, "agent_id required")
-		return
-	}
-
-	if r.Method == "DELETE" {
-		_, err := h.manager.db.ExecContext(r.Context(),
-			`UPDATE edr_agents SET status = 'revoked' WHERE id = ?`, id)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "revoke failed")
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
-		return
-	}
-
-	// GET agent detail
-	var a struct {
-		ID        string `json:"id"`
-		Hostname  string `json:"hostname"`
-		Platform  string `json:"platform"`
-		Arch      string `json:"arch"`
-		Version   string `json:"version"`
-		Status    string `json:"status"`
-		IP        string `json:"ip"`
-		LastSeen  string `json:"last_heartbeat"`
-		CPUCount  int    `json:"cpu_count"`
-		CPUName   string `json:"cpu_name"`
-		MemoryMB  int64  `json:"memory_mb"`
-		CreatedAt string `json:"created_at"`
-	}
-	err := h.manager.db.QueryRowContext(r.Context(),
-		`SELECT id, hostname, platform, arch, agent_version, status, ip_address, last_heartbeat, cpu_count, cpu_name, memory_mb, created_at
-		 FROM edr_agents WHERE id = ?`, id).Scan(
-		&a.ID, &a.Hostname, &a.Platform, &a.Arch, &a.Version, &a.Status, &a.IP, &a.LastSeen, &a.CPUCount, &a.CPUName, &a.MemoryMB, &a.CreatedAt)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "agent not found")
-		return
-	}
-	writeJSON(w, http.StatusOK, a)
-}
-
-func (h *SyncHandler) handleEDREventsQuery(w http.ResponseWriter, r *http.Request) {
-	agentID := r.URL.Query().Get("agent_id")
-	if agentID == "" {
-		writeError(w, http.StatusBadRequest, "agent_id required")
-		return
-	}
-
-	limit := 50
-	if l, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && l > 0 && l <= 500 {
-		limit = l
-	}
-
-	eventType := r.URL.Query().Get("type")
-	minSev := 0
-	if s, err := strconv.Atoi(r.URL.Query().Get("min_severity")); err == nil && s > 0 {
-		minSev = s
-	}
-
-	var rows *sql.Rows
-	var err error
-	selectCols := "id, event_type, severity, timestamp, data"
-	q := `SELECT ` + selectCols + ` FROM edr_events WHERE agent_id = ?`
-	args := []any{agentID}
-	if orgID := r.Context().Value(ctxKeyOrg); orgID != nil && orgID.(string) != "" {
-		q += ` AND org_id = ?`
-		args = append(args, orgID.(string))
-	}
-	if eventType != "" {
-		q += ` AND event_type LIKE ?`
-		args = append(args, eventType+"%")
-	}
-	if minSev > 0 {
-		q += ` AND severity >= ?`
-		args = append(args, minSev)
-	}
-	q += ` ORDER BY timestamp DESC LIMIT ?`
-	args = append(args, limit)
-
-	rows, err = h.manager.db.QueryContext(r.Context(), q, args...)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "query error")
-		return
-	}
-	defer rows.Close()
-
-	type evt struct {
-		ID        string `json:"id"`
-		EventType string `json:"event_type"`
-		Severity  int    `json:"severity"`
-		Timestamp string `json:"timestamp"`
-		Data      string `json:"data,omitempty"`
-	}
-
-	events := make([]evt, 0, limit)
-	for rows.Next() {
-		var e evt
-		rows.Scan(&e.ID, &e.EventType, &e.Severity, &e.Timestamp, &e.Data)
-		events = append(events, e)
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"events": events})
-}
-
-func (h *SyncHandler) handleEDRDispatch(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		writeError(w, http.StatusMethodNotAllowed, "POST required")
-		return
-	}
-
-	var req struct {
-		AgentID    string         `json:"agent_id"`
-		ActionType string         `json:"action_type"`
-		Target     string         `json:"target,omitempty"`
-		Params     map[string]any `json:"params,omitempty"`
-		Timeout    int            `json:"timeout_seconds"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
-		return
-	}
-	if req.AgentID == "" || req.ActionType == "" {
-		writeError(w, http.StatusBadRequest, "agent_id and action_type required")
-		return
-	}
-	if req.Timeout <= 0 {
-		req.Timeout = 30
-	}
-
-	paramsJSON, _ := json.Marshal(req.Params)
-	id := uuid.New().String()
-	now := time.Now().UTC().Format(time.RFC3339)
-
-	_, err := h.manager.db.ExecContext(r.Context(),
-		`INSERT INTO edr_actions (id, agent_id, action_type, target, params, status, timeout_seconds, created_at)
-		 VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)`,
-		id, req.AgentID, req.ActionType, req.Target, string(paramsJSON), req.Timeout, now)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "insert failed")
-		return
-	}
-
-	log.Printf("[edr] action dispatched: %s → %s (%s)", id, req.AgentID, req.ActionType)
-	writeJSON(w, http.StatusOK, map[string]string{"action_id": id, "status": "dispatched"})
-}
-
-type ServeOptions struct {
-	ListenAddr string
-	CertFile   string
-	KeyFile    string
-	LogDir     string
-	DataDir    string
-	DB         *sql.DB
-	TSEWriter  EventWriter
-}
-
-func ServeHTTP(opts ServeOptions, mgr *ServerManager, dashboard DashboardDataProvider) (*http.Server, error) {
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
-	})
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
-	})
-
-	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(metrics.PrometheusText()))
-	})
-
-	sync := NewSyncHandler(mgr).WithLogDir(opts.LogDir)
-	if opts.DataDir != "" {
-		sync.configStore = newRemoteConfigStore(opts.DataDir)
-	}
-	if opts.TSEWriter != nil {
-		sync.tseWriter = opts.TSEWriter
-	}
-	sync.RegisterRoutes(mux)
-
-	dashboardHandler := NewDashboardHandler(dashboard)
-	if opts.DB != nil {
-		dashboardHandler.WithDB(opts.DB)
-	}
-	dashboardHandler.RegisterRoutes(mux)
-
-	srv := &http.Server{
-		Addr:              opts.ListenAddr,
-		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      60 * time.Second,
-		IdleTimeout:       120 * time.Second,
-	}
-
-	go func() {
-		if opts.CertFile != "" && opts.KeyFile != "" {
-			log.Printf("[server] HTTPS API + dashboard on %s (TLS)", opts.ListenAddr)
-			if err := srv.ListenAndServeTLS(opts.CertFile, opts.KeyFile); err != nil && err != http.ErrServerClosed {
-				log.Printf("[server] HTTPS error: %v", err)
-			}
-		} else {
-			log.Printf("[server] HTTP API + dashboard on %s", opts.ListenAddr)
-			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				log.Printf("[server] HTTP error: %v", err)
-			}
-		}
-	}()
-
-	return srv, nil
-}
-
-func (h *SyncHandler) handleOrgs(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "POST" {
-		var req struct {
-			Name string `json:"name"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
-			writeError(w, http.StatusBadRequest, "name required")
-			return
-		}
-		id, err := h.manager.CreateOrg(r.Context(), req.Name)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "create failed")
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]string{"id": id, "name": req.Name})
-		return
-	}
-
-	rows, err := h.manager.db.QueryContext(r.Context(),
-		`SELECT id, name, created_at FROM server_orgs ORDER BY name`)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "query error")
-		return
-	}
-	defer rows.Close()
-
-	type org struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
-	}
-	var orgs []org
-	for rows.Next() {
-		var o org
-		var createdAt string
-		rows.Scan(&o.ID, &o.Name, &createdAt)
-		orgs = append(orgs, o)
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"orgs": orgs})
-}
-
-func (h *SyncHandler) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "POST" {
-		var req struct {
-			Email  string `json:"email"`
-			Role   string `json:"role"`
-			OrgID  string `json:"org_id,omitempty"`
-			APIKey string `json:"api_key"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Email == "" || req.Role == "" {
-			writeError(w, http.StatusBadRequest, "email and role required")
-			return
-		}
-		apiKey := req.APIKey
-		if apiKey == "" {
-			apiKey = uuid.New().String()[:24]
-		}
-		id, err := h.manager.CreateUser(r.Context(), req.Email, apiKey, req.Role, req.OrgID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "create failed")
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]string{"id": id, "api_key": apiKey, "role": req.Role, "org_id": req.OrgID})
-		return
-	}
-
-	rows, err := h.manager.db.QueryContext(r.Context(),
-		`SELECT id, email, role, COALESCE(org_id, '') FROM server_users ORDER BY email`)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "query error")
-		return
-	}
-	defer rows.Close()
-
-	type user struct {
-		ID    string `json:"id"`
-		Email string `json:"email"`
-		Role  string `json:"role"`
-		OrgID string `json:"org_id"`
-	}
-	var users []user
-	for rows.Next() {
-		var u user
-		rows.Scan(&u.ID, &u.Email, &u.Role, &u.OrgID)
-		users = append(users, u)
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"users": users})
-}
-
-func (h *SyncHandler) handleAdminUserByEmail(w http.ResponseWriter, r *http.Request) {
-	email := strings.TrimPrefix(r.URL.Path, "/api/v1/admin/users/")
-	email = strings.TrimSuffix(email, "/rotate-key")
-
-	if strings.HasSuffix(r.URL.Path, "/rotate-key") && r.Method == "POST" {
-		newKey, err := h.manager.RotateAPIKey(r.Context(), email)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "rotate failed")
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]string{"email": email, "api_key": newKey})
-		return
-	}
-
-	writeError(w, http.StatusNotFound, "not found")
-}
-
-func (h *SyncHandler) handleComplianceSnapshot(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		writeError(w, http.StatusMethodNotAllowed, "POST required")
-		return
-	}
-	var req struct {
-		Hostname   string  `json:"hostname"`
-		Framework  string  `json:"framework"`
-		Score      float64 `json:"score"`
-		Total      int     `json:"total"`
-		Passed     int     `json:"passed"`
-		Failed     int     `json:"failed"`
-		NotCovered int     `json:"not_covered"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
-		return
-	}
-	if err := h.manager.RecordComplianceSnapshot(r.Context(), req.Hostname, req.Framework, req.Score, req.Total, req.Passed, req.Failed, req.NotCovered, nil); err != nil {
-		writeError(w, http.StatusInternalServerError, "record failed")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "recorded"})
-}
-
-func (h *SyncHandler) handleEDRVulns(w http.ResponseWriter, r *http.Request) {
-	agentID := r.Context().Value(ctxKeyAgentID).(string)
-
-	// Query recent vuln events for this agent
-	minSevStr := r.URL.Query().Get("min_severity")
-	minSev := 0
-	if s, err := strconv.Atoi(minSevStr); err == nil && s > 0 {
-		minSev = s
-	}
-
-	rows, err := h.manager.db.QueryContext(r.Context(),
-		`SELECT id, event_type, severity, data, timestamp FROM edr_events
-		 WHERE agent_id = ? AND event_type = 'alert'
-		 AND json_extract(data, '$.annotations.source') = 'vuln_scan'
-		 AND severity >= ?
-		 ORDER BY timestamp DESC LIMIT 100`, agentID, minSev)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "query error")
-		return
-	}
-	defer rows.Close()
-
-	type vuln struct {
-		ID        string `json:"id"`
-		CVEID     string `json:"cve_id"`
-		Package   string `json:"package"`
-		CVSS      string `json:"cvss"`
-		Severity  string `json:"severity"`
-		FixedIn   string `json:"fixed_in"`
-		Timestamp string `json:"timestamp"`
-	}
-
-	vulns := make([]vuln, 0)
-	for rows.Next() {
-		var id, etype, data, ts string
-		var sev int
-		if err := rows.Scan(&id, &etype, &sev, &data, &ts); err != nil {
-			continue
-		}
-		var full struct {
-			Annotations map[string]string `json:"annotations"`
-		}
-		if err := json.Unmarshal([]byte(data), &full); err != nil {
-			continue
-		}
-		vulns = append(vulns, vuln{
-			ID:        id,
-			CVEID:     full.Annotations["cve_id"],
-			Package:   full.Annotations["package"],
-			CVSS:      full.Annotations["cvss"],
-			Severity:  full.Annotations["severity"],
-			FixedIn:   full.Annotations["fixed_in"],
-			Timestamp: ts,
-		})
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"vulns": vulns})
-}
-
-var builtinCVEFeed = []map[string]any{
-	{"cve_id": "CVE-2024-3094", "package": "liblzma*", "cvss": 10, "severity": "critical", "description": "liblzma/xz backdoor — SSHD remote code execution"},
-	{"cve_id": "CVE-2024-6387", "package": "openssh*", "cvss": 9.8, "severity": "critical", "description": "OpenSSH regreSSHion — remote code execution"},
-	{"cve_id": "CVE-2024-2961", "package": "glibc", "cvss": 9.1, "severity": "critical", "description": "glibc iconv() out-of-bounds write"},
-	{"cve_id": "CVE-2024-38477", "package": "httpd*", "cvss": 9.1, "severity": "critical", "description": "Apache HTTPd mod_proxy CRLF injection"},
-	{"cve_id": "CVE-2024-38077", "package": "openssl*", "cvss": 8.6, "severity": "high", "description": "OpenSSL SSL_free() use-after-free"},
-	{"cve_id": "CVE-2024-47575", "package": "openssl*", "cvss": 7.5, "severity": "high", "description": "OpenSSL certificate validation bypass"},
-	{"cve_id": "CVE-2024-24790", "package": "golang", "cvss": 7.5, "severity": "high", "description": "Go net/netip IPv6 zone parsing DoS"},
-	{"cve_id": "CVE-2024-27316", "package": "httpd*", "cvss": 8.1, "severity": "high", "description": "Apache HTTPd HTTP/2 CONTINUATION flood DoS"},
-	{"cve_id": "CVE-2024-34102", "package": "nginx", "cvss": 7.5, "severity": "high", "description": "nginx MP4 module memory corruption"},
-	{"cve_id": "CVE-2024-27309", "package": "apache2*", "cvss": 7.5, "severity": "high", "description": "Apache Kafka Connect JNDI injection"},
-	{"cve_id": "CVE-2024-3247", "package": "nodejs*", "cvss": 7.5, "severity": "high", "description": "Node.js HTTP/2 CONTINUATION flood DoS"},
-	{"cve_id": "CVE-2024-3499", "package": "python3*", "cvss": 8.1, "severity": "high", "description": "Python ipaddress hostname validation"},
-	{"cve_id": "CVE-2024-4333", "package": "systemd", "cvss": 7.8, "severity": "high", "description": "systemd-resolved out-of-bounds read"},
-	{"cve_id": "CVE-2024-2222", "package": "linux-image*", "cvss": 7.0, "severity": "high", "description": "Linux kernel netfilter use-after-free"},
-	{"cve_id": "CVE-2024-35196", "package": "git", "cvss": 7.8, "severity": "high", "description": "Git clone path traversal via symlink"},
-	{"cve_id": "CVE-2024-2511", "package": "libcurl*", "cvss": 5.3, "severity": "medium", "description": "curl OCSP stapling bypass"},
-	{"cve_id": "CVE-2024-24989", "package": "nginx", "cvss": 6.5, "severity": "medium", "description": "nginx HTTP/2 memory disclosure"},
-	{"cve_id": "CVE-2024-3148", "package": "redis*", "cvss": 5.5, "severity": "medium", "description": "Redis Lua script stack overflow"},
-}
-
-func (h *SyncHandler) handleEDRVulnFeed(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		writeError(w, http.StatusMethodNotAllowed, "GET required")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"cves": builtinCVEFeed})
-}
-
-func (h *SyncHandler) handleEDRUpdateCheck(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		writeError(w, http.StatusMethodNotAllowed, "GET required")
-		return
-	}
-
-	agentVer := r.URL.Query().Get("version")
-	if agentVer == "" {
-		writeError(w, http.StatusBadRequest, "version required")
-		return
-	}
-
-	if h.updateDir == "" {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-
-	// Read available version from the update directory
-	entries, err := os.ReadDir(h.updateDir)
-	if err != nil {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-
-	// Find the latest version available
-	var latestVer string
-	var latestFile string
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		if ver, ok := extractAgentVersion(name); ok {
-			if ver > latestVer {
-				latestVer = ver
-				latestFile = name
-			}
-		}
-	}
-
-	if latestVer == "" || latestVer <= agentVer {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-
-	binPath := filepath.Join(h.updateDir, latestFile)
-	data, err := os.ReadFile(binPath)
-	if err != nil {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	sha := sha256.Sum256(data)
-	downloadURL := fmt.Sprintf("%s/api/v1/edr/update/download?file=%s", serverBaseURL(r), latestFile)
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"version":      latestVer,
-		"download_url": downloadURL,
-		"sha256":       hex.EncodeToString(sha[:]),
-		"required":     false,
-	})
-}
-
-func (h *SyncHandler) handleEDRUpdateDownload(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		writeError(w, http.StatusMethodNotAllowed, "GET required")
-		return
-	}
-
-	fileName := r.URL.Query().Get("file")
-	if fileName == "" {
-		writeError(w, http.StatusBadRequest, "file required")
-		return
-	}
-
-	if h.updateDir == "" {
-		writeError(w, http.StatusNotFound, "no update directory configured")
-		return
-	}
-
-	binPath := filepath.Join(h.updateDir, filepath.Clean(fileName))
-	if !strings.HasPrefix(binPath, filepath.Clean(h.updateDir)) {
-		writeError(w, http.StatusForbidden, "invalid path")
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/octet-stream")
-	http.ServeFile(w, r, binPath)
-}
-
-func (h *SyncHandler) handleEDRConfig(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "GET":
-		if h.configStore == nil {
-			writeJSON(w, http.StatusOK, map[string]any{})
-			return
-		}
-		writeJSON(w, http.StatusOK, h.configStore.Get())
-	case "PUT":
-		if h.configStore == nil {
-			writeError(w, http.StatusNotFound, "config store not available")
-			return
-		}
-		var cfg AgentRemoteConfig
-		if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid json")
-			return
-		}
-		if err := h.configStore.Set(cfg); err != nil {
-			log.Printf("[edr] config save error: %v", err)
-			writeError(w, http.StatusInternalServerError, "save failed")
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
-	default:
-		writeError(w, http.StatusMethodNotAllowed, "GET or PUT required")
-	}
-}
-
-func serverBaseURL(r *http.Request) string {
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	return fmt.Sprintf("%s://%s", scheme, r.Host)
-}
-
-func extractAgentVersion(name string) (string, bool) {
-	// Patterns: trace-agent-v1.2.3-linux-amd64, trace-agent-v1.2.3.exe, trace-agent-v1.2.3
-	var ver string
-	n := name
-	if len(n) > 4 && n[len(n)-4:] == ".exe" {
-		n = n[:len(n)-4]
-	}
-	_, err := fmt.Sscanf(n, "trace-agent-v%s", &ver)
-	if err != nil {
-		return "", false
-	}
-	return ver, true
-}
-
-func init() {
-	_ = context.Background()
+	writeData(w, r, http.StatusOK, map[string]any{"items": items, "next_cursor": next})
 }

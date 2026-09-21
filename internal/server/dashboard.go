@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,15 +17,10 @@ import (
 )
 
 type DashboardDataProvider interface {
-	ListNodes(ctx context.Context) ([]NodeInfo, error)
-	ListInvestigations(ctx context.Context, limit int, nodeID, statusFilter, search string) ([]ServerInvestigation, error)
+	ListNodes(ctx context.Context, limit, offset int) ([]NodeInfo, int, error)
+	ListInvestigations(ctx context.Context, limit, offset int, nodeID, statusFilter, search string) ([]ServerInvestigation, int, error)
 	GetInvestigation(ctx context.Context, id string) (*ServerInvestigation, error)
-	GetCorrelations(ctx context.Context, minCount int) ([]map[string]any, error)
-}
-
-type DashboardHandler struct {
-	data DashboardDataProvider
-	db   *sql.DB
+	GetCorrelations(ctx context.Context, minCount int, limit, offset int) ([]map[string]any, int, error)
 }
 
 func NewDashboardHandler(dp DashboardDataProvider) *DashboardHandler {
@@ -36,15 +32,25 @@ func (dh *DashboardHandler) WithDB(database *sql.DB) *DashboardHandler {
 	return dh
 }
 
-func (dh *DashboardHandler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/", dh.index)
-	mux.HandleFunc("/investigations/", dh.detail)
-	mux.HandleFunc("/correlations", dh.correlations)
-	mux.HandleFunc("/cases", dh.cases)
-	mux.HandleFunc("/alerts", dh.alerts)
-	mux.HandleFunc("/api/live", dh.liveData)
-	mux.HandleFunc("/api/tse", dh.tseStatus)
-	mux.HandleFunc("/api/dashboard/charts", dh.chartData)
+func (dh *DashboardHandler) RegisterRoutes(mux *http.ServeMux, auth *Auth) {
+	gate := func(next http.HandlerFunc) http.HandlerFunc {
+		if auth == nil {
+			return func(w http.ResponseWriter, r *http.Request) {
+				writeAPIError(w, r, http.StatusServiceUnavailable, "dashboard auth not configured")
+			}
+		}
+		// Dashboard pages + live data require a valid user session/key.
+		// Read-only scope may view; mutations stay on the API perms above.
+		return auth.RequirePerm(PermCaseRead, next)
+	}
+	mux.HandleFunc("/", gate(dh.index))
+	mux.HandleFunc("/investigations/", gate(dh.detail))
+	mux.HandleFunc("/correlations", gate(dh.correlations))
+	mux.HandleFunc("/cases", gate(dh.casesPage))
+	mux.HandleFunc("/alerts", gate(dh.alerts))
+	mux.HandleFunc("/api/live", gate(dh.liveData))
+	mux.HandleFunc("/api/tse", gate(dh.tseStatus))
+	mux.HandleFunc("/api/dashboard/charts", gate(dh.chartData))
 }
 
 const pageStyle = `
@@ -140,7 +146,7 @@ code { background: var(--surface); padding: 2px 6px; border-radius: 4px; font-si
 
 func navHTML(active string) string {
 	items := []struct {
-		path string
+		path  string
 		label string
 	}{
 		{"/", "Dashboard"},
@@ -169,15 +175,15 @@ func (dh *DashboardHandler) index(w http.ResponseWriter, r *http.Request) {
 	statusFilter := r.URL.Query().Get("status")
 	search := r.URL.Query().Get("q")
 
-	invs, err := dh.data.ListInvestigations(ctx, 50, "", statusFilter, search)
+	invs, _, err := dh.data.ListInvestigations(ctx, 50, 0, "", statusFilter, search)
 	if err != nil {
 		invs = []ServerInvestigation{}
 	}
-	nodes, err := dh.data.ListNodes(ctx)
+	nodes, _, err := dh.data.ListNodes(ctx, 50, 0)
 	if err != nil {
 		nodes = []NodeInfo{}
 	}
-	corrs, err := dh.data.GetCorrelations(ctx, 2)
+	corrs, _, err := dh.data.GetCorrelations(ctx, 2, 50, 0)
 	if err != nil {
 		corrs = []map[string]any{}
 	}
@@ -365,7 +371,7 @@ func (dh *DashboardHandler) liveData(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 
 	ctx := r.Context()
-	invs, err := dh.data.ListInvestigations(ctx, 10, "", "", "")
+	invs, _, err := dh.data.ListInvestigations(ctx, 10, 0, "", "", "")
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
 		return
@@ -413,11 +419,11 @@ func (dh *DashboardHandler) detail(w http.ResponseWriter, r *http.Request) {
 
 	var b strings.Builder
 	b.WriteString(`<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>` + locale.T("dashboard_detail") + ` — ` + html.EscapeString(inv.ID[:12]) + `</title>
+<title>` + locale.T("dashboard_detail") + ` — ` + html.EscapeString(shortID(inv.ID)) + `</title>
 <style>` + pageStyle + `
 body { max-width: 960px; margin: 0 auto; }
 </style></head><body>
-<div class="header"><h1>` + locale.T("dashboard_detail") + ` ` + html.EscapeString(inv.ID[:12]) + `</h1>
+<div class="header"><h1>` + locale.T("dashboard_detail") + ` ` + html.EscapeString(shortID(inv.ID)) + `</h1>
 <a href="/">` + locale.T("dashboard_back") + `</a></div>
 
 <div class="card">
@@ -486,7 +492,7 @@ func (dh *DashboardHandler) search(w http.ResponseWriter, r *http.Request) {
 
 func (dh *DashboardHandler) correlations(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	corrs, err := dh.data.GetCorrelations(ctx, 1)
+	corrs, _, err := dh.data.GetCorrelations(ctx, 1, 50, 0)
 	if err != nil {
 		corrs = []map[string]any{}
 	}
@@ -554,14 +560,19 @@ func (dh *DashboardHandler) correlations(w http.ResponseWriter, r *http.Request)
 	w.Write([]byte(b.String()))
 }
 
-func (dh *DashboardHandler) cases(w http.ResponseWriter, r *http.Request) {
+func (dh *DashboardHandler) casesPage(w http.ResponseWriter, r *http.Request) {
 	if dh.db == nil {
 		http.Error(w, "cases not available (no database)", http.StatusNotFound)
 		return
 	}
 
-	// Handle POST: create a new case
+	// Case creation stays read-gated: the dashboard gate already requires
+	// PermCaseRead; writes additionally need PermCaseWrite.
 	if r.Method == "POST" {
+		if !HasPermission(RoleFromContext(r.Context()), PermCaseWrite) {
+			writeAPIError(w, r, http.StatusForbidden, "insufficient permissions")
+			return
+		}
 		title := r.FormValue("title")
 		severity := r.FormValue("severity")
 		description := r.FormValue("description")
@@ -571,12 +582,23 @@ func (dh *DashboardHandler) cases(w http.ResponseWriter, r *http.Request) {
 		if severity == "" {
 			severity = "medium"
 		}
+		if len(title) > 256 {
+			title = title[:256]
+		}
+		if len(description) > 4096 {
+			description = description[:4096]
+		}
+		switch severity {
+		case "low", "medium", "high", "critical":
+		default:
+			severity = "medium"
+		}
 		now := time.Now().UTC().Format(time.RFC3339)
 		id := uuid.New().String()
 
 		_, err := dh.db.Exec(
-			`INSERT INTO cases (id, title, description, status, severity, created_at, updated_at) VALUES (?, ?, ?, 'open', ?, ?, ?)`,
-			id, title, description, severity, now, now)
+			`INSERT INTO cases (id, title, description, status, severity, org_id, created_at, updated_at) VALUES (?, ?, ?, 'open', ?, ?, ?, ?)`,
+			id, title, description, severity, OrgIDFromContext(r.Context()), now, now)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -585,7 +607,7 @@ func (dh *DashboardHandler) cases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := dh.db.Query(`SELECT id, title, description, status, severity, assignee, created_at FROM cases ORDER BY created_at DESC LIMIT 50`)
+	rows, err := dh.db.Query(`SELECT id, title, description, status, severity, assignee, created_at FROM cases WHERE org_id = ? ORDER BY created_at DESC LIMIT 50`, OrgIDFromContext(r.Context()))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -632,10 +654,15 @@ func (dh *DashboardHandler) cases(w http.ResponseWriter, r *http.Request) {
 		rows.Scan(&id, &title, &desc, &status, &severity, &assignee, &created)
 
 		as := assignee
-		if as == "" { as = "—" }
+		if as == "" {
+			as = "—"
+		}
 
-		idShort := id
-		if len(idShort) > 12 { idShort = idShort[:12] }
+		idShort := shortID(id)
+		createdShort := created
+		if len(createdShort) > 19 {
+			createdShort = createdShort[:19]
+		}
 
 		fmt.Fprintf(&b, `<tr><td><a href="/cases/%s">%s</a></td><td>%s</td><td><span class="badge badge-%s">%s</span></td><td><span class="badge badge-%s">%s</span></td><td>%s</td><td style="white-space:nowrap;color:var(--muted)">%s</td></tr>`,
 			html.EscapeString(id), html.EscapeString(idShort),
@@ -643,7 +670,7 @@ func (dh *DashboardHandler) cases(w http.ResponseWriter, r *http.Request) {
 			status, html.EscapeString(status),
 			severity, html.EscapeString(severity),
 			html.EscapeString(as),
-			created[:19])
+			html.EscapeString(createdShort))
 	}
 
 	if !hasRows {
@@ -662,14 +689,20 @@ func (dh *DashboardHandler) alerts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sevFilter := r.URL.Query().Get("severity")
+	minSev := 0
+	if sevFilter != "" {
+		if n, err := strconv.Atoi(sevFilter); err == nil {
+			minSev = clampInt(n, 0, 10)
+		}
+	}
 
 	query := `SELECT id, title, severity, source, created_at FROM alerts`
 	var args []any
 	if sevFilter != "" {
 		query += ` WHERE severity >= ?`
-		args = append(args, sevFilter)
+		args = append(args, minSev)
 	}
-	query += ` ORDER BY created_at DESC LIMIT 100`
+	query += ` ORDER BY created_at DESC LIMIT 50`
 
 	rows, err := dh.db.Query(query, args...)
 	if err != nil {
@@ -702,11 +735,20 @@ func (dh *DashboardHandler) alerts(w http.ResponseWriter, r *http.Request) {
 
 		sevClass := "pending"
 		sevLabel := "info"
-		if severity >= 7 { sevClass = "failed"; sevLabel = "CRITICAL" }
-		if severity >= 4 && severity < 7 { sevClass = "running"; sevLabel = "HIGH" }
-
+		if severity >= 7 {
+			sevClass = "failed"
+			sevLabel = "CRITICAL"
+		}
+		if severity >= 4 && severity < 7 {
+			sevClass = "running"
+			sevLabel = "HIGH"
+		}
+		createdShort := created
+		if len(createdShort) > 19 {
+			createdShort = createdShort[:19]
+		}
 		fmt.Fprintf(&b, `<tr><td style="white-space:nowrap;color:var(--muted)">%s</td><td><span class="badge badge-%s">%s</span></td><td>%s</td><td style="color:var(--muted)">%s</td></tr>`,
-			created[:19], sevClass, sevLabel, html.EscapeString(title), html.EscapeString(source))
+			html.EscapeString(createdShort), sevClass, sevLabel, html.EscapeString(title), html.EscapeString(source))
 	}
 
 	if !hasRows {

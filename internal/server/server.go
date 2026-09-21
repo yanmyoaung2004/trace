@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -13,6 +14,32 @@ import (
 	"github.com/yanmyoaung2004/trace/internal/db"
 	"github.com/yanmyoaung2004/trace/internal/investigation"
 )
+
+// seedKeyPath is the write-once admin key location (0600).
+func seedKeyPath(dataDir string) string {
+	if dataDir == "" {
+		dataDir = "."
+	}
+	return filepath.Join(dataDir, "admin_api_key")
+}
+
+// writeOnceKeyFile persists the seed key with 0600 perms, refusing to
+// overwrite an existing file (operator must delete explicitly to rotate).
+func writeOnceKeyFile(dataDir, key string) error {
+	path := seedKeyPath(dataDir)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := f.WriteString(key + "\n"); err != nil {
+		return err
+	}
+	return f.Sync()
+}
 
 func RunServer(cfg *config.Config, database *db.DB, invMgr *investigation.Manager, tseWriter EventWriter) error {
 	mgr := NewServerManager(database)
@@ -22,18 +49,20 @@ func RunServer(cfg *config.Config, database *db.DB, invMgr *investigation.Manage
 	if key, err := mgr.SeedDefaultUser(context.Background()); err != nil {
 		log.Printf("[server] seed user warning: %v", err)
 	} else if key != "" {
-		fmt.Printf("\n  API Key: %s\n\n", key)
-		fmt.Printf("  Use this key to authenticate: api_key=%s\n", key)
+		// Write-once 0600 file; never print the key to stdout (it would
+		// land in shell history / CI logs).
+		if err := writeOnceKeyFile(cfg.DataDir, key); err != nil {
+			log.Printf("[server] seed key file: %v", err)
+		} else {
+			fmt.Printf("\n  Admin API key written to %s (0600, shown once — store it now).\n\n", seedKeyPath(cfg.DataDir))
+		}
 	}
 
 	if err := mgr.SyncLocalInvestigations(context.Background(), invMgr); err != nil {
 		log.Printf("[server] sync local investigations: %v", err)
 	}
 
-	httpAddr := cfg.Server.HTTPAddr
-	if httpAddr == "" {
-		httpAddr = ":8080"
-	}
+	httpAddr := cfg.Server.EffectiveAddr()
 
 	log.Printf("[server] starting in server mode")
 	log.Printf("[server] HTTP API + dashboard: %s", httpAddr)

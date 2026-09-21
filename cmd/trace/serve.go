@@ -10,13 +10,41 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/spf13/cobra"
 	"github.com/yanmyoaung2004/trace/internal/agent"
+	"github.com/yanmyoaung2004/trace/internal/cases"
 	"github.com/yanmyoaung2004/trace/internal/edge"
 	"github.com/yanmyoaung2004/trace/internal/integration/notifier"
 	"github.com/yanmyoaung2004/trace/internal/siem"
 	"github.com/yanmyoaung2004/trace/internal/storage"
-	"github.com/spf13/cobra"
 )
+
+// autoCaseLimiter bounds SIEM auto-case explosions per (rule, entity).
+// Shaped to swap to DetectReliabilityFixer's shared limiter when wired
+// centrally; same semantics (5/hour per pair).
+var autoCaseLimiter = cases.NewRateLimiter(5, time.Hour)
+
+// autoCaseSeverity maps the 0-10 SIEM scale onto one case-severity label.
+func autoCaseSeverity(sev int) string {
+	switch {
+	case sev >= 8:
+		return "critical"
+	case sev >= 5:
+		return "high"
+	case sev >= 3:
+		return "medium"
+	default:
+		return "low"
+	}
+}
+
+// shortAlertID truncates IDs for logs without panicking on short IDs.
+func shortAlertID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
+}
 
 func newServeCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -36,11 +64,11 @@ Examples:
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+			sigCh := make(chan os.Signal, 1)
+			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-		log.SetOutput(os.Stderr)
-		log.Printf("Trace v%s starting", Version)
+			log.SetOutput(os.Stderr)
+			log.Printf("Trace v%s starting", Version)
 			log.Printf("Database: %s", app.cfg.DBPath)
 
 			// Initialize TSE if enabled
@@ -108,8 +136,8 @@ Examples:
 			siemEnabled, _ := cmd.Flags().GetBool("siem")
 			if siemEnabled {
 				siemCfg := siem.SIEMConfig{
-					Enabled:       true,
-					PollInterval:  "5s",
+					Enabled:      true,
+					PollInterval: "5s",
 				}
 				if addr, _ := cmd.Flags().GetString("syslog-addr"); addr != "" {
 					siemCfg.SyslogUDPAddr = addr
@@ -121,12 +149,14 @@ Examples:
 				engine := siem.New(siemCfg)
 				engine.OnAlert(func(alert *siem.Alert) {
 					log.Printf("[ALERT] %s (severity: %d, rule: %s)", alert.Title, alert.Severity, alert.RuleID)
-
 					// Write alert to TSE through the ingest queue (rate-limited)
 					if app.tse != nil && app.tse.Queue != nil {
+						id, err := uuid.NewV7()
+						if err != nil {
+							id, _ = uuid.NewRandom()
+						}
 						tseEvent := &storage.Event{
-							ID:        uuid.New().String(),
-							TenantID:  "default",
+							ID:        id.String(),
 							AgentID:   "siem",
 							Timestamp: alert.CreatedAt.UnixMicro(),
 							EventType: fmt.Sprintf("alert:%s", alert.RuleID),
@@ -140,17 +170,25 @@ Examples:
 
 					var alertCaseID string
 					if alert.Severity >= 4 {
-						caseTitle := fmt.Sprintf("SIEM: %s", alert.Title)
-						sev := "medium"
-						if alert.Severity >= 7 { sev = "high" }
-						if alert.Severity >= 10 { sev = "critical" }
-						c, err := app.caseManager.Create(context.Background(), caseTitle, alert.RuleID, sev)
-						if err != nil {
-							log.Printf("[ALERT] create case: %v", err)
+						entity, _ := alert.Event.Fields["client_ip"].(string)
+						if entity == "" {
+							entity, _ = alert.Event.Fields["host"].(string)
+						}
+						if !autoCaseLimiter.Allow(alert.RuleID, entity) {
+							log.Printf("[ALERT] auto-case rate-limited: rule=%s entity=%s", alert.RuleID, entity)
 						} else {
-							alertCaseID = c.ID
-							app.caseManager.AddEvent(context.Background(), c.ID, "alert", fmt.Sprintf("SIEM alert: %s (severity: %d)", alert.Title, alert.Severity), "siem")
-							app.caseManager.AddIOC(context.Background(), c.ID, "ip", fmt.Sprintf("%v", alert.Event.Fields["client_ip"]), "")
+							caseTitle := fmt.Sprintf("SIEM: %s", alert.Title)
+							c, err := app.caseManager.CreateScoped(context.Background(), "", caseTitle, alert.RuleID, autoCaseSeverity(alert.Severity))
+							if err != nil {
+								log.Printf("[ALERT] create case: %v", err)
+							} else {
+								alertCaseID = c.ID
+								app.caseManager.AddEvent(context.Background(), c.ID, "alert", fmt.Sprintf("SIEM alert: %s (severity: %d)", alert.Title, alert.Severity), "siem")
+								// Never record "<nil>" junk: only add the IOC when present.
+								if entity != "" && entity != "<nil>" {
+									app.caseManager.AddIOC(context.Background(), c.ID, "ip", entity, "")
+								}
+							}
 						}
 					}
 
@@ -197,7 +235,7 @@ Examples:
 							}
 
 							if report, ok := reportOutput["report"].(string); ok && report != "" {
-								log.Printf("[ALERT] investigation %s completed — playbook: %s", inv.ID[:8], a.Playbook)
+								log.Printf("[ALERT] investigation %s completed — playbook: %s", shortAlertID(inv.ID), a.Playbook)
 							}
 
 							if caseID != "" {
@@ -206,7 +244,7 @@ Examples:
 									cf = *inv.Confidence
 								}
 								app.caseManager.AddEvent(context.Background(), caseID, "investigation",
-									fmt.Sprintf("Investigation %s completed via playbook %s (confidence: %.0f%%)", inv.ID[:8], a.Playbook, cf*100), "siem")
+									fmt.Sprintf("Investigation %s completed via playbook %s (confidence: %.0f%%)", shortAlertID(inv.ID), a.Playbook, cf*100), "siem")
 								app.caseManager.LinkInvestigation(context.Background(), caseID, inv.ID)
 							}
 						}(action, alertCaseID)

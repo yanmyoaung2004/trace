@@ -37,13 +37,13 @@ type remoteConfigStore struct {
 func newRemoteConfigStore(dataDir string) *remoteConfigStore {
 	dir := filepath.Join(dataDir, "config")
 	os.MkdirAll(dir, 0700)
+	_ = os.Chmod(dir, 0700)
 	s := &remoteConfigStore{
 		path: filepath.Join(dir, "agent_defaults.json"),
 	}
 	s.load()
 	return s
 }
-
 func (s *remoteConfigStore) load() {
 	data, err := os.ReadFile(s.path)
 	if err != nil {
@@ -66,8 +66,10 @@ func (s *remoteConfigStore) Set(cfg AgentRemoteConfig) error {
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
-	if err := os.WriteFile(s.path, data, 0644); err != nil {
+	if err := os.WriteFile(s.path, data, 0600); err != nil {
 		return fmt.Errorf("write: %w", err)
 	}
+	// Best-effort: tighten perms on pre-existing files (0644 → 0600).
+	_ = os.Chmod(s.path, 0600)
 	return nil
 }

@@ -255,6 +255,7 @@ func (d *DB) migrate() error {
 			scope TEXT NOT NULL DEFAULT 'self',
 			notify_severity INTEGER NOT NULL DEFAULT 0,
 			status TEXT NOT NULL DEFAULT 'active',
+			org_id TEXT NOT NULL DEFAULT '',
 			last_run TEXT,
 			next_run TEXT,
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -262,6 +263,7 @@ func (d *DB) migrate() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_hunts_next_run ON hunts(next_run)`,
 		`CREATE INDEX IF NOT EXISTS idx_hunts_status ON hunts(status)`,
+		`CREATE INDEX IF NOT EXISTS idx_hunts_org ON hunts(org_id)`,
 		`CREATE TABLE IF NOT EXISTS cases (
 			id TEXT PRIMARY KEY,
 			title TEXT NOT NULL,
@@ -271,6 +273,7 @@ func (d *DB) migrate() error {
 			assignee TEXT,
 			tags TEXT,
 			resolution TEXT,
+			org_id TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
 			updated_at TEXT NOT NULL DEFAULT (datetime('now')),
 			closed_at TEXT
@@ -281,6 +284,7 @@ func (d *DB) migrate() error {
 			event_type TEXT NOT NULL,
 			content TEXT NOT NULL,
 			source TEXT NOT NULL DEFAULT 'manual',
+			org_id TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL DEFAULT (datetime('now'))
 		)`,
 		`CREATE TABLE IF NOT EXISTS case_iocs (
@@ -290,6 +294,7 @@ func (d *DB) migrate() error {
 			value TEXT NOT NULL,
 			description TEXT,
 			source TEXT NOT NULL DEFAULT 'manual',
+			org_id TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL DEFAULT (datetime('now'))
 		)`,
 		`CREATE TABLE IF NOT EXISTS case_evidence (
@@ -300,6 +305,7 @@ func (d *DB) migrate() error {
 			mime_type TEXT,
 			file_size INTEGER DEFAULT 0,
 			source TEXT NOT NULL DEFAULT 'manual',
+			org_id TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL DEFAULT (datetime('now'))
 		)`,
 		`CREATE TABLE IF NOT EXISTS case_investigations (
@@ -310,6 +316,13 @@ func (d *DB) migrate() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_cases_status ON cases(status)`,
 		`CREATE INDEX IF NOT EXISTS idx_cases_severity ON cases(severity)`,
+		`CREATE INDEX IF NOT EXISTS idx_cases_org ON cases(org_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_case_events_org ON case_events(org_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_case_events_case ON case_events(case_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_case_iocs_org ON case_iocs(org_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_case_iocs_case ON case_iocs(case_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_case_evidence_org ON case_evidence(org_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_case_evidence_case ON case_evidence(case_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_cache_ttl ON cache(ttl)`,
 	}
 
@@ -317,6 +330,33 @@ func (d *DB) migrate() error {
 		if _, err := d.Exec(q); err != nil {
 			return fmt.Errorf("migrate query: %w", err)
 		}
+	}
+
+	// Backfill: additive org_id columns on pre-existing tables (upgrade path
+	// for databases created before tenancy). Legacy rows keep '' and are
+	// excluded from tenant-scoped queries (fail-closed: tenants match strict
+	// equality only). Errors ignored: column may already exist.
+	for _, stmt := range []string{
+		`ALTER TABLE tasks ADD COLUMN org_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE hunts ADD COLUMN org_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE cases ADD COLUMN org_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE case_events ADD COLUMN org_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE case_iocs ADD COLUMN org_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE case_evidence ADD COLUMN org_id TEXT NOT NULL DEFAULT ''`,
+		`CREATE INDEX IF NOT EXISTS idx_tasks_org ON tasks(org_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_hunts_org ON hunts(org_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_cases_org ON cases(org_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_case_events_org ON case_events(org_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_case_iocs_org ON case_iocs(org_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_case_evidence_org ON case_evidence(org_id)`,
+		`UPDATE tasks SET org_id = '' WHERE org_id IS NULL`,
+		`UPDATE hunts SET org_id = '' WHERE org_id IS NULL`,
+		`UPDATE cases SET org_id = '' WHERE org_id IS NULL`,
+		`UPDATE case_events SET org_id = '' WHERE org_id IS NULL`,
+		`UPDATE case_iocs SET org_id = '' WHERE org_id IS NULL`,
+		`UPDATE case_evidence SET org_id = '' WHERE org_id IS NULL`,
+	} {
+		_, _ = d.Exec(stmt)
 	}
 
 	return nil

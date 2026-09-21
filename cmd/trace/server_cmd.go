@@ -6,10 +6,10 @@ import (
 	"log"
 	"os"
 
+	"github.com/spf13/cobra"
 	"github.com/yanmyoaung2004/trace/internal/server"
 	"github.com/yanmyoaung2004/trace/internal/storage"
 	"github.com/yanmyoaung2004/trace/internal/storage/sqlite"
-	"github.com/spf13/cobra"
 )
 
 func newServerCmd() *cobra.Command {
@@ -30,6 +30,8 @@ Use --tse-storage-path to enable long-term storage of EDR agent events in TSE.`,
 
 			httpAddr, _ := cmdCobra.Flags().GetString("http-addr")
 			if httpAddr != "" {
+				// Canonical single ServerAddr (ConfigAuditFixer owns semantics).
+				app.cfg.Server.Addr = httpAddr
 				app.cfg.Server.HTTPAddr = httpAddr
 			}
 			if cert, _ := cmdCobra.Flags().GetString("tls-cert"); cert != "" {

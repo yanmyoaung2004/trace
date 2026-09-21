@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -110,18 +111,18 @@ func newEDRVulnCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "list [agent-id]",
 		Short: "List vulnerabilities for an agent",
-		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := getEDRClient(cmd.Parent().Parent())
 			if err != nil {
 				return err
 			}
 			minSev, _ := cmd.Flags().GetInt("min-severity")
-			url := fmt.Sprintf("/api/v1/edr/vulns?agent_id=%s", args[0])
+			q := url.Values{}
+			q.Set("agent_id", args[0])
 			if minSev > 0 {
-				url += fmt.Sprintf("&min_severity=%d", minSev)
+				q.Set("min_severity", strconv.Itoa(minSev))
 			}
-			data, err := client.do("GET", url, nil)
+			data, err := client.do("GET", "/api/v1/edr/vulns?"+q.Encode(), nil)
 			if err != nil {
 				return err
 			}
@@ -136,7 +137,11 @@ func newEDRVulnCmd() *cobra.Command {
 					Timestamp string `json:"timestamp"`
 				} `json:"vulns"`
 			}
-			if err := json.Unmarshal(data, &resp); err != nil {
+			payload, err := unwrapServerEnvelope(data)
+			if err != nil {
+				return err
+			}
+			if err := json.Unmarshal(payload, &resp); err != nil {
 				return fmt.Errorf("parse: %w", err)
 			}
 			if len(resp.Vulns) == 0 {
@@ -165,31 +170,46 @@ func (c *edrAPIClient) listAgents() ([]edrAgentSummary, error) {
 	if err != nil {
 		return nil, err
 	}
+	payload, err := unwrapServerEnvelope(data)
+	if err != nil {
+		return nil, err
+	}
+	// Compat: pre-envelope shapes ({agents:[...]} or bare [...]) both parse.
 	var resp struct {
 		Agents []edrAgentSummary `json:"agents"`
 	}
-	if err := json.Unmarshal(data, &resp); err != nil {
+	if err := json.Unmarshal(payload, &resp); err == nil && resp.Agents != nil {
+		return resp.Agents, nil
+	}
+	var bare []edrAgentSummary
+	if err := json.Unmarshal(payload, &bare); err != nil {
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
-	return resp.Agents, nil
+	return bare, nil
 }
 
 func (c *edrAPIClient) getAgentEvents(agentID string, limit int, eventType string, minSev int) ([]json.RawMessage, error) {
-	url := fmt.Sprintf("/api/v1/edr/events?agent_id=%s&limit=%d", agentID, limit)
+	q := url.Values{}
+	q.Set("agent_id", agentID)
+	q.Set("limit", strconv.Itoa(limit))
 	if eventType != "" {
-		url += "&type=" + eventType
+		q.Set("type", eventType)
 	}
 	if minSev > 0 {
-		url += "&min_severity=" + strconv.Itoa(minSev)
+		q.Set("min_severity", strconv.Itoa(minSev))
 	}
-	data, err := c.do("GET", url, nil)
+	data, err := c.do("GET", "/api/v1/edr/events?"+q.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	payload, err := unwrapServerEnvelope(data)
 	if err != nil {
 		return nil, err
 	}
 	var resp struct {
 		Events []json.RawMessage `json:"events"`
 	}
-	if err := json.Unmarshal(data, &resp); err != nil {
+	if err := json.Unmarshal(payload, &resp); err != nil {
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
 	return resp.Events, nil
@@ -218,12 +238,37 @@ func (c *edrAPIClient) dispatchAction(agentID, actionType, target string, params
 		ActionID string `json:"action_id"`
 		Status   string `json:"status"`
 	}
-	json.Unmarshal(data, &result)
-
-	if err := json.Unmarshal(resp, &result); err != nil {
+	payload, err := unwrapServerEnvelope(resp)
+	if err != nil {
+		return "", err
+	}
+	if err := json.Unmarshal(payload, &result); err != nil {
 		return "", fmt.Errorf("parse response: %w", err)
 	}
 	return result.ActionID, nil
+}
+
+// unwrapServerEnvelope extracts data from the standard {data,error,code}
+// envelope, tolerating pre-envelope bare payloads during rollout.
+func unwrapServerEnvelope(raw []byte) ([]byte, error) {
+	var env struct {
+		Data  json.RawMessage `json:"data"`
+		Error string          `json:"error"`
+		Code  int             `json:"code"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return nil, err
+	}
+	if len(env.Data) == 0 && env.Error == "" && env.Code == 0 {
+		return raw, nil
+	}
+	if env.Error != "" {
+		return nil, fmt.Errorf("server: %s", env.Error)
+	}
+	if len(env.Data) == 0 {
+		return []byte("null"), nil
+	}
+	return env.Data, nil
 }
 
 type edrAgentSummary struct {
@@ -395,18 +440,18 @@ func newEDREventsCmd() *cobra.Command {
 				}
 				fmt.Println()
 
-			if i >= 50 {
-				fmt.Println("  ... (truncated)")
-				break
+				if i >= 50 {
+					fmt.Println("  ... (truncated)")
+					break
+				}
 			}
-		}
-		return nil
-	},
-}
+			return nil
+		},
+	}
 
-cmd.Flags().Int("limit", 20, "Max events to show")
-cmd.Flags().String("type", "", "Filter by event type (process, file, network, memory, alert, dns)")
-cmd.Flags().Int("min-severity", 0, "Minimum severity level (1-10)")
+	cmd.Flags().Int("limit", 20, "Max events to show")
+	cmd.Flags().String("type", "", "Filter by event type (process, file, network, memory, alert, dns)")
+	cmd.Flags().Int("min-severity", 0, "Minimum severity level (1-10)")
 	return cmd
 }
 
@@ -502,11 +547,12 @@ Only the alert ID is needed — the server looks up the rule and process.`,
 			if err != nil {
 				return err
 			}
-			body := fmt.Sprintf(`{"alert_id":"%s"}`, args[0])
+			bodyMap := map[string]string{"alert_id": args[0]}
 			if reason, _ := cmd.Flags().GetString("reason"); reason != "" {
-				body = fmt.Sprintf(`{"alert_id":"%s","reason":"%s"}`, args[0], reason)
+				bodyMap["reason"] = reason
 			}
-			resp, err := client.do("POST", "/api/v1/edr/alerts/dismiss", strings.NewReader(body))
+			bodyBytes, _ := json.Marshal(bodyMap)
+			resp, err := client.do("POST", "/api/v1/edr/alerts/dismiss", strings.NewReader(string(bodyBytes)))
 			if err != nil {
 				return fmt.Errorf("dismiss failed: %w", err)
 			}
@@ -517,7 +563,11 @@ Only the alert ID is needed — the server looks up the rule and process.`,
 				Dismissals  int    `json:"dismissals,omitempty"`
 				Throttled   bool   `json:"throttled"`
 			}
-			json.Unmarshal(resp, &result)
+			payload, err := unwrapServerEnvelope(resp)
+			if err != nil {
+				return fmt.Errorf("dismiss failed: %w", err)
+			}
+			json.Unmarshal(payload, &result)
 			fmt.Printf("\n  Alert %s: %s\n", args[0], result.Status)
 			if result.RuleName != "" {
 				fmt.Printf("  Rule:      %s\n", result.RuleName)
@@ -554,11 +604,11 @@ func newEDRRevokeCmd() *cobra.Command {
 			var result struct {
 				Status string `json:"status"`
 			}
-			json.Unmarshal(resp, &result)
+			if payload, err := unwrapServerEnvelope(resp); err == nil {
+				json.Unmarshal(payload, &result)
+			}
 			fmt.Printf("\n  Agent %s: %s\n", args[0], result.Status)
 			return nil
 		},
 	}
 }
-
-
