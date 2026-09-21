@@ -5,12 +5,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/yanmyoaung2004/trace/internal/agent"
+	"github.com/yanmyoaung2004/trace/internal/integration"
 )
 
 type Client struct {
@@ -19,6 +21,9 @@ type Client struct {
 	cacheDB    *sql.DB
 	mu         sync.Mutex
 	testURL    string // overrides base URL when set (for testing)
+	breaker    *integration.CircuitBreaker
+	bulkhead   *integration.Bulkhead
+	timeout    time.Duration
 }
 
 // SetTestURL overrides the API base URL for testing.
@@ -31,6 +36,9 @@ func New(apiKey string, cacheDB *sql.DB) *Client {
 		apiKey:     apiKey,
 		httpClient: &http.Client{Timeout: 15 * time.Second},
 		cacheDB:    cacheDB,
+		breaker:    integration.NewCircuitBreaker(5, 30*time.Second),
+		bulkhead:   integration.NewBulkhead(8),
+		timeout:    15 * time.Second,
 	}
 }
 
@@ -83,30 +91,26 @@ func (c *Client) CheckIndicator(ctx context.Context, indicator string) (*OTXResp
 
 	indicatorType := classifyIndicator(indicator)
 	apiURL := c.apiURL(indicatorType, indicator)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
-	if err != nil {
-		return nil, err
+	if c.breaker != nil && !c.breaker.Allow() {
+		return nil, fmt.Errorf("otx circuit open")
 	}
-	req.Header.Set("X-OTX-API-KEY", c.apiKey)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("otx request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == 404 {
-		return &OTXResponse{PulseInfo: OTXPulse{Count: 0}}, nil
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("otx HTTP %d", resp.StatusCode)
-	}
-
 	var result OTXResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("otx decode: %w", err)
+	var callErr error
+	if c.bulkhead != nil {
+		callErr = c.bulkhead.Run(ctx, func(ctx context.Context) error {
+			return c.fetchIndicator(ctx, apiURL, &result)
+		})
+	} else {
+		callErr = c.fetchIndicator(ctx, apiURL, &result)
+	}
+	if c.breaker != nil {
+		c.breaker.Record(callErr == nil)
+	}
+	if callErr != nil {
+		if strings.Contains(callErr.Error(), "not found") {
+			return &OTXResponse{PulseInfo: OTXPulse{Count: 0}}, nil
+		}
+		return nil, callErr
 	}
 
 	if c.cacheDB != nil {
@@ -119,6 +123,38 @@ func (c *Client) CheckIndicator(ctx context.Context, indicator string) (*OTXResp
 	}
 
 	return &result, nil
+}
+func (c *Client) fetchIndicator(ctx context.Context, apiURL string, result *OTXResponse) error {
+	timeout := c.timeout
+	if timeout <= 0 {
+		timeout = 15 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-OTX-API-KEY", c.apiKey)
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("otx request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 404 {
+		return fmt.Errorf("otx not found")
+	}
+	if resp.StatusCode == 429 {
+		return fmt.Errorf("otx rate limited")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("otx HTTP %d", resp.StatusCode)
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(result); err != nil {
+		return fmt.Errorf("otx decode: %w", err)
+	}
+	return nil
 }
 
 type Agent struct {

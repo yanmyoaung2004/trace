@@ -3,7 +3,6 @@ package elastic
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,20 +10,20 @@ import (
 	"time"
 
 	"github.com/yanmyoaung2004/trace/internal/agent"
+	"github.com/yanmyoaung2004/trace/internal/integration"
 )
 
 type Agent struct {
 	httpClient *http.Client
+	breaker    *integration.CircuitBreaker
+	bulkhead   *integration.Bulkhead
 }
 
 func New() *Agent {
 	return &Agent{
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			},
-		},
+		httpClient: &http.Client{Timeout: 15 * time.Second},
+		breaker:    integration.NewCircuitBreaker(5, 30*time.Second),
+		bulkhead:   integration.NewBulkhead(8),
 	}
 }
 

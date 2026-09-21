@@ -2,6 +2,7 @@ package siem
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -40,7 +42,17 @@ type SIEMConfig struct {
 	PollInterval  string   `json:"poll_interval"`
 	SyslogUDPAddr string   `json:"syslog_udp_addr"`
 	SyslogTCPAddr string   `json:"syslog_tcp_addr"`
+	Workers       int      `json:"workers,omitempty"`
+	MaxLineBytes  int      `json:"max_line_bytes,omitempty"`
+	MaxConns      int      `json:"max_conns,omitempty"`
 }
+
+// Tunables with boring defaults; New fills zero values.
+const (
+	defaultWorkers      = 4
+	defaultMaxLineBytes = 256 * 1024
+	defaultMaxConns     = 100
+)
 
 type Engine struct {
 	cfg        SIEMConfig
@@ -50,46 +62,46 @@ type Engine struct {
 	alertCh    chan *Alert
 	alertFn    func(*Alert)
 	closeCh    chan struct{}
+	closeOnce  sync.Once
+	workers    int
+	maxLine    int
+	connSem    chan struct{}
+	connWg     sync.WaitGroup
 
 	filePositions map[string]int64
 	posMu         sync.Mutex
 
 	alertDedup *alertDedup
+	truncated  int64 // lines dropped by the line cap
 }
 
-// alertDedup prevents firing the same alert within a 5-minute window.
-type alertDedup struct {
-	mu     sync.Mutex
-	recent map[string]time.Time
-}
-
-func newAlertDedup() *alertDedup {
-	return &alertDedup{recent: make(map[string]time.Time)}
-}
-
-func (ad *alertDedup) shouldSend(key string) bool {
-	ad.mu.Lock()
-	defer ad.mu.Unlock()
-	if last, ok := ad.recent[key]; ok && time.Since(last) < 5*time.Minute {
-		return false
-	}
-	ad.recent[key] = time.Now()
-	for k, v := range ad.recent {
-		if time.Since(v) > 5*time.Minute {
-			delete(ad.recent, k)
-		}
-	}
-	return true
-}
+// Truncated returns the count of lines dropped by the line cap.
+func (e *Engine) Truncated() int64 { return atomic.LoadInt64(&e.truncated) }
 
 func New(cfg SIEMConfig) *Engine {
+	registerDefaultDecoders()
+	workers := cfg.Workers
+	if workers <= 0 {
+		workers = defaultWorkers
+	}
+	maxLine := cfg.MaxLineBytes
+	if maxLine <= 0 {
+		maxLine = defaultMaxLineBytes
+	}
+	maxConns := cfg.MaxConns
+	if maxConns <= 0 {
+		maxConns = defaultMaxConns
+	}
 	e := &Engine{
 		cfg:           cfg,
-		decoders:      []Decoder{&K8sAuditDecoder{}, &SuricataDecoder{}, &AutoDecoder{}, &JSONDecoder{}, &ApacheDecoder{}, &SyslogDecoder{}, &EVTXDecoder{}, &WindowsEventDecoder{}, &WazuhDecoder{}},
+		decoders:      buildDecoders(),
 		ruleEngine:    NewRuleEngine(),
 		eventCh:       make(chan *Event, 10000),
 		alertCh:       make(chan *Alert, 1000),
 		closeCh:       make(chan struct{}),
+		workers:       workers,
+		maxLine:       maxLine,
+		connSem:       make(chan struct{}, maxConns),
 		filePositions: make(map[string]int64),
 		alertDedup:    newAlertDedup(),
 	}
@@ -110,7 +122,9 @@ func (e *Engine) Start(ctx context.Context) error {
 	log.Printf("siem engine started (poll: %v, udp: %s, tcp: %s)",
 		e.cfg.PollInterval, e.cfg.SyslogUDPAddr, e.cfg.SyslogTCPAddr)
 
-	go e.processEvents(ctx)
+	for range e.workers {
+		go e.processEvents(ctx)
+	}
 
 	for _, dir := range e.cfg.LogDirs {
 		go e.watchDirectory(ctx, dir)
@@ -130,7 +144,7 @@ func (e *Engine) Start(ctx context.Context) error {
 }
 
 func (e *Engine) Stop() {
-	close(e.closeCh)
+	e.closeOnce.Do(func() { close(e.closeCh) })
 }
 
 func (e *Engine) processEvents(ctx context.Context) {
@@ -178,14 +192,16 @@ func (e *Engine) Ingest(raw []byte, source string) {
 }
 
 func (e *Engine) ingest(raw []byte, source string) {
-	var event *Event
-	var err error
-
-	for _, dec := range e.decoders {
-		event, err = dec.Decode(raw)
-		if err == nil && dec.Name() != "auto" {
-			event.Source = source + "->" + event.Source
-			break
+	event := fastDecode(raw)
+	if event == nil {
+		for _, dec := range e.decoders {
+			if dec.Name() == "auto" || dec.Name() == "json" {
+				continue
+			}
+			if evt, err := dec.Decode(raw); err == nil {
+				event = evt
+				break
+			}
 		}
 	}
 
@@ -196,6 +212,8 @@ func (e *Engine) ingest(raw []byte, source string) {
 			Raw:       string(raw),
 			Fields:    map[string]any{"message": string(raw)},
 		}
+	} else {
+		event.Source = source + "->" + event.Source
 	}
 
 	select {
@@ -203,6 +221,34 @@ func (e *Engine) ingest(raw []byte, source string) {
 	default:
 		log.Printf("siem: event channel full, dropping event from %s", source)
 	}
+}
+
+// fastDecode handles the hot path: JSON lines decode without walking the
+// whole decoder chain. Non-JSON falls through to the registry order.
+func fastDecode(raw []byte) *Event {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || (trimmed[0] != '{' && trimmed[0] != '[') {
+		return nil
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(trimmed, &fields); err != nil {
+		return nil
+	}
+	e := &Event{
+		Timestamp: time.Now().UTC(),
+		Source:    "decoder:json",
+		Raw:       string(raw),
+		Fields:    fields,
+	}
+	if ts, ok := fields["timestamp"].(string); ok {
+		if t, err := time.Parse(time.RFC3339, ts); err == nil {
+			e.Timestamp = t.UTC()
+		}
+	}
+	if sev, ok := fields["severity"].(float64); ok {
+		e.Severity = int(sev)
+	}
+	return e
 }
 
 func (e *Engine) watchDirectory(ctx context.Context, dir string) {
@@ -269,7 +315,7 @@ func (e *Engine) ingestFile(ctx context.Context, path string, offset int64) {
 	}
 
 	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1024*64), 1024*64)
+	scanner.Buffer(make([]byte, 1024*64), e.maxLine)
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -281,11 +327,23 @@ func (e *Engine) ingestFile(ctx context.Context, path string, offset int64) {
 		copy(lineCopy, line)
 		e.ingest(lineCopy, "file:"+filepath.Base(path))
 	}
+	if err := scanner.Err(); err != nil {
+		// Line longer than the cap: count it and skip, don't stall the file.
+		atomic.AddInt64(&e.truncated, 1)
+		log.Printf("siem: line too long in %s (cap %d), counted and skipped", path, e.maxLine)
+	}
 
 	stat, err := os.Stat(path)
 	if err == nil {
 		e.posMu.Lock()
 		e.filePositions[path] = stat.Size()
+		// Bound memory: filePositions never evicted before, leak on rotation.
+		if len(e.filePositions) > 1024 {
+			for k := range e.filePositions {
+				delete(e.filePositions, k)
+				break
+			}
+		}
 		e.posMu.Unlock()
 	}
 }
@@ -358,7 +416,19 @@ func (e *Engine) listenSyslogTCP(ctx context.Context) {
 			continue
 		}
 
-		go e.handleTCPConn(ctx, conn)
+		select {
+		case e.connSem <- struct{}{}:
+		default:
+			conn.Close()
+			log.Printf("siem: tcp conn limit reached, refused connection")
+			continue
+		}
+		e.connWg.Add(1)
+		go func(c net.Conn) {
+			defer e.connWg.Done()
+			defer func() { <-e.connSem }()
+			e.handleTCPConn(ctx, c)
+		}(conn)
 	}
 }
 
@@ -366,9 +436,15 @@ func (e *Engine) handleTCPConn(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
 
 	scanner := bufio.NewScanner(conn)
-	scanner.Buffer(make([]byte, 1024*64), 1024*64)
+	scanner.Buffer(make([]byte, 1024*64), e.maxLine)
 
 	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 		line := scanner.Bytes()
 		if len(line) == 0 {
 			continue
@@ -377,5 +453,8 @@ func (e *Engine) handleTCPConn(ctx context.Context, conn net.Conn) {
 		lineCopy := make([]byte, len(line))
 		copy(lineCopy, line)
 		e.ingest(lineCopy, "syslog:tcp")
+	}
+	if err := scanner.Err(); err != nil {
+		atomic.AddInt64(&e.truncated, 1)
 	}
 }

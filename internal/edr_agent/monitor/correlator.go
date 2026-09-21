@@ -176,6 +176,11 @@ func (c *Correlator) eventKey(evt *Event) string {
 }
 
 func (c *Correlator) matchesType(rule *CorrRule, evt *Event) bool {
+	// Empty EventTypes = match-all. The old false-on-empty meant default
+	// rules never fired.
+	if len(rule.EventTypes) == 0 {
+		return true
+	}
 	for _, t := range rule.EventTypes {
 		if evt.Type == t {
 			return true
@@ -238,9 +243,18 @@ func (c *Correlator) trim() {
 
 func defaultCorrRules() []*CorrRule {
 	return []*CorrRule{
-		{Name: "process_burst", Description: "Process creation burst", Window: 5 * time.Second, Threshold: 20, Severity: SeverityWarning, SuppressMs: 30000},
-		{Name: "rapid_deletion", Description: "Rapid file deletion", Window: 10 * time.Second, Threshold: 50, Severity: SeverityWarning, SuppressMs: 60000},
-		{Name: "suspicious_children", Description: "Suspicious child process burst", Window: 30 * time.Second, Threshold: 3, Severity: SeverityAlert, SuppressMs: 120000},
-		{Name: "connection_burst", Description: "Outbound connection burst", Window: 10 * time.Second, Threshold: 15, Severity: SeverityWarning, SuppressMs: 30000},
+		{Name: "process_burst", Description: "Process creation burst", Window: 5 * time.Second, Threshold: 20, EventTypes: []EventType{EventProcessCreate}, Severity: SeverityWarning, SuppressMs: 30000},
+		{Name: "rapid_deletion", Description: "Rapid file deletion", Window: 10 * time.Second, Threshold: 50, EventTypes: []EventType{EventFileDelete}, Severity: SeverityWarning, SuppressMs: 60000},
+		{Name: "suspicious_children", Description: "Suspicious child process burst", Window: 30 * time.Second, Threshold: 3, EventTypes: []EventType{EventProcessCreate}, Severity: SeverityAlert, SuppressMs: 120000},
+		{Name: "connection_burst", Description: "Outbound connection burst", Window: 10 * time.Second, Threshold: 15, EventTypes: []EventType{EventNetConnect}, Severity: SeverityWarning, SuppressMs: 30000},
 	}
 }
+// LoadTestRules replaces rules in tests. Production uses LoadRules.
+func (c *Correlator) LoadTestRules(rules []*CorrRule) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.rules = rules
+}
+
+// DefaultCorrRulesForTest exposes defaults for self-tests.
+func DefaultCorrRulesForTest() []*CorrRule { return defaultCorrRules() }

@@ -1,8 +1,10 @@
 package siem
 
 import (
+	"bytes"
 	"embed"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -35,6 +37,7 @@ type CompiledRule struct {
 	operator  string
 	value     string
 	re        *regexp.Regexp
+	reErr     error
 	windowDur time.Duration
 	suppress  time.Duration
 	threshold int
@@ -89,37 +92,77 @@ func parseDuration(s string) time.Duration {
 	}
 	return 0
 }
+func compileCondition(condition string) (op, field, value string, re *regexp.Regexp, reErr error) {
+	if !strings.HasPrefix(condition, "field:") {
+		return "", "", "", nil, nil
+	}
+	expr := strings.TrimPrefix(condition, "field:")
+	parts := strings.SplitN(expr, " ", 3)
+	if len(parts) < 3 {
+		return "", "", "", nil, fmt.Errorf("malformed field condition %q", condition)
+	}
+	op, field, value = parts[1], parts[0], strings.Trim(parts[2], "\"")
+	if op != "~=" {
+		return op, field, value, nil, nil
+	}
+	// Cap pattern length to bound ReDoS blast radius; rejecting at load
+	// keeps a bad rule pack from slowing the hot path.
+	if len(value) > 512 {
+		return op, field, value, nil, fmt.Errorf("regex too long (%d>512) in %q", len(value), condition)
+	}
+	compiled, err := regexp.Compile("(?i)" + value)
+	if err != nil {
+		return op, field, value, nil, fmt.Errorf("bad regex in %q: %w", condition, err)
+	}
+	return op, field, value, compiled, nil
+}
+
+func compileYAMLRule(yr YAMLRule) CompiledRule {
+	cr := CompiledRule{
+		RuleID:      yr.RuleID,
+		Description: yr.Description,
+		Severity:    ClampSeverity(yr.Severity),
+		MITRE:       yr.MITRE,
+		condition:   yr.Condition,
+		windowDur:   parseDuration(yr.WindowDur),
+		threshold:   yr.Threshold,
+		suppress:    parseDuration(yr.Suppress),
+	}
+	op, field, value, re, reErr := compileCondition(yr.Condition)
+	cr.operator, cr.field, cr.value, cr.re, cr.reErr = op, field, value, re, reErr
+	if yr.Playbook != "" {
+		params := make(map[string]any)
+		for k, v := range yr.Params {
+			params[k] = v
+		}
+		cr.Actions = []RuleAction{{Playbook: yr.Playbook, Params: params}}
+	}
+	return cr
+}
 
 func (re *RuleEngine) LoadYAML(data []byte) error {
 	var file YAMLRuleFile
-	if err := yaml.Unmarshal(data, &file); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	if err := dec.Decode(&file); err != nil {
 		return fmt.Errorf("parse yaml: %w", err)
+	}
+	if len(data) > 1<<20 {
+		return fmt.Errorf("rule pack too large (%d bytes, cap 1MiB)", len(data))
 	}
 	re.mu.Lock()
 	defer re.mu.Unlock()
 	for _, yr := range file.Rules {
-		cr := CompiledRule{
-			RuleID:      yr.RuleID,
-			Description: yr.Description,
-			Severity:    yr.Severity,
-			MITRE:       yr.MITRE,
-			condition:   yr.Condition,
-			windowDur:   parseDuration(yr.WindowDur),
-			threshold:   yr.Threshold,
-			suppress:    parseDuration(yr.Suppress),
+		if yr.RuleID == "" || yr.Condition == "" {
+			return fmt.Errorf("rule missing rule_id/condition: %+v", yr)
 		}
-		if yr.Playbook != "" {
-			params := make(map[string]any)
-			for k, v := range yr.Params {
-				params[k] = v
-			}
-			cr.Actions = []RuleAction{{Playbook: yr.Playbook, Params: params}}
+		cr := compileYAMLRule(yr)
+		if cr.reErr != nil {
+			return fmt.Errorf("rule %s: %w", yr.RuleID, cr.reErr)
 		}
 		re.rules = append(re.rules, cr)
 	}
 	return nil
 }
-
 func (re *RuleEngine) LoadBuiltinYAML() error {
 	entries, err := embeddedRuleFS.ReadDir("rules")
 	if err != nil {
@@ -163,6 +206,22 @@ func (re *RuleEngine) LoadYAMLDir(dir string) error {
 	return nil
 }
 
+func finalizeRulesLocked(re *RuleEngine) {
+	for i := range re.rules {
+		r := &re.rules[i]
+		r.Severity = ClampSeverity(r.Severity)
+		if r.re == nil && r.reErr == nil && r.condition != "" {
+			op, field, value, compiled, err := compileCondition(r.condition)
+			r.operator, r.field, r.value, r.re, r.reErr = op, field, value, compiled, err
+		}
+		if r.reErr != nil {
+			fmt.Printf("[siem] rule %s disabled (bad condition): %v\n", r.RuleID, r.reErr)
+			r.condition = ""
+		}
+		r.Compliance = mapCompliance(r.MITRE, r.Severity, r.Description)
+	}
+}
+
 func (re *RuleEngine) LoadDefault() {
 	re.mu.Lock()
 	defer re.mu.Unlock()
@@ -174,9 +233,7 @@ func (re *RuleEngine) LoadDefault() {
 		fmt.Printf("[siem] warning: yaml rules: %v\n", err)
 	}
 
-	for i := range re.rules {
-		re.rules[i].Compliance = mapCompliance(re.rules[i].MITRE, re.rules[i].Severity, re.rules[i].Description)
-	}
+	finalizeRulesLocked(re)
 
 	fmt.Printf("[siem] loaded %d external + %d built-in + %d yaml rules\n",
 		len(loadWazuhRules()), len(builtinRules()), len(re.rules)-len(loadWazuhRules())-len(builtinRules()))
@@ -198,26 +255,17 @@ func (re *RuleEngine) loadYAMLRulesLocked() error {
 		var file struct {
 			Rules []YAMLRule `yaml:"rules"`
 		}
-		if err := yaml.Unmarshal(data, &file); err != nil {
+		dec := yaml.NewDecoder(bytes.NewReader(data))
+		if err := dec.Decode(&file); err != nil {
 			return fmt.Errorf("parse %s: %w", e.Name(), err)
 		}
 		for _, yr := range file.Rules {
-			cr := CompiledRule{
-				RuleID:      yr.RuleID,
-				Description: yr.Description,
-				Severity:    yr.Severity,
-				MITRE:       yr.MITRE,
-				condition:   yr.Condition,
-				windowDur:   parseDuration(yr.WindowDur),
-				threshold:   yr.Threshold,
-				suppress:    parseDuration(yr.Suppress),
+			if yr.RuleID == "" || yr.Condition == "" {
+				return fmt.Errorf("parse %s: rule missing rule_id/condition", e.Name())
 			}
-			if yr.Playbook != "" {
-				params := make(map[string]any)
-				for k, v := range yr.Params {
-					params[k] = v
-				}
-				cr.Actions = []RuleAction{{Playbook: yr.Playbook, Params: params}}
+			cr := compileYAMLRule(yr)
+			if cr.reErr != nil {
+				return fmt.Errorf("parse %s rule %s: %w", e.Name(), yr.RuleID, cr.reErr)
 			}
 			re.rules = append(re.rules, cr)
 		}
@@ -750,26 +798,43 @@ func builtinRules() []CompiledRule {
 }
 
 func (re *RuleEngine) LoadRule(r CompiledRule) {
+	r.Severity = ClampSeverity(r.Severity)
+	if r.re == nil && r.condition != "" {
+		op, field, value, compiled, err := compileCondition(r.condition)
+		r.operator, r.field, r.value, r.re, r.reErr = op, field, value, compiled, err
+	}
+	if r.reErr != nil {
+		fmt.Printf("[siem] rule %s disabled (bad condition): %v\n", r.RuleID, r.reErr)
+		r.condition = ""
+	}
 	re.mu.Lock()
 	defer re.mu.Unlock()
+	r.Compliance = mapCompliance(r.MITRE, r.Severity, r.Description)
 	re.rules = append(re.rules, r)
 }
 
-func (re *RuleEngine) Evaluate(event *Event) []*Alert {
+// Snapshot returns an immutable copy of the rule set. Evaluate works on a
+// snapshot so rule reloads never race in-flight evaluation.
+func (re *RuleEngine) Snapshot() []CompiledRule {
 	re.mu.RLock()
-	rules := make([]CompiledRule, len(re.rules))
-	copy(rules, re.rules)
-	re.mu.RUnlock()
+	defer re.mu.RUnlock()
+	out := make([]CompiledRule, len(re.rules))
+	copy(out, re.rules)
+	return out
+}
+
+func (re *RuleEngine) Evaluate(event *Event) []*Alert {
+	rules := re.Snapshot()
 
 	var alerts []*Alert
 	now := time.Now()
 
 	for _, rule := range rules {
-		if !re.matchesCondition(rule, event) {
+		if !matchesCondition(rule, event) {
 			continue
 		}
 
-		suppressKey := rule.RuleID
+		suppressKey := rule.RuleID + ":" + correlationEntity(event, rule)
 		if rule.suppress > 0 {
 			re.suppressionMu.Lock()
 			if last, ok := re.suppression[suppressKey]; ok && now.Sub(last) < rule.suppress {
@@ -781,7 +846,7 @@ func (re *RuleEngine) Evaluate(event *Event) []*Alert {
 		}
 
 		if rule.windowDur > 0 && rule.threshold > 1 {
-			corrKey := rule.RuleID + ":" + correlationKey(event, rule)
+			corrKey := rule.RuleID + ":" + correlationEntity(event, rule)
 			re.correlationMu.Lock()
 			re.correlation[corrKey] = append(re.correlation[corrKey], now)
 			events := re.correlation[corrKey]
@@ -793,7 +858,12 @@ func (re *RuleEngine) Evaluate(event *Event) []*Alert {
 					active = append(active, t)
 				}
 			}
-			re.correlation[corrKey] = active
+			// Bound memory: correlation buckets never outlive the window.
+			if len(re.correlation[corrKey]) > 0 && len(active) == 0 {
+				delete(re.correlation, corrKey)
+			} else {
+				re.correlation[corrKey] = active
+			}
 			re.correlationMu.Unlock()
 
 			if len(active) < rule.threshold {
@@ -818,7 +888,7 @@ func (re *RuleEngine) Evaluate(event *Event) []*Alert {
 	return alerts
 }
 
-func (re *RuleEngine) matchesCondition(rule CompiledRule, event *Event) bool {
+func matchesCondition(rule CompiledRule, event *Event) bool {
 	if rule.condition == "" {
 		return false
 	}
@@ -828,7 +898,7 @@ func (re *RuleEngine) matchesCondition(rule CompiledRule, event *Event) bool {
 	if strings.HasPrefix(cond, "tag:") {
 		tag := strings.TrimPrefix(cond, "tag:")
 		for _, t := range event.Tags {
-			if t == tag || strings.Contains(t, tag) {
+			if t == tag {
 				return true
 			}
 		}
@@ -836,8 +906,7 @@ func (re *RuleEngine) matchesCondition(rule CompiledRule, event *Event) bool {
 	}
 
 	if strings.HasPrefix(cond, "field:") {
-		fieldExpr := strings.TrimPrefix(cond, "field:")
-		return evaluateFieldExpr(fieldExpr, event)
+		return evaluateCompiledRule(rule, event)
 	}
 
 	if strings.HasPrefix(cond, "severity>=") {
@@ -848,43 +917,41 @@ func (re *RuleEngine) matchesCondition(rule CompiledRule, event *Event) bool {
 	return false
 }
 
+func evaluateCompiledRule(rule CompiledRule, event *Event) bool {
+	fieldVal := getField(event.Fields, rule.field)
+
+	switch rule.operator {
+	case "==":
+		return fmt.Sprintf("%v", fieldVal) == rule.value
+	case "!=":
+		return fmt.Sprintf("%v", fieldVal) != rule.value
+	case "~=":
+		if rule.re == nil {
+			return false
+		}
+		return rule.re.MatchString(fmt.Sprintf("%v", fieldVal))
+	case ">":
+		fv, _ := strconv.ParseFloat(fmt.Sprintf("%v", fieldVal), 64)
+		tv, _ := strconv.ParseFloat(rule.value, 64)
+		return fv > tv
+	case "<":
+		fv, _ := strconv.ParseFloat(fmt.Sprintf("%v", fieldVal), 64)
+		tv, _ := strconv.ParseFloat(rule.value, 64)
+		return fv < tv
+	case "in":
+		return cidrContains(fmt.Sprintf("%v", fieldVal), rule.value)
+	}
+
+	return false
+}
+
 func evaluateFieldExpr(expr string, event *Event) bool {
 	parts := strings.SplitN(expr, " ", 3)
 	if len(parts) < 3 {
 		return false
 	}
-
-	field := parts[0]
-	operator := parts[1]
-	val := parts[2]
-
-	fieldVal := getField(event.Fields, field)
-
-	switch operator {
-	case "==":
-		return fmt.Sprintf("%v", fieldVal) == val
-	case "!=":
-		return fmt.Sprintf("%v", fieldVal) != val
-	case "~=":
-		pattern := strings.Trim(val, "\"")
-		re, err := regexp.Compile("(?i)" + pattern)
-		if err != nil {
-			return false
-		}
-		return re.MatchString(fmt.Sprintf("%v", fieldVal))
-	case ">":
-		fv, _ := strconv.ParseFloat(fmt.Sprintf("%v", fieldVal), 64)
-		tv, _ := strconv.ParseFloat(val, 64)
-		return fv > tv
-	case "<":
-		fv, _ := strconv.ParseFloat(fmt.Sprintf("%v", fieldVal), 64)
-		tv, _ := strconv.ParseFloat(val, 64)
-		return fv < tv
-	case "in":
-		return cidrMatch(fmt.Sprintf("%v", fieldVal), val)
-	}
-
-	return false
+	op, field, value := parts[1], parts[0], strings.Trim(parts[2], "\"")
+	return evaluateCompiledRule(CompiledRule{operator: op, field: field, value: value}, event)
 }
 
 func getField(fields map[string]any, path string) any {
@@ -908,19 +975,57 @@ func getField(fields map[string]any, path string) any {
 }
 
 func correlationKey(event *Event, rule CompiledRule) string {
-	switch rule.RuleID {
-	case "MULTIPLE_FAILED_LOGINS", "HTTP_4XX_BURST":
-		if ip, ok := event.Fields["client_ip"].(string); ok {
-			return ip
+	return correlationEntity(event, rule)
+}
+
+// correlationEntity keys suppression/correlation per (rule, entity) so one
+// noisy host cannot suppress alerts for every other host.
+func correlationEntity(event *Event, rule CompiledRule) string {
+	for _, k := range []string{"client_ip", "source_ip", "hostname", "host", "user", "username"} {
+		if v, ok := event.Fields[k].(string); ok && v != "" {
+			return v
 		}
-		return fmt.Sprintf("%v", event.Fields["hostname"])
-	default:
-		return ""
 	}
+	return "global"
 }
 
 func cidrMatch(ip, cidr string) bool {
-	return strings.HasPrefix(ip, strings.Split(cidr, "/")[0])
+	return cidrContains(ip, cidr)
+}
+
+// cidrContains does exact matching for plain IPs and real CIDR containment
+// for CIDR notation. The old prefix check ("10.1" matching "10.10.0.1")
+// caused false positives.
+func cidrContains(ipStr, cidrStr string) bool {
+	ipStr = strings.TrimSpace(ipStr)
+	cidrStr = strings.TrimSpace(cidrStr)
+	if ipStr == "" || cidrStr == "" {
+		return false
+	}
+	if !strings.Contains(cidrStr, "/") {
+		return ipStr == cidrStr
+	}
+	ip := netipParse(ipStr)
+	if ip == "" {
+		return false
+	}
+	_, network, err := net.ParseCIDR(cidrStr)
+	if err != nil {
+		return false
+	}
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return false
+	}
+	return network.Contains(parsed)
+}
+
+// netipParse normalizes an IP string; empty on unparsable input.
+func netipParse(s string) string {
+	if ip := net.ParseIP(strings.TrimSpace(s)); ip != nil {
+		return ip.String()
+	}
+	return ""
 }
 
 func InterpolateParams(params map[string]any, event *Event) map[string]any {

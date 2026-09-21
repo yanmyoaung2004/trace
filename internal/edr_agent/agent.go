@@ -679,15 +679,23 @@ func (a *Agent) flushBatch(ctx context.Context, batch []*monitor.Event) {
 		log.Printf("[trace-agent] event batch failed (%d events): %v", len(batch), err)
 		a.stats.EventsFailed += int64(len(batch))
 
-		// Buffer to disk queue for retry
+		// Buffer to disk queue for retry (single batched insert).
 		if a.eventQueue != nil {
-			for _, evt := range batch {
-				if err := a.eventQueue.Push(evt); err != nil {
-					log.Printf("[trace-agent] queue push error: %v", err)
-					break
-				}
+			if err := a.eventQueue.PushBatch(batch); err != nil {
+				log.Printf("[trace-agent] queue push error: %v", err)
+			} else {
+				log.Printf("[trace-agent] queued %d events for retry (queue size: %d)", len(batch), a.eventQueue.Len())
 			}
-			log.Printf("[trace-agent] queued %d events for retry (queue size: %d)", len(batch), a.eventQueue.Len())
+		}
+		// Drain what the disk queue holds; Ack only on send success.
+		if a.eventQueue != nil {
+			_ = a.eventQueue.DrainLoop(ctx, func(ctx context.Context, b []*monitor.Event) error {
+				if err := a.client.SendEvents(ctx, a.agentID, b); err != nil {
+					return err
+				}
+				a.stats.EventsSent += int64(len(b))
+				return nil
+			})
 		}
 		return
 	}
@@ -708,13 +716,14 @@ func (a *Agent) analysisLoop(ctx context.Context) {
 		case <-a.done:
 			return
 		case evt := <-a.eventCh:
+			a.procTree.Insert(evt)
+			a.procTree.WALAppend(evt)
+			// Correlate before dedup: dedup must never starve the
+			// correlator of burst members.
+			a.correlator.Ingestion(evt)
 			if a.dedup.IsDuplicate(evt) {
 				continue
 			}
-
-			a.procTree.Insert(evt)
-			a.procTree.WALAppend(evt)
-			a.correlator.Ingestion(evt)
 
 			// Forward to server batch channel
 			select {
@@ -722,7 +731,6 @@ func (a *Agent) analysisLoop(ctx context.Context) {
 			default:
 				log.Printf("[trace-agent] server channel full, dropping event")
 			}
-
 			if a.yara != nil {
 				if evt.Type == monitor.EventProcessCreate && evt.Process != nil {
 					a.queueYARAScan(func() { a.scanProcessYARA(evt) })

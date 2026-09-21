@@ -351,7 +351,7 @@ func builtinYaraRules() []*YaraRule {
 		{
 			Name: "Suspicious_Entropy", Description: "High entropy file (packed/encrypted)",
 			Severity: SeverityWarning,
-			Matcher:  yaraEntropy{threshold: 7.0},
+			Matcher:  yaraEntropy{threshold: EntropyThreshold},
 		},
 		{
 			Name: "Packed_Binary", Description: "PE with unusual section entropy",

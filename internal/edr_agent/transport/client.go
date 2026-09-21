@@ -99,12 +99,13 @@ type ActionResult struct {
 
 func NewClient(cfg *Config) *Client {
 	t := &http.Transport{
-		MaxIdleConns:        10,
-		IdleConnTimeout:     90 * time.Second,
-		DisableCompression:  false,
+		MaxIdleConns:    10,
+		IdleConnTimeout: 90 * time.Second,
 	}
 
-	// mTLS: Load client and CA certificates
+	// mTLS: client cert authenticates the agent; system roots verify the
+	// server. No custom CA flags: CAFile stays for pinned enterprise roots
+	// loaded below, never InsecureSkipVerify.
 	if cfg.TLSCertFile != "" && cfg.TLSKeyFile != "" {
 		cert, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
 		if err != nil {
@@ -131,10 +132,14 @@ func NewClient(cfg *Config) *Client {
 		}
 	}
 
+	timeout := cfg.Timeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
 	return &Client{
 		config: cfg,
 		client: &http.Client{
-			Timeout:   cfg.Timeout,
+			Timeout:   timeout,
 			Transport: t,
 		},
 		agentID: cfg.AgentID,
@@ -179,11 +184,12 @@ func (c *Client) do(ctx context.Context, method, path string, body any) ([]byte,
 
 	for attempt := 0; attempt <= c.config.RetryMax; attempt++ {
 		if attempt > 0 {
-			backoff := c.config.RetryBase * time.Duration(math.Pow(2, float64(attempt-1)))
-			if backoff > 30*time.Second {
-				backoff = 30 * time.Second
+			backoff := c.backoff(attempt)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
 			}
-			time.Sleep(backoff)
 		}
 
 		var req *http.Request
@@ -207,17 +213,15 @@ func (c *Client) do(ctx context.Context, method, path string, body any) ([]byte,
 			lastErr = fmt.Errorf("http: %w", err)
 			continue
 		}
-		defer resp.Body.Close()
-
-		data, _ := io.ReadAll(resp.Body)
+		data, readErr := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+		resp.Body.Close()
+		if readErr != nil {
+			lastErr = fmt.Errorf("read body: %w", readErr)
+			continue
+		}
 
 		if resp.StatusCode == 429 {
 			lastErr = fmt.Errorf("rate limited")
-			backoff := c.config.RetryBase * time.Duration(math.Pow(2, float64(attempt)))
-			if backoff > 30*time.Second {
-				backoff = 30 * time.Second
-			}
-			time.Sleep(backoff)
 			continue
 		}
 		if resp.StatusCode >= 500 {
@@ -232,6 +236,19 @@ func (c *Client) do(ctx context.Context, method, path string, body any) ([]byte,
 	}
 
 	return nil, fmt.Errorf("request failed after %d retries: %w", c.config.RetryMax, lastErr)
+}
+
+// backoff is the single backoff policy: exponential, capped at 30s.
+func (c *Client) backoff(attempt int) time.Duration {
+	base := c.config.RetryBase
+	if base <= 0 {
+		base = time.Second
+	}
+	backoff := base * time.Duration(math.Pow(2, float64(attempt-1)))
+	if backoff > 30*time.Second {
+		backoff = 30 * time.Second
+	}
+	return backoff
 }
 
 func (c *Client) Register(ctx context.Context, info *RegisterRequest) (*RegisterResponse, error) {

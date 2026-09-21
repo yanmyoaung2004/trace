@@ -110,6 +110,8 @@ func (e *ReportEngine) GenerateReport(ctx context.Context, opts ReportOptions) (
 			}
 		}
 
+		// Evidence-backed labels: a control with no assessment and no
+		// evidence stays "not-covered" — never static "pass" assurance.
 		if cr.Total == 0 {
 			cr.Status = "not-covered"
 			report.NotCovered++
@@ -123,24 +125,30 @@ func (e *ReportEngine) GenerateReport(ctx context.Context, opts ReportOptions) (
 
 		report.Results = append(report.Results, cr)
 	}
-
 	if report.Total > 0 {
 		report.Score = float64(report.Passed) / float64(report.Total) * 100
 	}
 
-	if err := e.tryAutoScan(ctx, opts); err == nil {
-		e.mergeScanResults(report)
+	// Evidence-backed labels only: auto-scan failures propagate instead of
+	// silently rendering a static-label report as assurance.
+	if err := e.tryAutoScan(ctx, opts); err != nil {
+		return nil, fmt.Errorf("auto scan: %w", err)
 	}
+	e.mergeScanResults(report)
 
-	// Record snapshot for trend tracking
-	e.recordSnapshot(report)
+	// Record snapshot for trend tracking; history errors propagate.
+	if err := e.recordSnapshot(report); err != nil {
+		return nil, fmt.Errorf("record snapshot: %w", err)
+	}
 
 	return report, nil
 }
 
-func (e *ReportEngine) recordSnapshot(report *Report) {
+func (e *ReportEngine) recordSnapshot(report *Report) error {
 	path := filepath.Join(e.DataDir, "history", report.Framework+".jsonl")
-	os.MkdirAll(filepath.Dir(path), 0700)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
 
 	point := ScorePoint{
 		Date:   time.Now().UTC().Format(time.RFC3339),
@@ -149,42 +157,56 @@ func (e *ReportEngine) recordSnapshot(report *Report) {
 		Passed: report.Passed,
 		Failed: report.Failed,
 	}
-	data, _ := json.Marshal(point)
-
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	data, err := json.Marshal(point)
 	if err != nil {
-		return
+		return err
+	}
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
 	}
 	defer f.Close()
-	f.Write(data)
-	f.Write([]byte("\n"))
+	if _, err := f.Write(append(data, '\n')); err != nil {
+		return err
+	}
+	return f.Sync()
 }
 
 func (e *ReportEngine) GetHistory(framework string, days int) ([]ScorePoint, error) {
 	path := filepath.Join(e.DataDir, "history", framework+".jsonl")
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, nil
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read history: %w", err)
 	}
 
 	cutoff := time.Now().AddDate(0, 0, -days)
 	var points []ScorePoint
+	corrupt := 0
 	for _, line := range strings.Split(string(data), "\n") {
 		if line == "" {
 			continue
 		}
 		var p ScorePoint
 		if err := json.Unmarshal([]byte(line), &p); err != nil {
+			corrupt++
 			continue
 		}
 		t, err := time.Parse(time.RFC3339, p.Date)
 		if err != nil {
+			corrupt++
 			continue
 		}
 		if t.Before(cutoff) {
 			continue
 		}
 		points = append(points, p)
+	}
+	if corrupt > 0 {
+		return points, fmt.Errorf("history: %d corrupt line(s) skipped", corrupt)
 	}
 	return points, nil
 }
@@ -322,7 +344,9 @@ func (e *ReportEngine) getManualAssessment(framework, controlID string) (ManualA
 }
 
 func (e *ReportEngine) SetManualAssessment(ctx context.Context, framework, controlID, status, justification string) error {
-	os.MkdirAll(e.DataDir, 0755)
+	if err := os.MkdirAll(e.DataDir, 0700); err != nil {
+		return err
+	}
 	e.loadAssessments()
 
 	for i, a := range e.Assessments {
@@ -346,15 +370,18 @@ func (e *ReportEngine) SetManualAssessment(ctx context.Context, framework, contr
 }
 
 func (e *ReportEngine) AddEvidence(ctx context.Context, framework, controlID, description, filePath string) error {
-	os.MkdirAll(e.DataDir, 0754)
+	if err := os.MkdirAll(e.DataDir, 0700); err != nil {
+		return err
+	}
 	e.loadEvidences()
 
 	content := ""
 	if filePath != "" {
 		data, err := os.ReadFile(filePath)
-		if err == nil {
-			content = string(data)
+		if err != nil {
+			return fmt.Errorf("read evidence: %w", err)
 		}
+		content = string(data)
 	}
 
 	e.Evidences = append(e.Evidences, Evidence{
@@ -389,11 +416,13 @@ func (e *ReportEngine) loadAssessments() {
 	}
 	json.Unmarshal(data, &e.Assessments)
 }
-
 func (e *ReportEngine) saveAssessments() error {
 	path := filepath.Join(e.DataDir, "assessments.json")
-	data, _ := json.MarshalIndent(e.Assessments, "", "  ")
-	return os.WriteFile(path, data, 0644)
+	data, err := json.MarshalIndent(e.Assessments, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0600)
 }
 
 func (e *ReportEngine) loadEvidences() {
@@ -407,8 +436,11 @@ func (e *ReportEngine) loadEvidences() {
 
 func (e *ReportEngine) saveEvidences() error {
 	path := filepath.Join(e.DataDir, "evidences.json")
-	data, _ := json.MarshalIndent(e.Evidences, "", "  ")
-	return os.WriteFile(path, data, 0644)
+	data, err := json.MarshalIndent(e.Evidences, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0600)
 }
 
 type Report struct {

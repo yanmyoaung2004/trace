@@ -11,6 +11,11 @@ import (
 	"sync"
 )
 
+// EntropyThreshold is the single packed/encrypted threshold shared by the
+// baseline fallback, PE scoring, and YARA entropy matchers. One knob, one
+// behavior; agent config overrides at runtime.
+const EntropyThreshold = 7.0
+
 type EntropyBaseline struct {
 	mu        sync.RWMutex
 	samples   map[string][]float64
@@ -81,17 +86,18 @@ func (eb *EntropyBaseline) Record(sectionName string, entropy float64) {
 
 func (eb *EntropyBaseline) IsAnomalous(sectionName string, entropy float64) (bool, float64) {
 	eb.mu.RLock()
-	defer eb.mu.RUnlock()
-
 	mean, hasMean := eb.means[sectionName]
 	stddev, hasStddev := eb.stddevs[sectionName]
+	eb.mu.RUnlock()
 
 	if !hasMean || !hasStddev || stddev < 0.1 {
-		return entropy > 7.0, 0
+		return entropy > EntropyThreshold, 0
 	}
 
 	// Apply time decay: shift old samples toward new observation
+	eb.mu.Lock()
 	eb.decayLocked(sectionName, entropy)
+	eb.mu.Unlock()
 
 	z := math.Abs(entropy-mean) / stddev
 	return z > eb.zScore, z

@@ -5,11 +5,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/yanmyoaung2004/trace/internal/agent"
+	"github.com/yanmyoaung2004/trace/internal/integration"
 )
 
 type Client struct {
@@ -18,6 +21,9 @@ type Client struct {
 	cacheDB    *sql.DB
 	mu         sync.Mutex
 	testURL    string
+	breaker    *integration.CircuitBreaker
+	bulkhead   *integration.Bulkhead
+	timeout    time.Duration
 }
 
 func (c *Client) SetTestURL(url string) {
@@ -29,6 +35,9 @@ func New(apiKey string, cacheDB *sql.DB) *Client {
 		apiKey:     apiKey,
 		httpClient: &http.Client{Timeout: 15 * time.Second},
 		cacheDB:    cacheDB,
+		breaker:    integration.NewCircuitBreaker(5, 30*time.Second),
+		bulkhead:   integration.NewBulkhead(8),
+		timeout:    15 * time.Second,
 	}
 }
 
@@ -70,32 +79,26 @@ func (c *Client) CheckIP(ctx context.Context, ip string) (*AbuseData, error) {
 	}
 
 	apiURL := c.apiURL(ip)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
-	if err != nil {
-		return nil, err
+	if c.breaker != nil && !c.breaker.Allow() {
+		return nil, fmt.Errorf("abuseipdb circuit open")
 	}
-	req.Header.Set("Key", c.apiKey)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("abuseipdb request: %w", err)
+	var result AbuseResponse
+	callErr := error(nil)
+	if c.bulkhead != nil {
+		callErr = c.bulkhead.Run(ctx, func(ctx context.Context) error {
+			return c.fetchIP(ctx, apiURL, &result)
+		})
+	} else {
+		callErr = c.fetchIP(ctx, apiURL, &result)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == 429 {
-		return nil, fmt.Errorf("abuseipdb rate limited")
+	if c.breaker != nil {
+		c.breaker.Record(callErr == nil || isNotFound(callErr))
 	}
-	if resp.StatusCode == 404 {
+	if isNotFound(callErr) {
 		return &AbuseData{IP: ip, Confidence: 0, TotalReports: 0}, nil
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("abuseipdb HTTP %d", resp.StatusCode)
-	}
-
-	var result AbuseResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("abuseipdb decode: %w", err)
+	if callErr != nil {
+		return nil, callErr
 	}
 
 	if c.cacheDB != nil {
@@ -118,6 +121,42 @@ func NewAgent(apiKey string, cacheDB *sql.DB) *Agent {
 	return &Agent{client: New(apiKey, cacheDB)}
 }
 
+func (c *Client) fetchIP(ctx context.Context, apiURL string, result *AbuseResponse) error {
+	timeout := c.timeout
+	if timeout <= 0 {
+		timeout = 15 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Key", c.apiKey)
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("abuseipdb request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 429 {
+		return fmt.Errorf("abuseipdb rate limited")
+	}
+	if resp.StatusCode == 404 {
+		return fmt.Errorf("abuseipdb not found")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("abuseipdb HTTP %d", resp.StatusCode)
+	}
+	dec := json.NewDecoder(io.LimitReader(resp.Body, 1<<20))
+	if err := dec.Decode(result); err != nil {
+		return fmt.Errorf("abuseipdb decode: %w", err)
+	}
+	return nil
+}
+func isNotFound(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "not found")
+}
 func (a *Agent) Name() string { return "abuseipdb" }
 
 func (a *Agent) Capabilities() []agent.Capability {

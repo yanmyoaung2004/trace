@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/yanmyoaung2004/trace/internal/investigation"
@@ -21,6 +22,8 @@ type SyncClient struct {
 	version    string
 	invManager *investigation.Manager
 	done       chan struct{}
+	closeOnce  sync.Once
+	lastSync   string
 }
 
 func NewSyncClient(addr string, invMgr *investigation.Manager) *SyncClient {
@@ -29,7 +32,7 @@ func NewSyncClient(addr string, invMgr *investigation.Manager) *SyncClient {
 		serverAddr: addr,
 		httpClient: &http.Client{Timeout: 15 * time.Second},
 		hostname:   hostname,
-		version:    "0.1.0-dev",
+		version:    "0.1.1",
 		invManager: invMgr,
 		done:       make(chan struct{}),
 	}
@@ -86,7 +89,19 @@ func (c *SyncClient) syncInvestigations(ctx context.Context) error {
 		return err
 	}
 
+	// Delta cursor: only push investigations newer than the last sync.
+	var fresh []investigation.Investigation
 	for _, inv := range invs {
+		if c.lastSync == "" || inv.UpdatedAt > c.lastSync {
+			fresh = append(fresh, inv)
+		}
+	}
+	if len(fresh) == 0 {
+		return nil
+	}
+
+	maxTS := c.lastSync
+	for _, inv := range fresh {
 		indicators := extractIndicators(inv.Intent)
 		var confidence *float64
 		if inv.Confidence != nil {
@@ -109,12 +124,20 @@ func (c *SyncClient) syncInvestigations(ctx context.Context) error {
 
 		if err := c.postJSON(ctx, "/api/v1/push", payload, nil); err != nil {
 			log.Printf("[edge-sync] push %s: %v", shortID(inv.ID), err)
+			return err
+		}
+		if inv.UpdatedAt > maxTS {
+			maxTS = inv.UpdatedAt
 		}
 	}
+	// Advance the cursor only past contiguous success.
+	c.lastSync = maxTS
 	return nil
 }
 
-func (c *SyncClient) Close() {}
+func (c *SyncClient) Close() {
+	c.closeOnce.Do(func() { close(c.done) })
+}
 
 func (c *SyncClient) postJSON(ctx context.Context, path string, req, resp any) error {
 	var buf bytes.Buffer
@@ -138,7 +161,9 @@ func (c *SyncClient) postJSON(ctx context.Context, path string, req, resp any) e
 		var errResp struct {
 			Error string `json:"error"`
 		}
-		json.NewDecoder(httpResp.Body).Decode(&errResp)
+		if err := json.NewDecoder(httpResp.Body).Decode(&errResp); err != nil {
+			return fmt.Errorf("HTTP %d (undecodable body: %v)", httpResp.StatusCode, err)
+		}
 		if errResp.Error != "" {
 			return fmt.Errorf("server: %s", errResp.Error)
 		}
@@ -146,7 +171,9 @@ func (c *SyncClient) postJSON(ctx context.Context, path string, req, resp any) e
 	}
 
 	if resp != nil {
-		return json.NewDecoder(httpResp.Body).Decode(resp)
+		if err := json.NewDecoder(httpResp.Body).Decode(resp); err != nil {
+			return fmt.Errorf("decode response: %w", err)
+		}
 	}
 	return nil
 }

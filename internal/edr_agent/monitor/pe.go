@@ -444,7 +444,7 @@ func (pe *PEMemory) detectPacker() {
 
 	highEntropy := 0
 	for _, s := range pe.Sections {
-		if s.Entropy > 7.0 && s.RawSize > 2048 {
+		if s.Entropy > EntropyThreshold && s.RawSize > 2048 {
 			highEntropy++
 		}
 	}
@@ -469,7 +469,7 @@ func (pe *PEMemory) detectPacker() {
 	if pe.HasTLS && totalImports < 10 {
 		score += 0.2
 	}
-	if len(pe.Sections) > 0 && pe.Sections[0].Entropy > 7.0 {
+	if len(pe.Sections) > 0 && pe.Sections[0].Entropy > EntropyThreshold {
 		score += 0.2
 	}
 

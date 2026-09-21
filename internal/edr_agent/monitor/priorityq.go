@@ -101,30 +101,23 @@ func (pq *PriorityQueue) droppedTotal() {
 }
 
 func (pq *PriorityQueue) drain() {
-	// Priority scheduling: high > medium > low
-	// Check high 3 times more often than low
+	// Strict priority: high always wins; medium beats low. Within a
+	// level, FIFO via the channel.
 	for {
 		select {
 		case evt := <-pq.high:
 			pq.send(evt)
+			continue
+		default:
+		}
+		select {
 		case evt := <-pq.high:
-			pq.send(evt)
-		case evt := <-pq.high:
-			pq.send(evt)
-		case evt := <-pq.medium:
 			pq.send(evt)
 		case evt := <-pq.medium:
 			pq.send(evt)
 		case evt := <-pq.low:
 			pq.send(evt)
 		}
-	}
-}
-
-func (pq *PriorityQueue) send(evt *Event) {
-	select {
-	case pq.out <- evt:
-	default:
 	}
 }
 

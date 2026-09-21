@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -98,24 +99,42 @@ func (d *Deduplicator) flushBatch() {
 
 	tx, err := d.db.Begin()
 	if err != nil {
+		d.requeue(batch)
 		return
 	}
 	stmt, err := tx.Prepare("INSERT OR IGNORE INTO dedup_keys (key_hash, seen_at) VALUES (?, datetime('now'))")
 	if err != nil {
 		tx.Rollback()
+		d.requeue(batch)
 		return
 	}
 	defer stmt.Close()
 
-	i := 0
+	ok := true
 	for hash := range batch {
-		stmt.Exec(hash)
-		i++
-		if i >= 50 {
+		if _, err := stmt.Exec(hash); err != nil {
+			ok = false
 			break
 		}
 	}
-	tx.Commit()
+	if !ok {
+		tx.Rollback()
+		d.requeue(batch)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		d.requeue(batch)
+	}
+}
+
+// requeue returns an unpersisted batch to memory so a failed flush retries
+// instead of silently losing dedup state.
+func (d *Deduplicator) requeue(batch map[string]bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for h := range batch {
+		d.batch[h] = true
+	}
 }
 
 func (d *Deduplicator) openDB(dataDir string) error {
@@ -138,19 +157,18 @@ func (d *Deduplicator) openDB(dataDir string) error {
 }
 
 func (d *Deduplicator) loadMem() {
-	if d.db == nil {
-		return
-	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	rows, err := d.db.Query("SELECT key_hash FROM dedup_key WHERE seen_at > datetime('now', '-30 seconds')")
+	rows, err := d.db.Query("SELECT key_hash FROM dedup_keys WHERE seen_at > datetime('now', '-30 seconds')")
 	if err != nil {
 		return
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var hash string
-		rows.Scan(&hash)
+		if err := rows.Scan(&hash); err != nil {
+			return
+		}
 		d.mem[hash] = time.Now()
 	}
 	log.Printf("[dedup] loaded %d keys from sqlite", len(d.mem))
@@ -164,12 +182,12 @@ func (d *Deduplicator) IsDuplicate(evt *Event) bool {
 	hash := sha256Hex(key)
 
 	if _, exists := d.mem[hash]; exists {
-		d.hitCount++
+		atomic.AddInt64(&d.hitCount, 1)
 		return true
 	}
 
 	d.mem[hash] = time.Now()
-	d.missCount++
+	atomic.AddInt64(&d.missCount, 1)
 
 	if d.db != nil {
 		d.batch[hash] = true
@@ -203,16 +221,19 @@ func (d *Deduplicator) IsDuplicate(evt *Event) bool {
 func (d *Deduplicator) eventKey(evt *Event) string {
 	switch {
 	case evt.Process != nil && evt.Process.PID > 0:
-		return fmt.Sprintf("proc:%d:%s", evt.Process.PID, evt.Type)
+		return fmt.Sprintf("proc:%d:%s:%s:%s", evt.Process.PID, evt.Type, evt.Process.Name, evt.Process.CmdLine)
 	case evt.File != nil && evt.File.Path != "":
-		return fmt.Sprintf("file:%s:%s", evt.File.Path, evt.Type)
+		// Cookie/inode/mtime richer than path alone when available via Raw.
+		cookie := fmt.Sprintf("%v", evt.Raw["cookie"])
+		inode := fmt.Sprintf("%v", evt.Raw["inode"])
+		mtime := fmt.Sprintf("%v", evt.Raw["mtime"])
+		return fmt.Sprintf("file:%s:%s:%s:%s:%s:%d", evt.File.Path, evt.Type, cookie, inode, mtime, evt.File.Size)
 	case evt.Network != nil:
-		return fmt.Sprintf("net:%s:%d:%s:%s", evt.Network.RemoteIP, evt.Network.RemotePort, evt.Network.Protocol, evt.Type)
+		return fmt.Sprintf("net:%s:%d:%s:%s:%s:%d", evt.Network.RemoteIP, evt.Network.RemotePort, evt.Network.Protocol, evt.Type, evt.Network.Direction, evt.Network.PID)
 	default:
-		return fmt.Sprintf("evt:%d", evt.Timestamp.UnixNano())
+		return fmt.Sprintf("evt:%s:%s:%d", evt.Type, evt.ID, evt.Timestamp.UnixNano())
 	}
 }
-
 func (d *Deduplicator) evictLocked() {
 	cutoff := time.Now().Add(-d.ttl)
 	for k, v := range d.mem {
@@ -226,9 +247,7 @@ func (d *Deduplicator) evictLocked() {
 }
 
 func (d *Deduplicator) Stats() (int64, int64) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.hitCount, d.missCount
+	return atomic.LoadInt64(&d.hitCount), atomic.LoadInt64(&d.missCount)
 }
 
 func (d *Deduplicator) Close() {

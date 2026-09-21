@@ -62,7 +62,7 @@ func (m *Manager) ShouldSuppress(alert AlertEvent) (bool, string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	key := alert.RuleID
+	key := alert.RuleID + "|" + alertEntity(alert)
 	rc, exists := m.counters[key]
 	if !exists {
 		rc = &ruleCounter{}
@@ -81,6 +81,16 @@ func (m *Manager) ShouldSuppress(alert AlertEvent) (bool, string) {
 	rc.hitCount++
 	rc.lastHit = now
 
+	// Expire stale counters so a quiet entity starts fresh.
+	for k, c := range m.counters {
+		if now.Sub(c.lastHit) > time.Hour {
+			delete(m.counters, k)
+		}
+		if len(m.counters) > 10000 {
+			break
+		}
+	}
+
 	// Check suppression rules (threshold, max-rate)
 	for _, rule := range m.suppress {
 		if rule.RuleID != "" && rule.RuleID != alert.RuleID {
@@ -92,8 +102,11 @@ func (m *Manager) ShouldSuppress(alert AlertEvent) (bool, string) {
 
 		// Threshold check
 		if rule.Threshold > 0 {
-			windowStart := now.Add(-rule.ThresholdWindow)
-			// Count hits within the window by scanning all counters
+			window := rule.ThresholdWindow
+			if window <= 0 {
+				window = time.Hour
+			}
+			windowStart := now.Add(-window)
 			if rc.lastHit.Before(windowStart) {
 				rc.hitCount = 1
 			}
@@ -107,7 +120,11 @@ func (m *Manager) ShouldSuppress(alert AlertEvent) (bool, string) {
 		// Max rate check
 		if rule.MaxRate > 0 {
 			if rc.hitCount > rule.MaxRate {
-				rc.suppressUntil = now.Add(rule.Duration)
+				dur := rule.Duration
+				if dur <= 0 {
+					dur = time.Hour
+				}
+				rc.suppressUntil = now.Add(dur)
 				return true, fmt.Sprintf("rate limit %d/h exceeded (rule=%s)", rule.MaxRate, alert.RuleID)
 			}
 		}
@@ -124,6 +141,22 @@ func (m *Manager) ShouldSuppress(alert AlertEvent) (bool, string) {
 	}
 
 	return false, ""
+}
+
+// alertEntity keys counters per (rule, entity): entity prefers source IP /
+// host, falling back to raw fields so cross-host bleed cannot suppress.
+func alertEntity(alert AlertEvent) string {
+	if alert.Source != "" {
+		return alert.Source
+	}
+	if alert.Raw != nil {
+		for _, k := range []string{"client_ip", "source_ip", "hostname", "host", "user"} {
+			if v, ok := alert.Raw[k].(string); ok && v != "" {
+				return v
+			}
+		}
+	}
+	return "global"
 }
 
 // Reset clears counters for a given rule (e.g., after manual review).

@@ -78,6 +78,21 @@ func (m *Manager) Create(ctx context.Context, title, description, severity strin
 	}
 	return c, nil
 }
+// CreateScoped creates a case pinned to an org. Falls back gracefully when
+// the org_id column does not exist yet (pre-migration databases).
+func (m *Manager) CreateScoped(ctx context.Context, orgID, title, description, severity string) (*Case, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	id := uuid.New().String()
+	if severity == "" {
+		severity = "medium"
+	}
+	if _, err := m.db.ExecContext(ctx,
+		`INSERT INTO cases (id, title, description, status, severity, org_id, created_at, updated_at) VALUES (?, ?, ?, 'open', ?, ?, ?, ?)`,
+		id, title, description, severity, orgID, now, now); err != nil {
+		return m.Create(ctx, title, description, severity)
+	}
+	return m.Get(ctx, id)
+}
 
 func (m *Manager) Get(ctx context.Context, id string) (*Case, error) {
 	c := &Case{}
@@ -155,30 +170,32 @@ func (m *Manager) List(ctx context.Context, status, severity string) ([]*Case, e
 	var cases []*Case
 	for rows.Next() {
 		var id string
-		rows.Scan(&id)
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
 		c, err := m.Get(ctx, id)
 		if err != nil {
-			continue
+			return nil, err
 		}
 		cases = append(cases, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return cases, nil
 }
 
 func (m *Manager) UpdateStatus(ctx context.Context, id, status string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
-	q := `UPDATE cases SET status = ?, updated_at = ?`
 	if status == "closed" || status == "resolved" {
-		q += `, closed_at = ?`
+		_, err := m.db.ExecContext(ctx,
+			`UPDATE cases SET status = ?, updated_at = ?, closed_at = ? WHERE id = ?`, status, now, now, id)
+		return err
 	}
-	q += ` WHERE id = ?`
-
-	var err error
-	if status == "closed" || status == "resolved" {
-		_, err = m.db.ExecContext(ctx, q, status, now, now, id)
-	} else {
-		_, err = m.db.ExecContext(ctx, q, status, now, id)
-	}
+	// Reopen or progress: clear closed_at so a reopened case is not
+	// forever marked closed.
+	_, err := m.db.ExecContext(ctx,
+		`UPDATE cases SET status = ?, updated_at = ?, closed_at = NULL WHERE id = ?`, status, now, id)
 	return err
 }
 
@@ -216,13 +233,15 @@ func (m *Manager) GetEvents(ctx context.Context, caseID string) ([]*Event, error
 	}
 	defer rows.Close()
 
-	var events []*Event
 	for rows.Next() {
 		e := &Event{}
 		if err := rows.Scan(&e.ID, &e.CaseID, &e.EventType, &e.Content, &e.Source, &e.CreatedAt); err != nil {
-			continue
+			return nil, err
 		}
 		events = append(events, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return events, nil
 }
@@ -267,9 +286,12 @@ func (m *Manager) GetIOCs(ctx context.Context, caseID string) ([]*IOC, error) {
 	for rows.Next() {
 		i := &IOC{}
 		if err := rows.Scan(&i.ID, &i.CaseID, &i.IOCType, &i.Value, &i.Description, &i.Source, &i.CreatedAt); err != nil {
-			continue
+			return nil, err
 		}
 		iocs = append(iocs, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return iocs, nil
 }

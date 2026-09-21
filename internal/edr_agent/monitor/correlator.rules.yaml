@@ -1,0 +1,31 @@
+# Correlator rules (hot-reload via SIGHUP / Reload).
+# Each rule fires when >= threshold matching events land inside window.
+# Empty event_types = match-all event types.
+- name: process_burst
+  description: Process creation burst
+  window_ms: 5000
+  threshold: 20
+  event_types: [process_create]
+  severity: 3
+  suppress_ms: 30000
+- name: rapid_deletion
+  description: Rapid file deletion
+  window_ms: 10000
+  threshold: 50
+  event_types: [file_delete]
+  severity: 3
+  suppress_ms: 60000
+- name: suspicious_children
+  description: Suspicious child process burst
+  window_ms: 30000
+  threshold: 3
+  event_types: [process_create]
+  severity: 5
+  suppress_ms: 120000
+- name: connection_burst
+  description: Outbound connection burst
+  window_ms: 10000
+  threshold: 15
+  event_types: [net_connect]
+  severity: 3
+  suppress_ms: 30000

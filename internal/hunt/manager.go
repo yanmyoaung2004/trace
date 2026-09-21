@@ -88,7 +88,7 @@ func (m *Manager) GetByName(ctx context.Context, name string) (*Hunt, error) {
 }
 
 func (m *Manager) List(ctx context.Context, status string) ([]*Hunt, error) {
-	query := `SELECT id FROM hunts`
+	query := `SELECT id, name, description, schedule, playbook, params, scope, notify_severity, status, last_run, next_run, created_at, updated_at FROM hunts`
 	var args []any
 	if status != "" {
 		query += ` WHERE status = ?`
@@ -104,15 +104,31 @@ func (m *Manager) List(ctx context.Context, status string) ([]*Hunt, error) {
 
 	var hunts []*Hunt
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var h Hunt
+		var paramsStr, nextRun, lastRun sql.NullString
+		if err := rows.Scan(&h.ID, &h.Name, &h.Description, &h.Schedule, &h.Playbook, &paramsStr, &h.Scope, &h.NotifySeverity, &h.Status, &lastRun, &nextRun, &h.CreatedAt, &h.UpdatedAt); err != nil {
 			return nil, err
 		}
-		h, err := m.Get(ctx, id)
-		if err != nil {
-			return nil, err
+		if paramsStr.Valid {
+			if err := json.Unmarshal([]byte(paramsStr.String), &h.Params); err != nil {
+				return nil, fmt.Errorf("decode hunt params: %w", err)
+			}
 		}
-		hunts = append(hunts, h)
+		if h.Params == nil {
+			h.Params = make(map[string]any)
+		}
+		if nextRun.Valid {
+			v := nextRun.String
+			h.NextRun = &v
+		}
+		if lastRun.Valid {
+			v := lastRun.String
+			h.LastRun = &v
+		}
+		hunts = append(hunts, &h)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return hunts, nil
 }
@@ -140,26 +156,11 @@ func (m *Manager) Pause(ctx context.Context, id string) error {
 	return err
 }
 
-func (m *Manager) Resume(ctx context.Context, id string) error {
-	now := time.Now().UTC().Format(time.RFC3339)
-	nextRun := computeNextRunFromDB(ctx, m.db, id)
-	if nextRun == "" {
-		nextRun = time.Now().Add(1 * time.Hour).UTC().Format(time.RFC3339)
-	}
-	_, err := m.db.ExecContext(ctx,
-		`UPDATE hunts SET status = 'active', next_run = ?, updated_at = ? WHERE id = ?`, nextRun, now, id)
-	return err
-}
-
-func (m *Manager) Delete(ctx context.Context, id string) error {
-	_, err := m.db.ExecContext(ctx, `DELETE FROM hunts WHERE id = ?`, id)
-	return err
-}
-
 func (m *Manager) DueHunts(ctx context.Context) ([]*Hunt, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	rows, err := m.db.QueryContext(ctx,
-		`SELECT id FROM hunts WHERE status = 'active' AND (next_run IS NULL OR next_run <= ?) ORDER BY next_run ASC`, now)
+		`SELECT id, name, description, schedule, playbook, params, scope, notify_severity, status, last_run, next_run, created_at, updated_at
+		 FROM hunts WHERE status = 'active' AND (next_run IS NULL OR next_run <= ?) ORDER BY next_run ASC`, now)
 	if err != nil {
 		return nil, err
 	}
@@ -167,36 +168,63 @@ func (m *Manager) DueHunts(ctx context.Context) ([]*Hunt, error) {
 
 	var hunts []*Hunt
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var h Hunt
+		var paramsStr, nextRun, lastRun sql.NullString
+		if err := rows.Scan(&h.ID, &h.Name, &h.Description, &h.Schedule, &h.Playbook, &paramsStr, &h.Scope, &h.NotifySeverity, &h.Status, &lastRun, &nextRun, &h.CreatedAt, &h.UpdatedAt); err != nil {
 			return nil, err
 		}
-		h, err := m.Get(ctx, id)
-		if err != nil {
-			continue
+		if paramsStr.Valid {
+			if err := json.Unmarshal([]byte(paramsStr.String), &h.Params); err != nil {
+				return nil, fmt.Errorf("decode hunt params: %w", err)
+			}
 		}
-		hunts = append(hunts, h)
+		if h.Params == nil {
+			h.Params = make(map[string]any)
+		}
+		if nextRun.Valid {
+			v := nextRun.String
+			h.NextRun = &v
+		}
+		if lastRun.Valid {
+			v := lastRun.String
+			h.LastRun = &v
+		}
+		hunts = append(hunts, &h)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return hunts, nil
 }
 
+// ClaimRun atomically claims the next run slot (CAS on next_run): exactly
+// one scheduler wins even with multiple nodes ticking.
+func (m *Manager) ClaimRun(ctx context.Context, id, expectedNextRun, newNextRun string) (bool, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	res, err := m.db.ExecContext(ctx,
+		`UPDATE hunts SET last_run = ?, next_run = ?, updated_at = ? WHERE id = ? AND next_run = ?`,
+		now, newNextRun, now, id, expectedNextRun)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
+}
 func (m *Manager) MarkRun(ctx context.Context, id string) {
 	now := time.Now().UTC().Format(time.RFC3339)
-
 	h, err := m.Get(ctx, id)
 	if err != nil {
 		return
 	}
-
 	nextRun := computeNextRun(h.Schedule)
 	if nextRun == "" {
 		nextRun = time.Now().Add(1 * time.Hour).UTC().Format(time.RFC3339)
 	}
-
 	m.db.ExecContext(ctx,
 		`UPDATE hunts SET last_run = ?, next_run = ?, updated_at = ? WHERE id = ?`,
 		now, nextRun, now, id)
 }
+
 
 func computeNextRun(schedule string) string {
 	dur, err := parseSchedule(schedule)
