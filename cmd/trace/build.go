@@ -26,7 +26,7 @@ Use --upload to copy them to the server's update directory for OTA distribution.
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
 			outDir, _ := cmdCobra.Flags().GetString("output")
 			uploadDir, _ := cmdCobra.Flags().GetString("upload")
-			version := "0.1.1"
+			version := Version
 
 			if outDir == "" {
 				outDir = "dist"

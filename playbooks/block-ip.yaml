@@ -7,6 +7,8 @@ triggers:
 steps:
   - agent: response
     action: block_ip
+    wait: analyst_approval
+    label: block-ip
     params:
       ip: ${input.ip}
   - agent: dispatch

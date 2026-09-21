@@ -106,13 +106,9 @@ func TestInterpolateMissingKey(t *testing.T) {
 		Results: map[string]any{},
 	}
 
-	got, err := interpolateString("${input.missing}", scope)
-	if err != nil {
-		t.Fatalf("interpolateString should not error, got: %v", err)
-	}
-
-	if got != "" {
-		t.Fatalf("expected empty string for missing key, got %s", got)
+	// Fail-closed: missing => error, never "".
+	if _, err := interpolateString("${input.missing}", scope); err == nil {
+		t.Fatal("expected error for missing key, got nil")
 	}
 }
 
@@ -126,19 +122,35 @@ func TestEvaluateCondition(t *testing.T) {
 	}
 
 	tests := []struct {
-		expr string
-		want bool
+		expr    string
+		want    bool
+		wantErr bool
 	}{
-		{"${input.hash}", true},
-		{"${input.name} == \"test.exe\"", true},
-		{"${input.name} == \"other.exe\"", false},
-		{"${input.name} != \"other.exe\"", true},
-		{"", true},
-		{"${input.nothere}", false},
+		{"${input.hash}", true, false},
+		{"${input.name} == \"test.exe\"", true, false},
+		{"${input.name} == \"other.exe\"", false, false},
+		{"${input.name} != \"other.exe\"", true, false},
+		{"", true, false},
+		// Fail-closed: missing ref errors (no empty iptables/mv/kill).
+		{"${input.nothere}", false, true},
+		// Richer if: >= and contains and CIDR.
+		{"${input.count} >= 3", true, false},
+		{"${input.name} contains \"test\"", true, false},
+		{"${input.ip} in_cidr \"10.0.0.0/8\"", true, false},
+		{"${input.ip} in_cidr \"192.168.0.0/16\"", false, false},
 	}
+
+	scope.Input["count"] = "5"
+	scope.Input["ip"] = "10.1.2.3"
 
 	for _, tt := range tests {
 		got, err := evaluateCondition(tt.expr, scope)
+		if tt.wantErr {
+			if err == nil {
+				t.Errorf("evaluateCondition(%q) expected error, got nil", tt.expr)
+			}
+			continue
+		}
 		if err != nil {
 			t.Errorf("evaluateCondition(%q) error: %v", tt.expr, err)
 			continue

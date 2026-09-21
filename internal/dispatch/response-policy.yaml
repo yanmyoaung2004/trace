@@ -1,0 +1,31 @@
+# Response policy (role x action x approval-required).
+# Data file per FIX_PLAN 1.1 (response-policy.yaml). Enforcement of the
+# approval dimension happens via playbook `wait: analyst_approval`; this file
+# documents which actions require it.
+policies:
+  - role: analyst
+    action: block_ip
+    approval_required: true
+  - role: analyst
+    action: quarantine_file
+    approval_required: true
+  - role: analyst
+    action: kill_process
+    approval_required: true
+  - role: analyst
+    action: restart_service
+    approval_required: true
+  - role: analyst
+    action: isolate_host
+    approval_required: true
+  - role: analyst
+    action: run_script
+    approval_required: true
+    enabled: false
+  - role: viewer
+    action: "*"
+    approval_required: true
+    enabled: false
+  - role: admin
+    action: rollback
+    approval_required: false

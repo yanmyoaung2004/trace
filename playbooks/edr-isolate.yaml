@@ -8,6 +8,8 @@ triggers:
 steps:
   - agent: edr
     action: isolate_host
+    wait: analyst_approval
+    label: edr-isolate
     params:
       hostname: ${input.hostname}
     timeout: 30s

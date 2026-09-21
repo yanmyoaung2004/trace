@@ -223,6 +223,8 @@ var validAgents = map[string]bool{
 	"abuseipdb":  true,
 	"otx":        true,
 	"sca":        true,
+	"edr":        true,
+	"edr_crowdstrike": true,
 }
 
 func init() {

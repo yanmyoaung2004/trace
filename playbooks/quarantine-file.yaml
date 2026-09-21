@@ -7,6 +7,8 @@ triggers:
 steps:
   - agent: response
     action: quarantine_file
+    wait: analyst_approval
+    label: quarantine-file
     params:
       path: ${input.path}
   - agent: dispatch

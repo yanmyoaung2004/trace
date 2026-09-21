@@ -73,32 +73,21 @@ Example:
 			certPath := filepath.Join(outDir, "cert.pem")
 			keyPath := filepath.Join(outDir, "key.pem")
 
-			certFile, err := os.Create(certPath)
-			if err != nil {
-				return fmt.Errorf("create cert file: %w", err)
+			if err := os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER}), 0644); err != nil {
+				return fmt.Errorf("write cert file: %w", err)
 			}
-			defer certFile.Close()
-			pem.Encode(certFile, &pem.Block{Type: "CERTIFICATE", Bytes: certDER})
 
-			keyFile, err := os.Create(keyPath)
-			if err != nil {
-				return fmt.Errorf("create key file: %w", err)
-			}
-			defer keyFile.Close()
-			pem.Encode(keyFile, &pem.Block{
+			if err := os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{
 				Type:  "RSA PRIVATE KEY",
 				Bytes: x509.MarshalPKCS1PrivateKey(key),
-			})
-
-			os.Chtimes(certPath, time.Now(), time.Now())
-			os.Chtimes(keyPath, time.Now(), time.Now())
-
+			}), 0600); err != nil {
+				return fmt.Errorf("write key file: %w", err)
+			}
+			// Enforce 0600 even if the file pre-existed (Chmod, not just create mode).
+			if err := os.Chmod(keyPath, 0600); err != nil {
+				return fmt.Errorf("chmod key file: %w", err)
+			}
 			fmt.Printf("TLS certificate generated:\n")
-			fmt.Printf("  Cert: %s\n", certPath)
-			fmt.Printf("  Key:  %s\n", keyPath)
-			fmt.Printf("  Host: %s\n", host)
-			fmt.Printf("  Bits: %d\n", bits)
-			fmt.Println()
 			fmt.Printf("Start server with:\n")
 			fmt.Printf("  trace server --tls-cert %s --tls-key %s\n", certPath, keyPath)
 			return nil

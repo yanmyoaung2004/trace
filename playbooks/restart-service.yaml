@@ -6,6 +6,8 @@ triggers:
 steps:
   - agent: response
     action: restart_service
+    wait: analyst_approval
+    label: restart-service
     params:
       name: ${input.name}
   - agent: dispatch

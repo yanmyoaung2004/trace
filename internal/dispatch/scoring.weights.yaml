@@ -1,0 +1,12 @@
+malicious_reputation: 0.95
+suspicious_reputation: 0.7
+vt_threshold_ratio: 0.3
+vt_score: 0.9
+count_score: 0.85
+found_score: 0.75
+suspicious_list_score: 0.8
+intel_builtin_score: 0.8
+error_score: 0.1
+not_configured_score: 0
+default_score: 0.5
+prompt_version: 1

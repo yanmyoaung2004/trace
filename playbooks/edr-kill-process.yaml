@@ -8,6 +8,8 @@ triggers:
 steps:
   - agent: edr
     action: kill_process
+    wait: analyst_approval
+    label: edr-kill-process
     params:
       hostname: ${input.hostname}
       pid: ${input.pid}

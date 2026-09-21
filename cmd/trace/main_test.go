@@ -59,11 +59,12 @@ func TestAllCommandsHelp(t *testing.T) {
 	cmds := []string{
 		"admin", "admin org", "admin org create", "admin org list",
 		"admin user", "admin user create", "admin user list", "admin key",
-		"approval", "approval list", "approval approve", "approval deny",
+		"approval", "approval pending", "approval approve", "approval deny",
 		"case", "case create", "case list", "case view",
 		"case note", "case ioc", "case assign", "case close",
 		"case export", "compliance", "compliance report", "compliance assess",
 		"compliance evidence", "compliance list", "compliance trend",
+		"config", "config check", "config dump", "config migrate",
 		"edr", "edr agents", "edr agents view", "edr events", "edr vulns",
 		"edr isolate", "edr release", "genkey", "history", "hunt",
 		"hunt create", "hunt list", "hunt run", "hunt pause", "hunt resume", "hunt delete",
@@ -175,7 +176,6 @@ func TestHelpGolden(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	update := os.Getenv("UPDATE_GOLDEN") == "1"
 	cmds := []string{
 		"", "admin", "approval", "case", "compliance", "edr", "genkey",
 		"history", "hunt", "init", "investigate", "plugin", "report",

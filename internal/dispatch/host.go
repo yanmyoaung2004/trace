@@ -189,6 +189,10 @@ type LLMPlanner struct {
 	providers []*LLMProvider // tried in order; primary is first
 	client    *http.Client
 
+	// allowlist gates schema validation: only playbooks the caller offered
+	// are accepted from LLM output (per-caller allowlist).
+	allowlist map[string]bool
+
 	// cache
 	cache     map[string]*llmCacheEntry
 	cacheMu   sync.Mutex
@@ -318,6 +322,7 @@ func cacheKey(intent string, playbooks []string) string {
 
 // getCached returns a cached LLM response if available and fresh.
 // Checks in-memory cache first, then SQLite cache if configured.
+// Only verified (schema-validated) entries are ever cached.
 func (lp *LLMPlanner) getCached(key string) (string, map[string]any, bool) {
 	lp.cacheMu.Lock()
 	defer lp.cacheMu.Unlock()
@@ -393,12 +398,12 @@ func (lp *LLMPlanner) Plan(ctx context.Context, intent string, availablePlaybook
 		return "", nil, fmt.Errorf("LLM planner not configured (set TRACE_LLM_URL)")
 	}
 
-	// Check cache
+	// Check cache (prompt-versioned key, entries verified before caching).
 	key := cacheKey(intent, availablePlaybooks)
 	if cachedPb, cachedParams, ok := lp.getCached(key); ok {
 		lp.CacheHits.Add(1)
 		lp.reportProgress("cache_hit", "")
-		log.Printf("[llm] cache hit for intent %q", intent[:min(len(intent), 60)])
+		log.Printf("[llm] cache hit")
 		return cachedPb, cachedParams, nil
 	}
 
@@ -407,6 +412,12 @@ func (lp *LLMPlanner) Plan(ctx context.Context, intent string, availablePlaybook
 Return ONLY valid JSON: {"playbook": "name", "parameters": {"key": "value"}}
 If no playbook matches, return {"playbook": "", "parameters": {}}.
 Intent: %s`, strings.Join(availablePlaybooks, ", "), intent)
+
+	allow := make(map[string]bool, len(availablePlaybooks))
+	for _, n := range availablePlaybooks {
+		allow[n] = true
+	}
+	lp.allowlist = allow
 
 	// Try each provider in order, with retries per provider
 	var lastErr error
@@ -429,7 +440,7 @@ Intent: %s`, strings.Join(availablePlaybooks, ", "), intent)
 			}
 
 			lastErr = err
-			lp.reportProgress("retry", fmt.Sprintf("%s attempt %d: %v", p.Name, attempt+1, err))
+			lp.reportProgress("retry", fmt.Sprintf("%s attempt %d", p.Name, attempt+1))
 			log.Printf("[llm] provider=%s attempt %d failed: %v", p.Name, attempt+1, err)
 		}
 
@@ -447,23 +458,37 @@ Intent: %s`, strings.Join(availablePlaybooks, ", "), intent)
 	}
 
 	lp.TotalFailures.Add(1)
-	lp.reportProgress("failed", lastErr.Error())
-	log.Printf("[llm] all providers failed for intent %q: %v (falling back to heuristic)", intent[:min(len(intent), 60)], lastErr)
+	lp.reportProgress("failed", llmLogRedact(lastErr.Error()))
+	log.Printf("[llm] all providers failed (falling back to heuristic)")
 	return "", nil, lastErr
 }
 
-// callLLM makes a single LLM API call to the given provider and parses the response.
+// callLLM makes a single LLM API call to the given provider, schema-validates
+// the JSON output against the caller allowlist, and returns the verified
+// playbook + params. Unsigned/invalid output is rejected (never cached).
 func (lp *LLMPlanner) callLLM(ctx context.Context, prompt string, p *LLMProvider) (string, map[string]any, error) {
 	var payload []byte
 	var err error
 
-	switch p.Name {
-	case "anthropic":
-		payload, err = lp.buildAnthropicPayload(p, prompt)
-	case "ollama":
-		payload, err = lp.buildOllamaPayload(p, prompt)
-	default:
-		payload, err = lp.buildOpenAIPayload(p, prompt)
+	if spec, ok := llmProviders[p.Name]; ok && spec.BuildPayload != nil {
+		model := p.Model
+		if model == "" {
+			model = spec.DefaultModel
+		}
+		maxTokens := spec.MaxTokens
+		if maxTokens <= 0 {
+			maxTokens = 300
+		}
+		payload, err = spec.BuildPayload(model, prompt, maxTokens, 0.1)
+	} else {
+		switch p.Name {
+		case "anthropic":
+			payload, err = lp.buildAnthropicPayload(p, prompt)
+		case "ollama":
+			payload, err = lp.buildOllamaPayload(p, prompt)
+		default:
+			payload, err = lp.buildOpenAIPayload(p, prompt)
+		}
 	}
 	if err != nil {
 		return "", nil, fmt.Errorf("build payload: %w", err)
@@ -476,14 +501,20 @@ func (lp *LLMPlanner) callLLM(ctx context.Context, prompt string, p *LLMProvider
 
 	req.Header.Set("Content-Type", "application/json")
 
-	switch p.Name {
-	case "anthropic":
-		req.Header.Set("x-api-key", p.APIKey)
-		req.Header.Set("anthropic-version", "2023-06-01")
-	case "ollama":
-	default:
-		if p.APIKey != "" {
-			req.Header.Set("Authorization", "Bearer "+p.APIKey)
+	if spec, ok := llmProviders[p.Name]; ok && spec.Headers != nil {
+		for k, v := range spec.Headers(p.APIKey) {
+			req.Header.Set(k, v)
+		}
+	} else {
+		switch p.Name {
+		case "anthropic":
+			req.Header.Set("x-api-key", p.APIKey)
+			req.Header.Set("anthropic-version", "2023-06-01")
+		case "ollama":
+		default:
+			if p.APIKey != "" {
+				req.Header.Set("Authorization", "Bearer "+p.APIKey)
+			}
 		}
 	}
 
@@ -496,16 +527,16 @@ func (lp *LLMPlanner) callLLM(ctx context.Context, prompt string, p *LLMProvider
 	respBody, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != 200 {
-		return "", nil, fmt.Errorf("llm returned HTTP %d: %s", resp.StatusCode, string(respBody[:min(len(respBody), 200)]))
+		return "", nil, fmt.Errorf("llm returned HTTP %d: %s", resp.StatusCode, llmLogRedact(string(respBody)))
 	}
 
 	content := lp.extractContent(respBody)
-	if content == "" {
-		snippet := string(respBody)
-		if len(snippet) > 500 {
-			snippet = snippet[:500]
+	if spec, ok := llmProviders[p.Name]; ok && spec.Extract != nil {
+		if alt := spec.Extract(respBody); alt != "" {
+			content = alt
 		}
-		log.Printf("[llm] empty content from provider=%s (raw: %s)", p.Name, snippet)
+	}
+	if content == "" {
 		return "", nil, fmt.Errorf("llm returned empty response")
 	}
 
@@ -515,25 +546,21 @@ func (lp *LLMPlanner) callLLM(ctx context.Context, prompt string, p *LLMProvider
 	content = strings.TrimSuffix(content, "```")
 	content = strings.TrimSpace(content)
 
-	var result struct {
-		Playbook   string         `json:"playbook"`
-		Parameters map[string]any `json:"parameters"`
-	}
-	if err := json.Unmarshal([]byte(content), &result); err != nil {
-		snippet := content
-		if len(snippet) > 500 {
-			snippet = snippet[:500]
-		}
-		log.Printf("[llm] json parse error for provider=%s: %v (content: %s)", p.Name, err, snippet)
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(content), &raw); err != nil {
 		return "", nil, fmt.Errorf("parse llm response: %w", err)
 	}
 
-	if result.Playbook == "" {
-		log.Printf("[llm] empty playbook from provider=%s (content: %s)", p.Name, content[:min(len(content), 200)])
-		return "", nil, fmt.Errorf("llm didn't select a playbook")
+	allow := lp.allowlist
+	if len(allow) == 0 {
+		allow = map[string]bool{}
 	}
-
-	return result.Playbook, result.Parameters, nil
+	name, params, err := validateLLMPlan(raw, allow)
+	if err != nil {
+		log.Printf("[llm] rejected invalid output from provider=%s: %v", p.Name, err)
+		return "", nil, err
+	}
+	return name, sanitizeLLMParamsForSinks(params), nil
 }
 
 func (lp *LLMPlanner) buildOpenAIPayload(p *LLMProvider, prompt string) ([]byte, error) {
@@ -647,12 +674,13 @@ func getInt(v any) int {
 }
 
 func scoreResult(key string, result map[string]any) float64 {
+	w := activeWeights
 	reputation, _ := result["reputation"].(string)
 	if reputation == "malicious" {
-		return 0.95
+		return w.MaliciousReputation
 	}
 	if reputation == "suspicious" {
-		return 0.7
+		return w.SuspiciousReputation
 	}
 
 	maliciousV, hasMal := result["malicious"]
@@ -660,22 +688,23 @@ func scoreResult(key string, result map[string]any) float64 {
 		mal := getFloat(maliciousV)
 		if mal > 0 {
 			total := getFloat(result["total"])
-			if total > 0 && mal/total > 0.3 {
-				return 0.9
+			ratio := w.VTThresholdRatio
+			if total > 0 && mal/total > ratio {
+				return w.VTScore
 			}
 		}
 	}
 
 	if getFloat(result["count"]) > 0 {
-		return 0.85
+		return w.CountScore
 	}
 
 	if foundV, ok := result["found"].(bool); ok && foundV {
-		return 0.75
+		return w.FoundScore
 	}
 
 	if suspiciousList, ok := result["suspicious"].([]any); ok && len(suspiciousList) > 0 {
-		return 0.8
+		return w.SuspiciousListScore
 	}
 
 	if intel, ok := result["intel"].(map[string]any); ok {
@@ -684,19 +713,19 @@ func scoreResult(key string, result map[string]any) float64 {
 			if conf > 0 {
 				return conf
 			}
-			return 0.8
+			return w.IntelBuiltinScore
 		}
 	}
 
 	errorStr, hasError := result["error"].(string)
 	if hasError && errorStr != "" {
 		if strings.Contains(errorStr, "not configured") {
-			return 0
+			return w.NotConfiguredScore
 		}
-		return 0.1
+		return w.ErrorScore
 	}
 
-	return 0.5
+	return w.DefaultScore
 }
 
 func (a *Agent) confidenceFactors(results map[string]any) map[string]float64 {
@@ -831,13 +860,12 @@ func formatMarkdownReport(intent, investigationID string, confidence float64, su
 	var b strings.Builder
 
 	b.WriteString("# Investigation Report\n\n")
-	b.WriteString(fmt.Sprintf("**Intent:** %s\n", intent))
-	b.WriteString(fmt.Sprintf("**ID:** `%s`\n", investigationID))
+	b.WriteString(fmt.Sprintf("**Intent:** %s\n", sanitizeReportField(intent)))
+	b.WriteString(fmt.Sprintf("**ID:** `%s`\n", sanitizeReportField(investigationID)))
 	b.WriteString(fmt.Sprintf("**Confidence:** %.0f%%\n\n", confidence*100))
-
 	b.WriteString("## Summary\n")
 	if summary != "" {
-		b.WriteString(summary + "\n")
+		b.WriteString(sanitizeReportField(summary) + "\n")
 	} else {
 		b.WriteString("Investigation completed.\n")
 	}
@@ -846,7 +874,10 @@ func formatMarkdownReport(intent, investigationID string, confidence float64, su
 	b.WriteString("## Findings\n")
 	if len(findings) > 0 {
 		for _, f := range findings {
-			b.WriteString(fmt.Sprintf("- **%s** [%s]: %v\n", f["type"], f["source"], f["detail"]))
+			b.WriteString(fmt.Sprintf("- **%s** [%s]: %s\n",
+				sanitizeReportField(fmt.Sprintf("%v", f["type"])),
+				sanitizeReportField(fmt.Sprintf("%v", f["source"])),
+				sanitizeReportField(fmt.Sprintf("%v", f["detail"]))))
 		}
 	} else {
 		b.WriteString("No significant findings.\n")
@@ -856,7 +887,7 @@ func formatMarkdownReport(intent, investigationID string, confidence float64, su
 	b.WriteString("## Indicators\n")
 	if len(indicators) > 0 {
 		for _, i := range indicators {
-			b.WriteString(fmt.Sprintf("- `%s`\n", i))
+			b.WriteString(fmt.Sprintf("- `%s`\n", sanitizeReportField(i)))
 		}
 	} else {
 		b.WriteString("No indicators extracted.\n")
@@ -865,20 +896,19 @@ func formatMarkdownReport(intent, investigationID string, confidence float64, su
 
 	b.WriteString("## Agent Results\n")
 	for key, val := range results {
-		b.WriteString(fmt.Sprintf("### %s\n", key))
+		b.WriteString(fmt.Sprintf("### %s\n", sanitizeReportField(key)))
 		resultMap, ok := val.(map[string]any)
 		if !ok {
-			b.WriteString(fmt.Sprintf("  %v\n", val))
+			b.WriteString(fmt.Sprintf("  %s\n", sanitizeReportField(fmt.Sprintf("%v", val))))
 			continue
 		}
-
 		reputation, _ := resultMap["reputation"].(string)
 		if reputation != "" {
-			b.WriteString(fmt.Sprintf("- **Reputation:** %s\n", reputation))
+			b.WriteString(fmt.Sprintf("- **Reputation:** %s\n", sanitizeReportField(reputation)))
 		}
 
 		if desc, ok := resultMap["description"].(string); ok && desc != "" {
-			b.WriteString(fmt.Sprintf("- **Description:** %s\n", desc))
+			b.WriteString(fmt.Sprintf("- **Description:** %s\n", sanitizeReportField(desc)))
 		}
 
 		if cv := getFloat(resultMap["count"]); cv > 0 {
@@ -892,20 +922,20 @@ func formatMarkdownReport(intent, investigationID string, confidence float64, su
 		if mitigations, ok := resultMap["mitigations"].([]any); ok && len(mitigations) > 0 {
 			b.WriteString("- **Mitigations:**\n")
 			for _, m := range mitigations {
-				b.WriteString(fmt.Sprintf("  - %s\n", m))
+				b.WriteString(fmt.Sprintf("  - %s\n", sanitizeReportField(fmt.Sprintf("%v", m))))
 			}
 		}
 
 		if detection, ok := resultMap["detection"].([]any); ok && len(detection) > 0 {
 			b.WriteString("- **Detection guidance:**\n")
 			for _, d := range detection {
-				b.WriteString(fmt.Sprintf("  - %s\n", d))
+				b.WriteString(fmt.Sprintf("  - %s\n", sanitizeReportField(fmt.Sprintf("%v", d))))
 			}
 		}
 
 		errorStr, _ := resultMap["error"].(string)
 		if errorStr != "" {
-			b.WriteString(fmt.Sprintf("- **Error:** %s\n", errorStr))
+			b.WriteString(fmt.Sprintf("- **Error:** %s\n", sanitizeReportField(errorStr)))
 		}
 	}
 	b.WriteString("\n")

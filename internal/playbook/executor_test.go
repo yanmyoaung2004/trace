@@ -106,7 +106,7 @@ func TestExecutorConditional(t *testing.T) {
 			{
 				Agent:  "second-agent",
 				Action: "test_action",
-				If:     `${result.unknown_field} != ""`,
+				If:     `${input.skip} == "yes"`,
 				Params: map[string]any{"value": "second"},
 			},
 		},

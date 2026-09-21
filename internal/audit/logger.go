@@ -35,15 +35,18 @@ type Logger struct {
 	signingKey []byte
 }
 
-// New creates an audit logger. If signingKey is nil, a random key is generated.
+// New creates an audit logger. If signingKey is nil/empty, LoadOrCreateKey
+// is used: the key persists at 0600 so restart preserves Verify. Ephemeral
+// per-process keys (old behavior) made the chain unverifiable after restart.
+// Prefer passing an explicit key from LoadOrCreateKey in callers.
 func New(db *sql.DB, signingKey []byte) (*Logger, error) {
-	if signingKey == nil {
-		signingKey = make([]byte, signingKeySize)
-		if _, err := rand.Read(signingKey); err != nil {
-			return nil, fmt.Errorf("generate signing key: %w", err)
+	if len(signingKey) == 0 {
+		var err error
+		signingKey, err = LoadOrCreateKey("")
+		if err != nil {
+			return nil, err
 		}
 	}
-
 	l := &Logger{db: db, signingKey: signingKey}
 
 	// Create table if not exists
@@ -68,7 +71,10 @@ func New(db *sql.DB, signingKey []byte) (*Logger, error) {
 	return l, nil
 }
 
-// Write records an audit entry with HMAC-SHA256 over (previous_hash + timestamp + actor + action + resource + details).
+// Write records an audit entry with HMAC-SHA256 over
+// (previous_hash + timestamp + actor + action + resource + details).
+// Details IS included in the HMAC input (both Write and Verify) so
+// tampering with details breaks verification.
 func (l *Logger) Write(ctx context.Context, entry Entry) error {
 	entry.Timestamp = time.Now().UTC().Format(time.RFC3339)
 
@@ -80,9 +86,10 @@ func (l *Logger) Write(ctx context.Context, entry Entry) error {
 	entry.PreviousHash = prevHash
 
 	// Compute signature
-	sigInput := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s",
+	sigInput := strings.Join([]string{
 		prevHash, entry.Timestamp, entry.ActorID, entry.ActorEmail,
-		entry.Action, entry.ResourceType, entry.ResourceID)
+		entry.Action, entry.ResourceType, entry.ResourceID, entry.Details,
+	}, "|")
 	mac := hmac.New(sha256.New, l.signingKey)
 	mac.Write([]byte(sigInput))
 	entry.Signature = hex.EncodeToString(mac.Sum(nil))
@@ -130,6 +137,10 @@ func (l *Logger) Query(ctx context.Context, filter QueryFilter) ([]Entry, error)
 	if filter.Limit > 0 && filter.Limit <= 1000 {
 		limit = filter.Limit
 	}
+	if filter.Cursor > 0 {
+		where = append(where, "id < ?")
+		args = append(args, filter.Cursor)
+	}
 
 	query := fmt.Sprintf(
 		`SELECT id, timestamp, actor_id, actor_email, action, resource_type, resource_id, details, previous_hash, signature
@@ -154,50 +165,61 @@ func (l *Logger) Query(ctx context.Context, filter QueryFilter) ([]Entry, error)
 	return entries, nil
 }
 
-// Verify checks the integrity of the entire audit log.
-// Returns (valid bool, errors []string).
+// Verify checks the integrity of the audit log, paged (not full scan into
+// RAM: pages of 1000 rows by id). Returns (valid bool, errors []string).
 func (l *Logger) Verify(ctx context.Context) (bool, []string) {
-	rows, err := l.db.QueryContext(ctx,
-		`SELECT id, timestamp, actor_id, actor_email, action, resource_type, resource_id, details, previous_hash, signature
-		 FROM audit_log ORDER BY id ASC`)
-	if err != nil {
-		return false, []string{fmt.Sprintf("query: %v", err)}
-	}
-	defer rows.Close()
+	return l.VerifyPaged(ctx, 1000)
+}
 
+// VerifyPaged verifies in pages of pageSize rows.
+func (l *Logger) VerifyPaged(ctx context.Context, pageSize int) (bool, []string) {
+	if pageSize <= 0 || pageSize > 10000 {
+		pageSize = 1000
+	}
 	var errors []string
 	var prevHash string
-
-	for rows.Next() {
-		var e Entry
-		if err := rows.Scan(&e.ID, &e.Timestamp, &e.ActorID, &e.ActorEmail,
-			&e.Action, &e.ResourceType, &e.ResourceID, &e.Details, &e.PreviousHash, &e.Signature); err != nil {
-			errors = append(errors, fmt.Sprintf("scan row: %v", err))
-			continue
+	var cursor int64
+	for {
+		rows, err := l.db.QueryContext(ctx,
+			`SELECT id, timestamp, actor_id, actor_email, action, resource_type, resource_id, details, previous_hash, signature
+			 FROM audit_log WHERE id > ? ORDER BY id ASC LIMIT ?`, cursor, pageSize)
+		if err != nil {
+			return false, []string{fmt.Sprintf("query: %v", err)}
 		}
-
-		// Check chain
-		if e.PreviousHash != prevHash {
-			errors = append(errors, fmt.Sprintf("chain broken at entry %d: expected prev_hash=%s, got %s",
-				e.ID, prevHash, e.PreviousHash))
+		count := 0
+		var lastID int64
+		for rows.Next() {
+			count++
+			var e Entry
+			if err := rows.Scan(&e.ID, &e.Timestamp, &e.ActorID, &e.ActorEmail,
+				&e.Action, &e.ResourceType, &e.ResourceID, &e.Details, &e.PreviousHash, &e.Signature); err != nil {
+				errors = append(errors, fmt.Sprintf("scan row: %v", err))
+				continue
+			}
+			lastID = e.ID
+			if e.PreviousHash != prevHash {
+				errors = append(errors, fmt.Sprintf("chain broken at entry %d: expected prev_hash=%s, got %s",
+					e.ID, prevHash, e.PreviousHash))
+			}
+			sigInput := strings.Join([]string{
+				e.PreviousHash, e.Timestamp, e.ActorID, e.ActorEmail,
+				e.Action, e.ResourceType, e.ResourceID, e.Details,
+			}, "|")
+			mac := hmac.New(sha256.New, l.signingKey)
+			mac.Write([]byte(sigInput))
+			expectedSig := hex.EncodeToString(mac.Sum(nil))
+			if e.Signature != expectedSig {
+				errors = append(errors, fmt.Sprintf("signature mismatch at entry %d: expected %s, got %s",
+					e.ID, expectedSig, e.Signature))
+			}
+			prevHash = e.Signature
 		}
-
-		// Verify signature
-		sigInput := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s",
-			e.PreviousHash, e.Timestamp, e.ActorID, e.ActorEmail,
-			e.Action, e.ResourceType, e.ResourceID)
-		mac := hmac.New(sha256.New, l.signingKey)
-		mac.Write([]byte(sigInput))
-		expectedSig := hex.EncodeToString(mac.Sum(nil))
-
-		if e.Signature != expectedSig {
-			errors = append(errors, fmt.Sprintf("signature mismatch at entry %d: expected %s, got %s",
-				e.ID, expectedSig, e.Signature))
+		rows.Close()
+		if count < pageSize {
+			break
 		}
-
-		prevHash = e.Signature
+		cursor = lastID
 	}
-
 	return len(errors) == 0, errors
 }
 
@@ -223,6 +245,7 @@ type QueryFilter struct {
 	Since        string `json:"since"` // RFC3339
 	Until        string `json:"until"` // RFC3339
 	Limit        int    `json:"limit"`
+	Cursor       int64  `json:"cursor"` // paginate: only rows with id < cursor
 }
 
 // MarshalJSON serializes details as JSON.

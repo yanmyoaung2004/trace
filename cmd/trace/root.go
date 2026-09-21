@@ -336,7 +336,7 @@ func (a *App) ConfigValue(key string) string {
 	case "siem_enabled":
 		return fmt.Sprintf("%v", a.cfg.SIEM.Enabled)
 	case "server_addr":
-		return a.cfg.Server.HTTPAddr
+		return a.cfg.Server.EffectiveAddr()
 	default:
 		return ""
 	}
@@ -404,10 +404,16 @@ func (a *App) initRegistry() error {
 	a.registry.Register(elastic.New())
 
 	a.dispatchAgent = dispatch.New(a.playbooks)
+	if w, err := dispatch.LoadScoringWeights(""); err == nil {
+		_ = w
+	}
 	if a.cfg.LLMURL != "" {
 		planner := a.dispatchAgent.WithPlanner(a.cfg.LLMProvider, a.cfg.LLMURL, a.cfg.LLMAPIKey)
 		if a.cfg.LLMModel != "" {
 			planner.WithModel(a.cfg.LLMModel)
+		}
+		if a.sqlDB != nil {
+			planner.WithCacheDB(a.sqlDB)
 		}
 	}
 	a.registry.Register(a.dispatchAgent)
@@ -461,10 +467,12 @@ func (a *App) initServices() error {
 		},
 	)
 
-	// Audit trail logger
+	// Audit trail logger (persisted 0600 key: restart-stable verify).
 	if a.sqlDB != nil {
-		logger, err := audit.New(a.sqlDB, nil)
-		if err != nil {
+		key, keyErr := audit.LoadOrCreateKey("")
+		if keyErr != nil {
+			log.Printf("[audit] key: %v (disabled)", keyErr)
+		} else if logger, err := audit.New(a.sqlDB, key); err != nil {
 			log.Printf("[audit] init: %v (disabled)", err)
 		} else {
 			a.auditLogger = logger
@@ -533,6 +541,7 @@ func newRootCmd() *cobra.Command {
 
 	cmd.AddCommand(newServeCmd())
 	cmd.AddCommand(newApprovalCmd())
+	cmd.AddCommand(newConfigCmd())
 	cmd.AddCommand(newReportCmd())
 	cmd.AddCommand(newGenKeyCmd())
 	cmd.AddCommand(newInitCmd())
@@ -549,6 +558,5 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newAgentCmd())
 	cmd.AddCommand(newBuildCmd())
 	cmd.AddCommand(newDemoCmd())
-
 	return cmd
 }
