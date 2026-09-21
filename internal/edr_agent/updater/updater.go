@@ -270,6 +270,11 @@ func (u *Updater) Apply(ctx context.Context, info *UpdateInfo) error {
 	if _, err := hex.DecodeString(strings.TrimSpace(info.SHA256)); err != nil {
 		return fmt.Errorf("refusing update %q: malformed SHA256: %w", info.Version, err)
 	}
+	// Verify-before-download: the Check-response signature is the trust
+	// root. Refuse here so no-key/unsigned updates never touch the network.
+	if err := verifySignatureHex(info.SHA256, info.Signature); err != nil {
+		return fmt.Errorf("signature: %w", err)
+	}
 	dlURL, err := u.confinedDownloadURL(info.DownloadURL)
 	if err != nil {
 		return err
