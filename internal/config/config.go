@@ -445,20 +445,8 @@ func (c *Config) ApplyFlags(flags map[string]string) {
 	}
 }
 
-func applyEnvToValue(v reflect.Value) {
-	t := v.Type()
-	for i := range v.NumField() {
-		f := v.Field(i)
-		sf := t.Field(i)
-		if f.Kind() == reflect.Struct {
-			applyEnvToValue(f)
-			continue
-		}
-	}
-}
-
-// MergeRemote merges DB(remote) values under file: only keys that are still
-// at their default are overwritten. get returns (value, ok).
+// MergeRemote merges DB(remote) values under file: only keys that are still at their default are overwritten.
+// get returns (value, ok).
 func (c *Config) MergeRemote(get func(key string) (string, bool)) {
 	d := Default()
 	setIfDefault := func(cur *string, def string, key string) {

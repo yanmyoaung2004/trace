@@ -159,6 +159,9 @@ func (d *Deduplicator) openDB(dataDir string) error {
 func (d *Deduplicator) loadMem() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.db == nil {
+		return
+	}
 	rows, err := d.db.Query("SELECT key_hash FROM dedup_keys WHERE seen_at > datetime('now', '-30 seconds')")
 	if err != nil {
 		return

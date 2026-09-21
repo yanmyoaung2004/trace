@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/yanmyoaung2004/trace/internal/storage"
+	"github.com/yanmyoaung2004/trace/internal/storage/cold"
 	"github.com/yanmyoaung2004/trace/internal/storage/manifest"
 	"github.com/yanmyoaung2004/trace/internal/storage/metrics"
 	"github.com/yanmyoaung2004/trace/internal/storage/sqlite"

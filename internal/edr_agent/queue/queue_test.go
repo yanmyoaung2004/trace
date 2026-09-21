@@ -49,15 +49,25 @@ func TestPopBatch(t *testing.T) {
 	q.Push(testEvent(2))
 	q.Push(testEvent(3))
 
-	events, err := q.PopBatch()
+	events, ids, err := q.PopBatch()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(events) != 3 {
 		t.Errorf("got %d events, want 3", len(events))
 	}
+	if len(ids) != 3 {
+		t.Errorf("got %d ids, want 3", len(ids))
+	}
+	// Pop is non-destructive until Ack: length unchanged before Ack.
+	if q.Len() != 3 {
+		t.Errorf("len = %d, want 3 before Ack", q.Len())
+	}
+	if err := q.Ack(ids); err != nil {
+		t.Fatal(err)
+	}
 	if q.Len() != 0 {
-		t.Errorf("len = %d, want 0 after pop", q.Len())
+		t.Errorf("len = %d, want 0 after Ack", q.Len())
 	}
 }
 
@@ -65,7 +75,7 @@ func TestPushEviction(t *testing.T) {
 	q, _ := New(t.TempDir(), 10)
 	defer q.Close()
 
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		q.Push(testEvent(i))
 	}
 
@@ -78,12 +88,12 @@ func TestPopEmpty(t *testing.T) {
 	q, _ := New(t.TempDir(), 100)
 	defer q.Close()
 
-	events, err := q.PopBatch()
+	events, ids, err := q.PopBatch()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if events != nil {
-		t.Errorf("expected nil for empty queue, got %d events", len(events))
+	if events != nil || ids != nil {
+		t.Errorf("expected nil for empty queue, got %d events %d ids", len(events), len(ids))
 	}
 }
 
@@ -91,11 +101,14 @@ func TestPushPopMultiple(t *testing.T) {
 	q, _ := New(t.TempDir(), 1000)
 	defer q.Close()
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		q.Push(testEvent(i))
 	}
 
-	events, _ := q.PopBatch()
+	events, ids, err := q.PopBatch()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(events) != 5 {
 		t.Fatalf("got %d events, want 5", len(events))
 	}
@@ -104,6 +117,12 @@ func TestPushPopMultiple(t *testing.T) {
 		if e.ID == "" {
 			t.Error("expected non-empty ID after pop")
 		}
+	}
+	if err := q.Ack(ids); err != nil {
+		t.Fatal(err)
+	}
+	if q.Len() != 0 {
+		t.Errorf("len = %d, want 0 after Ack", q.Len())
 	}
 }
 

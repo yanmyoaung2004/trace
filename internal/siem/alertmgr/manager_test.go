@@ -33,7 +33,12 @@ func TestShouldSuppress_Decay(t *testing.T) {
 	}
 	_ = reason
 
+	// Hit 2 establishes the decay window and passes through; hit 3
+	// inside the window suppresses.
 	suppress, _ = m.ShouldSuppress(AlertEvent{RuleID: "decay-test", Source: "10.0.0.1"})
+	if suppress {
+		t.Fatal("second hit establishes the window and should pass through")
+	}
 
 	// Hit 3 should be suppressed
 	suppress, reason = m.ShouldSuppress(AlertEvent{RuleID: "decay-test", Source: "10.0.0.1"})
@@ -124,11 +129,14 @@ func TestStats(t *testing.T) {
 		t.Error("expected stats-test in stats")
 	}
 }
-
 func TestMultipleSources(t *testing.T) {
 	m := New()
-	// Different sources should be tracked independently (by rule ID)
+	// Different sources are tracked independently per (rule, entity):
+	// each source's second hit establishes its own window and passes
+	// through; the third hit per source suppresses.
 	m.ShouldSuppress(AlertEvent{RuleID: "shared-rule", Source: "10.0.0.1"})
+	m.ShouldSuppress(AlertEvent{RuleID: "shared-rule", Source: "10.0.0.1"})
+	m.ShouldSuppress(AlertEvent{RuleID: "shared-rule", Source: "10.0.0.2"})
 	m.ShouldSuppress(AlertEvent{RuleID: "shared-rule", Source: "10.0.0.2"})
 
 	suppress1, _ := m.ShouldSuppress(AlertEvent{RuleID: "shared-rule", Source: "10.0.0.1"})
@@ -136,8 +144,10 @@ func TestMultipleSources(t *testing.T) {
 		t.Error("third hit from source-1 should be suppressed")
 	}
 
-	// Source 2 is tracked separately (same rule counter applies to all sources for this rule)
-	// Actually the counter is per-ruleID, not per-source. So source-2 also gets suppressed.
+	suppress2, _ := m.ShouldSuppress(AlertEvent{RuleID: "shared-rule", Source: "10.0.0.2"})
+	if !suppress2 {
+		t.Error("third hit from source-2 should be suppressed by its own decay window")
+	}
 }
 
 func contains(s, substr string) bool {

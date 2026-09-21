@@ -265,6 +265,12 @@ func (s *SQLiteHotStore) Close() error {
 	return nil
 }
 
+// hourlyTableName returns the hourly table name for a given timestamp.
+func hourlyTableName(tsUs int64, format string) string {
+	t := time.UnixMicro(tsUs)
+	return fmt.Sprintf(format, t.Format("2006010215"))
+}
+
 // ensureTable creates the hourly table if it doesn't exist.
 func (s *SQLiteHotStore) ensureTable(ctx context.Context, tableName string) error {
 	s.mu.Lock()
@@ -494,9 +500,6 @@ func buildHotQuery(tables []string, q storage.Query) (string, []any) {
 		if q.Cursor != "" {
 			query += " AND id > ?"
 			args = append(args, q.Cursor)
-		}
-		if q.Limit > 0 {
-			query += fmt.Sprintf(" LIMIT %d", q.Limit)
 		}
 	}
 

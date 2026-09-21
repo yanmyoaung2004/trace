@@ -23,6 +23,11 @@ type DashboardDataProvider interface {
 	GetCorrelations(ctx context.Context, minCount int, limit, offset int) ([]map[string]any, int, error)
 }
 
+type DashboardHandler struct {
+	data DashboardDataProvider
+	db   *sql.DB
+}
+
 func NewDashboardHandler(dp DashboardDataProvider) *DashboardHandler {
 	return &DashboardHandler{data: dp}
 }

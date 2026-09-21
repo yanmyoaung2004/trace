@@ -112,7 +112,7 @@ func TestExecutorConditional(t *testing.T) {
 		},
 	}
 
-	_, err := exec.Execute(ctx, inv, pb, map[string]any{"query": "x"})
+	_, err := exec.Execute(ctx, inv, pb, map[string]any{"query": "x", "skip": "no"})
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
 	}

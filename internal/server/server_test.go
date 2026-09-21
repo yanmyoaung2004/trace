@@ -24,6 +24,28 @@ func newTestManager(t *testing.T) *ServerManager {
 	return NewServerManager(database)
 }
 
+
+var testUserKeys = map[*ServerManager]string{}
+
+func mustTestUserKey(t *testing.T, mgr *ServerManager) string {
+	t.Helper()
+	if k, ok := testUserKeys[mgr]; ok {
+		return k
+	}
+	if err := mgr.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	key, err := mgr.SeedDefaultUser(context.Background())
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if key == "" {
+		t.Fatal("seed returned empty key (user already seeded without cache)")
+	}
+	testUserKeys[mgr] = key
+	return key
+}
+
 func TestHealthzEndpoint(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -149,12 +171,12 @@ func TestSyncHandler_Auth(t *testing.T) {
 		}
 	})
 
-	t.Run("valid api_key query param returns 200", func(t *testing.T) {
+	t.Run("api_key query param is rejected (header-only)", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/api/v1/nodes?api_key="+apiKey, nil)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
-		if rec.Code != 200 {
-			t.Errorf("status = %d, want 200", rec.Code)
+		if rec.Code != 401 {
+			t.Errorf("status = %d, want 401 (query-param keys rejected)", rec.Code)
 		}
 	})
 }
@@ -173,12 +195,14 @@ func TestSyncHandler_Health(t *testing.T) {
 		t.Errorf("status = %d, want 200", rec.Code)
 	}
 
-	var body map[string]string
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+	var env struct {
+		Data map[string]string `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
 		t.Fatalf("json unmarshal: %v", err)
 	}
-	if body["status"] != "ok" {
-		t.Errorf(`status = %q, want "ok"`, body["status"])
+	if env.Data["status"] != "ok" {
+		t.Errorf(`status = %q, want "ok"`, env.Data["status"])
 	}
 }
 
@@ -193,38 +217,47 @@ func TestSyncHandler_NodesEndpoint(t *testing.T) {
 	mux := http.NewServeMux()
 	sync := NewSyncHandler(mgr)
 	sync.RegisterRoutes(mux)
-
 	t.Run("returns empty node list", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/v1/nodes?api_key="+apiKey, nil)
+		req := httptest.NewRequest("GET", "/api/v1/nodes", nil)
+		req.Header.Set("Authorization", "Bearer "+apiKey)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 		if rec.Code != 200 {
 			t.Errorf("status = %d, want 200", rec.Code)
 		}
-		var nodes []NodeInfo
-		if err := json.Unmarshal(rec.Body.Bytes(), &nodes); err != nil {
+		var env struct {
+			Data struct {
+				Items []NodeInfo `json:"items"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
 			t.Fatalf("json unmarshal: %v", err)
 		}
-		if nodes == nil {
+		if env.Data.Items == nil {
 			t.Error("expected non-nil node list")
 		}
 	})
-
 	t.Run("returns registered node", func(t *testing.T) {
 		node, err := mgr.RegisterNode(context.Background(), "test-node", "1.0.0")
 		if err != nil {
 			t.Fatalf("RegisterNode: %v", err)
 		}
-		req := httptest.NewRequest("GET", "/api/v1/nodes?api_key="+apiKey, nil)
+		req := httptest.NewRequest("GET", "/api/v1/nodes", nil)
+		req.Header.Set("Authorization", "Bearer "+apiKey)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 		if rec.Code != 200 {
 			t.Errorf("status = %d, want 200", rec.Code)
 		}
-		var nodes []NodeInfo
-		if err := json.Unmarshal(rec.Body.Bytes(), &nodes); err != nil {
+		var env struct {
+			Data struct {
+				Items []NodeInfo `json:"items"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
 			t.Fatalf("json unmarshal: %v", err)
 		}
+		nodes := env.Data.Items
 		if len(nodes) != 1 {
 			t.Fatalf("expected 1 node, got %d", len(nodes))
 		}
@@ -242,7 +275,7 @@ func TestDashboardHandler_Routes(t *testing.T) {
 	mgr := newTestManager(t)
 
 	dash := NewDashboardHandler(mgr)
-	dash.RegisterRoutes(mux)
+	dash.RegisterRoutes(mux, newAuth(mgr, nil))
 
 	server := httptest.NewServer(mux)
 	defer server.Close()
@@ -253,25 +286,29 @@ func TestDashboardHandler_Routes(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		t.Errorf("status = %d, want 200", resp.StatusCode)
+	// Dashboard is auth-gated: unauthenticated requests must not get 200.
+	if resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 401/503 (auth gate)", resp.StatusCode)
 	}
 }
-
 func TestDashboardHandler_WithData(t *testing.T) {
 	mgr := newTestManager(t)
 	mgr.db.Exec(`CREATE TABLE IF NOT EXISTS investigations (id TEXT PRIMARY KEY, status TEXT, intent TEXT, created_at TEXT)`)
 	mgr.db.Exec(`INSERT INTO investigations VALUES ('inv-1', 'open', 'test inv', '2026-01-01')`)
 	mux := http.NewServeMux()
 	dash := NewDashboardHandler(mgr)
-	dash.RegisterRoutes(mux)
+	dash.RegisterRoutes(mux, newAuth(mgr, nil))
 
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
-	resp, _ := server.Client().Get(server.URL + "/")
-	if resp.StatusCode != 200 {
-		t.Errorf("status = %d, want 200", resp.StatusCode)
+	resp, err := server.Client().Get(server.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 401/503 (auth gate)", resp.StatusCode)
 	}
 }
 
@@ -288,10 +325,11 @@ func TestDashboardHandler_Detail(t *testing.T) {
 
 	mux := http.NewServeMux()
 	dash := NewDashboardHandler(mgr)
-	dash.RegisterRoutes(mux)
+	dash.RegisterRoutes(mux, newAuth(mgr, nil))
 
 	t.Run("valid id returns 200", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/investigations/"+longID, nil)
+		req.Header.Set("Authorization", "Bearer "+mustTestUserKey(t, mgr))
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 		if rec.Code != 200 {
@@ -305,6 +343,7 @@ func TestDashboardHandler_Detail(t *testing.T) {
 
 	t.Run("invalid id returns 404", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/investigations/nonexistent", nil)
+		req.Header.Set("Authorization", "Bearer "+mustTestUserKey(t, mgr))
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 		if rec.Code != 404 {
@@ -314,6 +353,7 @@ func TestDashboardHandler_Detail(t *testing.T) {
 
 	t.Run("empty id returns 404", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/investigations/", nil)
+		req.Header.Set("Authorization", "Bearer "+mustTestUserKey(t, mgr))
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 		if rec.Code != 404 {
@@ -328,10 +368,11 @@ func TestDashboardHandler_Cases(t *testing.T) {
 	mux := http.NewServeMux()
 	dash := NewDashboardHandler(mgr)
 	dash.WithDB(dbSQL)
-	dash.RegisterRoutes(mux)
+	dash.RegisterRoutes(mux, newAuth(mgr, nil))
 
 	t.Run("GET returns 200", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/cases", nil)
+		req.Header.Set("Authorization", "Bearer "+mustTestUserKey(t, mgr))
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 		if rec.Code != 200 {
@@ -342,6 +383,7 @@ func TestDashboardHandler_Cases(t *testing.T) {
 	t.Run("POST creates case and redirects", func(t *testing.T) {
 		body := strings.NewReader("title=Test+Case&severity=high&description=Created+during+test")
 		req := httptest.NewRequest("POST", "/cases", body)
+		req.Header.Set("Authorization", "Bearer "+mustTestUserKey(t, mgr))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
@@ -356,6 +398,7 @@ func TestDashboardHandler_Cases(t *testing.T) {
 	t.Run("POST with empty title defaults to Untitled Case", func(t *testing.T) {
 		body := strings.NewReader("severity=low")
 		req := httptest.NewRequest("POST", "/cases", body)
+		req.Header.Set("Authorization", "Bearer "+mustTestUserKey(t, mgr))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
@@ -367,10 +410,11 @@ func TestDashboardHandler_Cases(t *testing.T) {
 	t.Run("POST without DB returns 404", func(t *testing.T) {
 		muxNoDB := http.NewServeMux()
 		dashNoDB := NewDashboardHandler(mgr)
-		dashNoDB.RegisterRoutes(muxNoDB)
+		dashNoDB.RegisterRoutes(muxNoDB, newAuth(mgr, nil))
 
 		body := strings.NewReader("title=No+DB+Case")
 		req := httptest.NewRequest("POST", "/cases", body)
+		req.Header.Set("Authorization", "Bearer "+mustTestUserKey(t, mgr))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()
 		muxNoDB.ServeHTTP(rec, req)
@@ -386,7 +430,7 @@ func TestDashboardHandler_Alerts(t *testing.T) {
 	mux := http.NewServeMux()
 	dash := NewDashboardHandler(mgr)
 	dash.WithDB(dbSQL)
-	dash.RegisterRoutes(mux)
+	dash.RegisterRoutes(mux, newAuth(mgr, nil))
 
 	_, err := mgr.db.Exec(`INSERT INTO alerts (id, title, severity, source, created_at) VALUES (?, ?, ?, ?, datetime('now'))`,
 		"alert-test-1", "Test Critical Alert", 8, "wazuh")
@@ -401,6 +445,7 @@ func TestDashboardHandler_Alerts(t *testing.T) {
 
 	t.Run("no filter returns 200", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/alerts", nil)
+		req.Header.Set("Authorization", "Bearer "+mustTestUserKey(t, mgr))
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 		if rec.Code != 200 {
@@ -417,6 +462,7 @@ func TestDashboardHandler_Alerts(t *testing.T) {
 
 	t.Run("severity filter returns filtered results", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/alerts?severity=7", nil)
+		req.Header.Set("Authorization", "Bearer "+mustTestUserKey(t, mgr))
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 		if rec.Code != 200 {
@@ -433,9 +479,10 @@ func TestDashboardHandler_Alerts(t *testing.T) {
 		mgrEmpty := newTestManager(t)
 		dashEmpty := NewDashboardHandler(mgrEmpty)
 		dashEmpty.WithDB(mgrEmpty.db.DB)
-		dashEmpty.RegisterRoutes(muxEmpty)
+		dashEmpty.RegisterRoutes(muxEmpty, newAuth(mgrEmpty, nil))
 
 		req := httptest.NewRequest("GET", "/alerts", nil)
+		req.Header.Set("Authorization", "Bearer "+mustTestUserKey(t, mgrEmpty))
 		rec := httptest.NewRecorder()
 		muxEmpty.ServeHTTP(rec, req)
 		if rec.Code != 200 {
@@ -448,11 +495,12 @@ func TestDashboardHandler_Alerts(t *testing.T) {
 
 	t.Run("without DB returns 404", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/alerts", nil)
+		req.Header.Set("Authorization", "Bearer "+mustTestUserKey(t, mgr))
 		rec := httptest.NewRecorder()
 
 		muxNoDB := http.NewServeMux()
 		dashNoDB := NewDashboardHandler(mgr)
-		dashNoDB.RegisterRoutes(muxNoDB)
+		dashNoDB.RegisterRoutes(muxNoDB, newAuth(mgr, nil))
 		muxNoDB.ServeHTTP(rec, req)
 
 		if rec.Code != 404 {
@@ -473,10 +521,11 @@ func TestDashboardHandler_LiveData(t *testing.T) {
 
 	mux := http.NewServeMux()
 	dash := NewDashboardHandler(mgr)
-	dash.RegisterRoutes(mux)
+	dash.RegisterRoutes(mux, newAuth(mgr, nil))
 
 	t.Run("returns 200 with valid JSON", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/api/live", nil)
+		req.Header.Set("Authorization", "Bearer "+mustTestUserKey(t, mgr))
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 		if rec.Code != 200 {
@@ -509,9 +558,10 @@ func TestDashboardHandler_LiveData(t *testing.T) {
 
 		muxEmpty := http.NewServeMux()
 		dashEmpty := NewDashboardHandler(mgrEmpty)
-		dashEmpty.RegisterRoutes(muxEmpty)
+		dashEmpty.RegisterRoutes(muxEmpty, newAuth(mgrEmpty, nil))
 
 		req := httptest.NewRequest("GET", "/api/live", nil)
+		req.Header.Set("Authorization", "Bearer "+mustTestUserKey(t, mgrEmpty))
 		rec := httptest.NewRecorder()
 		muxEmpty.ServeHTTP(rec, req)
 		if rec.Code != 200 {
@@ -532,9 +582,10 @@ func TestDashboardHandler_TSEStatus(t *testing.T) {
 	mux := http.NewServeMux()
 	mgr := newTestManager(t)
 	dash := NewDashboardHandler(mgr)
-	dash.RegisterRoutes(mux)
+	dash.RegisterRoutes(mux, newAuth(mgr, nil))
 
 	req := httptest.NewRequest("GET", "/api/tse", nil)
+	req.Header.Set("Authorization", "Bearer "+mustTestUserKey(t, mgr))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -564,10 +615,11 @@ func TestDashboardHandler_Correlations(t *testing.T) {
 
 	mux := http.NewServeMux()
 	dash := NewDashboardHandler(mgr)
-	dash.RegisterRoutes(mux)
+	dash.RegisterRoutes(mux, newAuth(mgr, nil))
 
 	t.Run("empty correlations returns 200", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/correlations", nil)
+		req.Header.Set("Authorization", "Bearer "+mustTestUserKey(t, mgr))
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 		if rec.Code != 200 {
@@ -587,6 +639,7 @@ func TestDashboardHandler_Correlations(t *testing.T) {
 		}
 
 		req := httptest.NewRequest("GET", "/correlations", nil)
+		req.Header.Set("Authorization", "Bearer "+mustTestUserKey(t, mgr))
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 		if rec.Code != 200 {

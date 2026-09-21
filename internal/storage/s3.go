@@ -179,6 +179,21 @@ func (s *S3Client) List(prefix string) ([]string, error) {
 	return keys, nil
 }
 
+// IsS3Path returns true if the path starts with "s3://".
+func IsS3Path(path string) bool {
+	return strings.HasPrefix(path, "s3://")
+}
+
+// ParseS3Path splits "s3://bucket/key" into bucket and key.
+func ParseS3Path(path string) (bucket, key string) {
+	p := strings.TrimPrefix(path, "s3://")
+	parts := strings.SplitN(p, "/", 2)
+	if len(parts) == 2 {
+		return parts[0], parts[1]
+	}
+	return parts[0], ""
+}
+
 // signV4 signs a request with AWS Signature Version 4. Without credentials it
 // is a no-op (MinIO anonymous / test servers keep working); with credentials
 // it emits Authorization + x-amz-date + x-amz-content-sha256. No SDK added:

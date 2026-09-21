@@ -3,7 +3,6 @@ package gc
 import (
 	"context"
 	"log"
-	"strconv"
 	"strings"
 	"time"
 
@@ -99,7 +98,6 @@ func parseHourSuffix(table string) (int64, bool) {
 	}
 	for _, c := range suffix {
 		if c < '0' || c > '9' {
-			_, _ = strconv.Itoa(0)
 			return 0, false
 		}
 	}

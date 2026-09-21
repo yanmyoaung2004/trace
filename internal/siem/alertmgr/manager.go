@@ -3,6 +3,7 @@ package alertmgr
 import (
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 )
@@ -129,8 +130,10 @@ func (m *Manager) ShouldSuppress(alert AlertEvent) (bool, string) {
 			}
 		}
 	}
-
-	// Time-based decay: repeated alerts get increasing suppression
+	// Time-based decay: the hit that ESTABLISHES the window passes through
+	// (returns false) and sets the suppression for subsequent hits. The
+	// next call inside the window suppresses via the active-suppression
+	// check above. This keeps first-seen visibility while damping repeats.
 	if rc.hitCount > 1 && rc.hitCount <= 10 {
 		decayDelay := time.Duration(rc.hitCount) * time.Minute
 		rc.suppressUntil = now.Add(decayDelay)
@@ -160,20 +163,32 @@ func alertEntity(alert AlertEvent) string {
 }
 
 // Reset clears counters for a given rule (e.g., after manual review).
+// Counters are keyed per (rule, entity), so reset drops every key with
+// the ruleID prefix.
 func (m *Manager) Reset(ruleID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	delete(m.counters, ruleID)
+	prefix := ruleID + "|"
+	for k := range m.counters {
+		if k == ruleID || strings.HasPrefix(k, prefix) {
+			delete(m.counters, k)
+		}
+	}
 	log.Printf("[alertmgr] reset counters for rule=%s", ruleID)
 }
 
-// Stats returns current counter state for inspection.
+// Stats returns current counter state for inspection, keyed by rule ID
+// (per-entity keys are folded so callers see rule-level presence).
 func (m *Manager) Stats() map[string]any {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	stats := make(map[string]any)
-	for ruleID, rc := range m.counters {
+	for key, rc := range m.counters {
+		ruleID := key
+		if i := strings.Index(key, "|"); i >= 0 {
+			ruleID = key[:i]
+		}
 		stats[ruleID] = map[string]any{
 			"hit_count":      rc.hitCount,
 			"last_hit":       rc.lastHit.Format(time.RFC3339),

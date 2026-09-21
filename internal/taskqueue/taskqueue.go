@@ -4,12 +4,21 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/yanmyoaung2004/trace/internal/db"
 )
+
+// Queue is a SQLite-backed task queue with leases and a dead-letter state.
+type Queue struct {
+	db *db.DB
+}
+
+// New creates a Queue over an existing *db.DB connection.
+func New(database *db.DB) *Queue {
+	return &Queue{db: database}
+}
 
 // Task states: pending -> running -> done | failed. Failed tasks with
 // attempts left return to pending with a not-before lease; exhausted tasks
@@ -78,9 +87,14 @@ func (q *Queue) EnqueueWithAttempts(ctx context.Context, investigationID, agent,
 // double-claim the same task.
 func (q *Queue) Claim(ctx context.Context) (*Task, error) {
 	q.ensureTaskCols(ctx)
+	// Atomic single-UPDATE claim: exactly one row flips to running, and we
+	// read back the same row by lease timestamp (no second-writer race can
+	// interleave between the UPDATE and the SELECT on a single node; the
+	// lease value is unique per claim).
+	leaseID := uuid.New().String()
 	res, err := q.db.ExecContext(ctx,
-		`UPDATE tasks SET status = 'running', attempts = COALESCE(attempts,0)+1, lease_expires_at = datetime('now', '+5 minutes'), updated_at = datetime('now')
-		 WHERE id = (SELECT id FROM tasks WHERE status = 'pending' AND (lease_expires_at IS NULL OR lease_expires_at <= datetime('now')) AND COALESCE(attempts,0) < COALESCE(max_attempts,5) ORDER BY created_at LIMIT 1)`)
+		`UPDATE tasks SET status = 'running', attempts = COALESCE(attempts,0)+1, lease_expires_at = ?, updated_at = datetime('now')
+		 WHERE id = (SELECT id FROM tasks WHERE status = 'pending' AND (lease_expires_at IS NULL OR lease_expires_at <= datetime('now')) AND COALESCE(attempts,0) < COALESCE(max_attempts,5) ORDER BY rowid ASC LIMIT 1)`, leaseID)
 	if err != nil {
 		return nil, &ClaimError{Op: "claim task", Err: err}
 	}
@@ -94,11 +108,10 @@ func (q *Queue) Claim(ctx context.Context) (*Task, error) {
 		attempts, maxAttempts                           sql.NullInt64
 		lease                                           sql.NullString
 	)
-	err = q.db.QueryRowContext(ctx,
+	if err := q.db.QueryRowContext(ctx,
 		`SELECT id, investigation_id, agent, action, payload, status, created_at, updated_at, attempts, max_attempts, lease_expires_at
-		 FROM tasks WHERE status = 'running' ORDER BY updated_at DESC LIMIT 1`).
-		Scan(&id, &invID, &agentName, &action, &payloadStr, &status, &createdAt, &updatedAt, &attempts, &maxAttempts, &lease)
-	if err != nil {
+		 FROM tasks WHERE lease_expires_at = ?`, leaseID).Scan(
+		&id, &invID, &agentName, &action, &payloadStr, &status, &createdAt, &updatedAt, &attempts, &maxAttempts, &lease); err != nil {
 		return nil, &ClaimError{Op: "read claimed task", Err: err}
 	}
 

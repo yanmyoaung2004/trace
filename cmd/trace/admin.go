@@ -59,6 +59,11 @@ func newAdminCmd() *cobra.Command {
 		Short: "List organizations",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client := getAdminHTTPClient(cmd)
+			resp, err := client.Get(client.baseURL + "/api/v1/admin/orgs")
+			if err != nil {
+				return fmt.Errorf("request: %w", err)
+			}
+			defer resp.Body.Close()
 			var result struct {
 				Orgs []struct {
 					ID   string `json:"id"`
@@ -149,6 +154,11 @@ func newAdminCmd() *cobra.Command {
 		Short: "List users",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client := getAdminHTTPClient(cmd)
+			resp, err := client.Get(client.baseURL + "/api/v1/admin/users")
+			if err != nil {
+				return fmt.Errorf("request: %w", err)
+			}
+			defer resp.Body.Close()
 			var result struct {
 				Users []struct {
 					ID    string `json:"id"`

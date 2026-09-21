@@ -13,6 +13,7 @@ import (
 )
 
 var rootCmd = newRootCmd()
+var update = os.Getenv("UPDATE_GOLDEN") == "1"
 
 type cmdTestCase struct {
 	name     string

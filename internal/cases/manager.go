@@ -233,6 +233,7 @@ func (m *Manager) GetEvents(ctx context.Context, caseID string) ([]*Event, error
 	}
 	defer rows.Close()
 
+	var events []*Event
 	for rows.Next() {
 		e := &Event{}
 		if err := rows.Scan(&e.ID, &e.CaseID, &e.EventType, &e.Content, &e.Source, &e.CreatedAt); err != nil {

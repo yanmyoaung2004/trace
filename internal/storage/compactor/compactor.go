@@ -2,7 +2,6 @@ package compactor
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log"
 	"os"
@@ -15,6 +14,7 @@ import (
 	manifestpkg "github.com/yanmyoaung2004/trace/internal/storage/manifest"
 	"github.com/yanmyoaung2004/trace/internal/storage/metrics"
 	"github.com/yanmyoaung2004/trace/internal/storage/parquet"
+)
 
 // Compactor merges hourly Parquet files into daily files after 48 hours.
 // It follows the same atomic-manifest-commit discipline as the flusher.
@@ -163,17 +163,14 @@ func (c *Compactor) compactGroup(ctx context.Context, tenantID, date string, fil
 		UpdatedAt:        now,
 	}
 
-	if err := c.manifest.Transaction(ctx, func(tx *sql.Tx) error {
-		if err := c.manifest.AddFileTx(ctx, tx, dailyFile); err != nil {
-			return fmt.Errorf("add daily: %w", err)
+	if err := c.manifest.AddFile(ctx, dailyFile); err != nil {
+		return fmt.Errorf("add daily: %w", err)
+	}
+	for _, f := range files {
+		if err := c.manifest.UpdateFileStatus(ctx, f.FileID, "superseded"); err != nil {
+			return fmt.Errorf("supersede %s: %w", f.FileID, err)
 		}
-		for _, f := range files {
-			if err := c.manifest.UpdateFileStatusTx(ctx, tx, f.FileID, "superseded"); err != nil {
-				return fmt.Errorf("supersede %s: %w", f.FileID, err)
-			}
-		}
-		return nil
-	})
+	}
 	log.Printf("[tse] compacted %s/%s files=%d events=%d size=%s",
 		tenantID, date, len(files), fileResult.RowCount, formatBytes(fileResult.CompressedSize))
 	return nil

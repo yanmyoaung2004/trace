@@ -307,6 +307,29 @@ func columnMinMax(chunk pq.ColumnChunk) (int64, int64) {
 	return min, max
 }
 
+// columnMinMaxStr returns the min and max string values from a column chunk's index.
+func columnMinMaxStr(chunk pq.ColumnChunk) (string, string) {
+	colIdx, err := chunk.ColumnIndex()
+	if err != nil {
+		return "", ""
+	}
+	n := colIdx.NumPages()
+	if n == 0 {
+		return "", ""
+	}
+	min := colIdx.MinValue(0).String()
+	max := colIdx.MaxValue(0).String()
+	for i := 1; i < n; i++ {
+		if v := colIdx.MinValue(i).String(); v < min {
+			min = v
+		}
+		if v := colIdx.MaxValue(i).String(); v > max {
+			max = v
+		}
+	}
+	return min, max
+}
+
 func parquetToEvent(pe parquet.TraceEventParquet) *storage.Event {
 	e := &storage.Event{
 		ID:          pe.ID,
@@ -314,7 +337,6 @@ func parquetToEvent(pe parquet.TraceEventParquet) *storage.Event {
 		Timestamp:   pe.TimestampUs,
 		IngestedAt:  pe.IngestedAt,
 		EventType:   pe.EventType,
-		Severity:    int(pe.Severity),
 		ProcessName: pe.ProcessName,
 		Cmdline:     pe.Cmdline,
 		ParentPID:   int(pe.ParentPID),
@@ -332,16 +354,6 @@ func parquetToEvent(pe parquet.TraceEventParquet) *storage.Event {
 		}
 	}
 	return e
-}
-	for i := 1; i < n; i++ {
-		if v := colIdx.MinValue(i).String(); v < min {
-			min = v
-		}
-		if v := colIdx.MaxValue(i).String(); v > max {
-			max = v
-		}
-	}
-	return min, max
 }
 
 func max(a, b int) int {

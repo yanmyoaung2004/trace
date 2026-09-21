@@ -656,13 +656,10 @@ func ServeHTTP(opts ServeOptions, mgr *ServerManager, dashboard DashboardDataPro
 		// Metrics bind behind auth (or localhost + explicit flag handled by
 		// the caller); same-port open metrics plane is closed.
 		auth := newAuth(mgr, sm)
-		nr, ok := auth.authenticateUser(r)
-		if !ok {
-			if nr2, ok2 := auth.authenticateAgent(r); !ok2 {
+		if _, ok := auth.authenticateUser(r); !ok {
+			if _, ok2 := auth.authenticateAgent(r); !ok2 {
 				writeAPIError(w, r, http.StatusUnauthorized, "unauthorized")
 				return
-			} else {
-				_ = nr2
 			}
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")

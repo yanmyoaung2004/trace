@@ -27,6 +27,10 @@ type SyncHandler struct {
 	auditHTTP   http.HandlerFunc
 	cases       CasesLister
 }
+// EventWriter is implemented by the TSE engine for ingesting agent events.
+type EventWriter interface {
+	WriteEvents(ctx context.Context, events []*storage.Event) error
+}
 
 // CasesLister is the seam for scoped paginated case reads, implemented by
 // DetectReliabilityFixer's cases.Manager.ListPage (cursor=base64 created_at|id).
@@ -35,13 +39,12 @@ type CasesLister interface {
 	ListPage(ctx context.Context, orgID, status, severity string, limit int, cursor string) ([]*cases.Case, string, error)
 }
 
-func (h *SyncHandler) WithLogDir(dir string) *SyncHandler {
-	h.logDir = dir
-	return h
+func NewSyncHandler(mgr *ServerManager) *SyncHandler {
+	return &SyncHandler{manager: mgr}
 }
 
-func (h *SyncHandler) WithUpdateDir(dir string) *SyncHandler {
-	h.updateDir = dir
+func (h *SyncHandler) WithLogDir(dir string) *SyncHandler {
+	h.logDir = dir
 	return h
 }
 

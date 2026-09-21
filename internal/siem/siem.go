@@ -75,6 +75,31 @@ type Engine struct {
 	truncated  int64 // lines dropped by the line cap
 }
 
+// alertDedup prevents firing the same alert within a 5-minute window.
+type alertDedup struct {
+	mu     sync.Mutex
+	recent map[string]time.Time
+}
+
+func newAlertDedup() *alertDedup {
+	return &alertDedup{recent: make(map[string]time.Time)}
+}
+
+func (ad *alertDedup) shouldSend(key string) bool {
+	ad.mu.Lock()
+	defer ad.mu.Unlock()
+	if last, ok := ad.recent[key]; ok && time.Since(last) < 5*time.Minute {
+		return false
+	}
+	ad.recent[key] = time.Now()
+	for k, v := range ad.recent {
+		if time.Since(v) > 5*time.Minute {
+			delete(ad.recent, k)
+		}
+	}
+	return true
+}
+
 // Truncated returns the count of lines dropped by the line cap.
 func (e *Engine) Truncated() int64 { return atomic.LoadInt64(&e.truncated) }
 

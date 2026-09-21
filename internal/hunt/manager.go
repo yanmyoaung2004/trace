@@ -156,6 +156,27 @@ func (m *Manager) Pause(ctx context.Context, id string) error {
 	return err
 }
 
+// Resume re-activates a paused hunt and recomputes its next run.
+func (m *Manager) Resume(ctx context.Context, id string) error {
+	h, err := m.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	nextRun := computeNextRun(h.Schedule)
+	if nextRun == "" {
+		nextRun = time.Now().Add(1 * time.Hour).UTC().Format(time.RFC3339)
+	}
+	_, err = m.db.ExecContext(ctx,
+		`UPDATE hunts SET status = 'active', next_run = ?, updated_at = datetime('now') WHERE id = ?`, nextRun, id)
+	return err
+}
+
+// Delete removes a hunt definition.
+func (m *Manager) Delete(ctx context.Context, id string) error {
+	_, err := m.db.ExecContext(ctx, `DELETE FROM hunts WHERE id = ?`, id)
+	return err
+}
+
 func (m *Manager) DueHunts(ctx context.Context) ([]*Hunt, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	rows, err := m.db.QueryContext(ctx,

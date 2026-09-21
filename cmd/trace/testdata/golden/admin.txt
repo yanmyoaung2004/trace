@@ -6,6 +6,7 @@ Usage:
 Available Commands:
   org         Manage organizations
   rotate-key  Rotate API key for a user
+  token       Manage enrollment provision tokens
   user        Manage users
 
 Flags:

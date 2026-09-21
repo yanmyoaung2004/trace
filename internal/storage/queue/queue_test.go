@@ -112,14 +112,15 @@ func TestIngestQueue_Concurrent(t *testing.T) {
 
 func TestDiskSpill_WriteLimit(t *testing.T) {
 	dir := t.TempDir()
-	s, err := NewDiskSpill(dir, 100)
+	// Full events are ~100+ bytes JSON each; 100 events need ~10KB.
+	s, err := NewDiskSpill(dir, 1<<20)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
 
-	// Write enough to exceed limit
-	for i := 0; i < 100; i++ {
+	// Write enough to exceed the old 100-byte assumption
+	for range 100 {
 		s.Write(&storage.Event{ID: "e"})
 	}
 

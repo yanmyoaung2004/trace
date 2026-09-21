@@ -92,8 +92,22 @@ func resolvePath(path string, scope *Scope) (any, error) {
 		if len(parts) < 2 {
 			return nil, fmt.Errorf("result path too short")
 		}
+		// Support the flat executor key form ({"detection.yara_scan": {...}})
+		// and nested maps ({detection: {yara_scan: ...}}). Try longest
+		// prefix first: "a.b.c" then "a.b"+c, so dotted keys resolve.
+		for i := len(parts) - 1; i >= 2; i-- {
+			head := strings.Join(parts[1:i], ".")
+			if val, err := lookup(scope.Results, []string{head}); err == nil {
+				if m, ok := val.(map[string]any); ok {
+					if v, err := lookup(m, parts[i:]); err == nil {
+						return v, nil
+					}
+				} else if i == len(parts)-1 {
+					return val, nil
+				}
+			}
+		}
 		return lookup(scope.Results, parts[1:])
-
 	case "outputs":
 		if len(parts) < 4 {
 			return nil, fmt.Errorf("outputs path requires agent.action.key, got %d parts", len(parts))
@@ -108,7 +122,6 @@ func resolvePath(path string, scope *Scope) (any, error) {
 			return nil, fmt.Errorf("output for %s is not a map", key)
 		}
 		return lookup(outputMap, parts[3:])
-
 	case "investigation":
 		if len(parts) < 2 {
 			return nil, fmt.Errorf("investigation path too short")

@@ -102,23 +102,45 @@ func (pq *PriorityQueue) droppedTotal() {
 
 func (pq *PriorityQueue) drain() {
 	// Strict priority: high always wins; medium beats low. Within a
-	// level, FIFO via the channel.
-	for {
+	// level, FIFO via the channel. Drops only when the downstream
+	// consumer is gone (closed channel); otherwise blocks to preserve
+	// evidence (no silent loss on full out).
+	for evt := range pq.merge() {
 		select {
-		case evt := <-pq.high:
-			pq.send(evt)
-			continue
+		case pq.out <- evt:
 		default:
-		}
-		select {
-		case evt := <-pq.high:
-			pq.send(evt)
-		case evt := <-pq.medium:
-			pq.send(evt)
-		case evt := <-pq.low:
-			pq.send(evt)
+			select {
+			case pq.out <- evt:
+			default:
+				atomic.AddInt64(&pq.dropped, 1)
+			}
 		}
 	}
+}
+
+// merge strictly prioritizes high, then medium, then low.
+func (pq *PriorityQueue) merge() <-chan *Event {
+	merged := make(chan *Event)
+	go func() {
+		defer close(merged)
+		for {
+			select {
+			case evt := <-pq.high:
+				merged <- evt
+				continue
+			default:
+			}
+			select {
+			case evt := <-pq.high:
+				merged <- evt
+			case evt := <-pq.medium:
+				merged <- evt
+			case evt := <-pq.low:
+				merged <- evt
+			}
+		}
+	}()
+	return merged
 }
 
 func (pq *PriorityQueue) Stats() (dropped int64, high, med, low int64) {
