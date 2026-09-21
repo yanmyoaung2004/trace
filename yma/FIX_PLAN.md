@@ -257,3 +257,53 @@ New tests each workstream must add (examples, not exhaustive): AuthZ 403 matrix;
 ## Mapping to AUDIT TOP 20 (traceability)
 
 0.1→#1, 0.2→#2, 0.3→#3, 0.4→#4, 0.2/1.5→#5, 0.9→#6, 0.3→#7, 0.5→#8, 0.6→#9, 0.7→#10, 0.7→#11, 0.8→#12, Phase 1.3→#13, Phase 2→#14, Phase 2→#15, Phase 2/3→#16, Phase 1.1/1.2→#17, Phase 1.4→#18, Phase 3→#19, Phase 4→#20.
+
+# Completion Log — implemented 2026-09-21
+
+> All Phase 0 + Phase 1 items, plus the Phase 2/3 storage, detection, and supply/deploy items, are implemented and committed. Phase 4 product capabilities are partially implemented (lifecycle + state machines + approvals); asset inventory / risk scoring and scheduled reporting remain open.
+
+## Commits (one per problem area, `git log --oneline`)
+
+| Commit | Area | Closes |
+| ------ | ---- | ------ |
+| `0a92c3b` fix(response) | Argv-only executors, `run_script` deny-by-default, client-side `chain` deleted, structured rollback (`legacy_unexecutable` for old string rows) | 0.1, TOP20 #1 |
+| `9d6b168` fix(supply) | Fail-closed updater (HTTPS-only, mandatory SHA, sig-when-keyed, semver, safe containment, fsync swap), verified plugin/update CLIs, authed installers (0600 keys), pinned images, hardened compose/daemonset, hard-gate CI + provenance, reproducible converter | 0.4, TOP20 #4 |
+| `3baf71a` fix(storage) | `synchronous NORMAL`, hour-split single-txn writes, annotations round-trip, composite indexes, pruned limited queries, checkpointer, manifest migrations + Tx variants, atomic compactor, TTL `MaxTS` gate, retention job, deterministic flusher IDs, segment queue, batch DLQ, SigV4 streaming S3, fenced leader | 0.5, 0.6, TOP20 #8, #9 |
+| `1daa1a6` fix(detect) | Precompiled SIEM regex, worker pool, per-(rule,entity) suppress, task lease/attempts/DLQ, hunt CAS + pool, case lifecycle, dedup/corr fixes, connector + verified TLS, breaker/bulkhead | Phase 2 detect/queue, TOP20 #14, #15 |
+| `8377014` fix(config-audit) | Single config loader (`TRACE_* > flag > file > DB > default` + `Validate` + `check/dump/migrate`), persisted 0600 audit key with Details in HMAC + paged Verify + `/api/v1/audit` handler, per-step approval tokens + `wait:` on destructive playbooks, schema-validated LLM JSON + taint isolation + redacted logs, fail-closed interpolation + richer `if` | 0.7, 0.9, Phase 1.1–1.3, TOP20 #6, #10, #11, #13, #17 |
+| `dcd45dc` fix(server) | Auth on enroll/download/feed (provision tokens, server-assigned org), ctx-bound agent IDs + ownership predicates, per-route perms + scope matrix, authed dashboard/metrics + honest `/readyz`, hashed header-only keys + expiry/rotation, tenant predicates + backfill, UUIDv7 ingest validation, pagination + idempotency keys, envelope + request IDs + metrics | 0.2, 0.3, 0.8, TOP20 #2, #3, #5, #7, #12 |
+| `5bc0c81` fix(integration) | Reconciliation: green build/vet/short-suite after parallel landings (import/helper/test contract fixes, golden regenerations, auth-aware server tests) | Verification gate |
+| `3bf130d` docs(yma) | Tracks `yma/AUDIT.md` + `yma/FIX_PLAN.md` in git | Docs |
+
+## Verification (actually run 2026-09-21)
+
+| Gate | Result |
+| ---- | ------ |
+| `CGO_ENABLED=0 go build ./...` | Clean (only pre-existing Windows cgo toolchain note for DuckDB path) |
+| `CGO_ENABLED=0 go vet ./...` | Clean except pre-existing `etw_windows.go:250 unsafe.Pointer` (Windows API, unavoidable) |
+| `CGO_ENABLED=0 go test ./... -short -count=1 -p 2` | Green, zero `FAIL` lines (includes regenerated CLI goldens + auth-aware server tests) |
+| Closure greps | Zero `sh -c` with variable input; zero `OR org_id`; zero `synchronous=OFF`; zero `InsecureSkipVerify` in code |
+| `-race` storage gate | NOT run — Windows MinGW here has no 64-bit cgo (`cc1.exe: sorry, unimplemented`); deferred to CI/Linux |
+| `deploy/{e2e,crash,malware,stress,soak}-test.sh`, kill-9 suite, DuckDB CGO path | NOT run in this pass; remain as post-merge gates |
+
+## Phase status vs plan
+
+| Plan phase | Status |
+| ---------- | ------ |
+| Phase 0 (0.1–0.9) | DONE — all nine items committed |
+| Phase 1 (config, registries, planner containment, observability baseline, API hardening) | DONE |
+| Phase 2 (SIEM workers, leases/DLQ, flush determinism, tenant indexes, fenced leader) | DONE |
+| Phase 3 (bounded queries, segments+drain, SigV4, signed supply, enforced disks, pinned CI) | DONE except disk-full enforce + backup streaming rotation (open, see follow-ups) |
+| Phase 4 (alert/case/correlation/evidence/reporting/asset) | PARTIAL — alert lifecycle (ack/assign/rate-limit), case state machine, bounded approvals shipped; asset inventory + risk join, scheduled/CSV/CEF reporting, entity correlation graph remain open |
+
+## Known follow-ups (intentionally left for post-merge)
+
+| # | Item | Owner on merge |
+| - | ---- | -------------- |
+| F1 | Daemonset image digest is a `0000` placeholder — replace with real ghcr digest after first tagged push | Deploy |
+| F2 | `tools/wazuh-converter/ruleset.lock` is a placeholder — pin reviewed ruleset hashes (`-verify` then enforces) | Supply |
+| F3 | `go mod tidy` to promote `golang.org/x/mod` (updater semver) from indirect to direct | Integration |
+| F4 | Signing-key ceremony (`TRACE_UPDATE_SIGNING_KEY`, `TRACE_UPDATE_VERIFY_KEY_HEX`, `TRACE_PLUGIN_VERIFY_KEY_HEX`), then dual-publish sha+sig one release before enforcing signed fleets | Security |
+| F5 | Compactor group-commit is straight-line `AddFile`/`UpdateFileStatus` calls (parser-safe); restore to single-transaction `AddFileTx`/`UpdateFileStatusTx` form as a follow-up | Storage |
+| F6 | Disk-full enforce (95%) + backup streaming/filtered rotation; `-race`, kill-9/soak/stress/malware/e2e gates on CI/Linux | Verification |
+| F7 | `sift/hash.go` 9-hash dup deletion + `seed-iocs.json` single store; per-call TI creds from config; ReDoS/malformed-YAML fuzz; 429/500/timeout/cache integration tests | Detection |
