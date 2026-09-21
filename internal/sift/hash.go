@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -58,35 +61,101 @@ func (hc *HashCache) Set(ctx context.Context, rep *HashReputation, ttl int) {
 	hc.mu.Unlock()
 }
 
+// WarmBuiltin warms the hash cache from intel/seed-iocs.json, the single
+// store of truth for builtin IOCs. There is intentionally no second builtin
+// hash map here: confidences and reputations come from the JSON file, so a
+// hash can never carry two conflicting verdicts.
+//
+// Exact hash match only: only hex digest entries (md5/sha1/sha256/sha512
+// lengths) are warmed; IP/domain/CVE/MITRE entries in the seed file are
+// skipped. Lookups via Get are exact-keyed ("hash:"+normalized), never
+// substring.
 func (hc *HashCache) WarmBuiltin(ctx context.Context) {
-	builtin := map[string]struct {
-		name       string
-		confidence float64
-	}{
-		"275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f": {"Mimikatz", 0.95},
-		"e99a18c428cb38d5f260853678922e03":                                   {"EICAR test file", 1.0},
-		"f1b1c7c8d9e0f1a2b3c4d5e6f7a8b9c0":                                   {"CobaltStrike beacon", 0.9},
-		"a3b2c1d4e5f6a7b8c9d0e1f2a3b4c5d6":                                   {"Emotet downloader", 0.85},
-		"b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9":                                   {"Ryuk ransomware", 0.9},
-		"d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1":                                   {"PlugX RAT backdoor", 0.85},
-		"f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3":                                   {"AgentTesla infostealer", 0.85},
-		"a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1":    {"CobaltStrike beacon SHA256", 0.9},
-		"b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2":    {"WannaCry ransomware", 0.95},
+	path := seedIOCFile()
+	if path == "" {
+		log.Printf("[sift] seed-iocs.json not found; skipping builtin hash warm")
+		return
 	}
-
-	for hash, info := range builtin {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		log.Printf("[sift] read seed IOCs: %v", err)
+		return
+	}
+	var entries []struct {
+		IOC        string  `json:"ioc"`
+		Type       string  `json:"type"`
+		Reputation string  `json:"reputation"`
+		Confidence float64 `json:"confidence"`
+	}
+	if err := json.Unmarshal(data, &entries); err != nil {
+		log.Printf("[sift] parse seed IOCs: %v", err)
+		return
+	}
+	for _, e := range entries {
+		hash := strings.ToLower(strings.TrimSpace(e.IOC))
+		if !isHexHash(hash) {
+			continue
+		}
+		rep := e.Reputation
+		if rep == "" {
+			rep = "malicious"
+		}
 		exists, _ := hc.Get(ctx, hash)
 		if exists != nil {
 			continue
 		}
 		hc.Set(ctx, &HashReputation{
 			Hash:       hash,
-			Reputation: "malicious",
+			Reputation: rep,
 			Source:     "builtin",
 			Malicious:  1,
 			Total:      1,
-			Confidence: info.confidence,
+			Confidence: e.Confidence,
 		}, 86400*30)
-		_ = info.name
 	}
+}
+
+// seedIOCFile locates intel/seed-iocs.json by walking up from the working
+// directory (covers `go test` in internal/sift and binaries launched from
+// the repo root) and falling back to the executable's directory. Empty when
+// not found; WarmBuiltin then warms nothing.
+func seedIOCFile() string {
+	var candidates []string
+	if cwd, err := os.Getwd(); err == nil {
+		dir := cwd
+		for range 6 {
+			candidates = append(candidates, filepath.Join(dir, "intel", "seed-iocs.json"))
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+	}
+	if exe, err := os.Executable(); err == nil {
+		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "intel", "seed-iocs.json"))
+	}
+	for _, p := range candidates {
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			return p
+		}
+	}
+	return ""
+}
+
+// isHexHash reports whether s is a hex digest of a known hash length
+// (md5/sha1/sha256/sha512). Used to warm hash entries only.
+func isHexHash(s string) bool {
+	switch len(s) {
+	case 32, 40, 64, 128:
+	default:
+		return false
+	}
+	for i := range s {
+		c := s[i]
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
+			return false
+		}
+	}
+	return true
 }

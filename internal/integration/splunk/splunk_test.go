@@ -36,13 +36,10 @@ func TestSearch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := New()
+	a := NewWithConfig(AgentConfig{BaseURL: server.URL, Username: "admin", Password: "changeme"})
 	out, err := a.Execute(context.Background(), agent.Input{
-		"action":   "search",
-		"url":      server.URL,
-		"username": "admin",
-		"password": "changeme",
-		"query":    "error*",
+		"action": "search",
+		"query":  "error*",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -56,9 +53,10 @@ func TestSearch_MissingURL(t *testing.T) {
 	a := New()
 	out, _ := a.Execute(context.Background(), agent.Input{
 		"action": "search",
+		"query":  "error*",
 	})
 	if out["error"] == nil {
-		t.Error("expected error for missing URL")
+		t.Error("expected error for missing config base_url")
 	}
 }
 
@@ -71,12 +69,9 @@ func TestSavedSearch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := New()
+	a := NewWithConfig(AgentConfig{BaseURL: server.URL, Username: "admin", Password: "changeme"})
 	out, err := a.Execute(context.Background(), agent.Input{
-		"action":           "saved_search",
-		"url":              server.URL,
-		"username":         "admin",
-		"password":         "changeme",
+		"action":            "saved_search",
 		"saved_search_name": "daily_errors",
 	})
 	if err != nil {
@@ -94,11 +89,9 @@ func TestAlert(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := New()
+	a := NewWithConfig(AgentConfig{BaseURL: server.URL, Token: "test-token"})
 	out, err := a.Execute(context.Background(), agent.Input{
 		"action":     "alert",
-		"url":        server.URL,
-		"token":      "test-token",
 		"alert_name": "test_alert",
 	})
 	if err != nil {

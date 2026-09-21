@@ -37,13 +37,11 @@ func TestSearch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := New()
+	a := NewWithConfig(AgentConfig{BaseURL: server.URL, APIKey: "test"})
 	out, err := a.Execute(context.Background(), agent.Input{
-		"action":  "search",
-		"url":     server.URL,
-		"api_key": "test",
-		"index":   "logs-*",
-		"query":   `{"match_all":{}}`,
+		"action": "search",
+		"index":  "logs-*",
+		"query":  `{"match_all":{}}`,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -67,7 +65,7 @@ func TestSearch_MissingURL(t *testing.T) {
 	out, _ := a.Execute(context.Background(), agent.Input{
 		"action": "search",
 	})
-	if out["error"] != "url is required" {
+	if out["error"] != "elastic base_url is required (central config)" {
 		t.Errorf("error = %v", out["error"])
 	}
 }
@@ -79,11 +77,9 @@ func TestAlerts(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := New()
+	a := NewWithConfig(AgentConfig{BaseURL: server.URL, APIKey: "test"})
 	out, err := a.Execute(context.Background(), agent.Input{
 		"action":  "alert",
-		"url":     server.URL,
-		"api_key": "test",
 		"rule_id": "rule-1",
 	})
 	if err != nil {
@@ -107,11 +103,9 @@ func TestListIndices(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := New()
+	a := NewWithConfig(AgentConfig{BaseURL: server.URL, APIKey: "test"})
 	out, err := a.Execute(context.Background(), agent.Input{
-		"action":  "indices",
-		"url":     server.URL,
-		"api_key": "test",
+		"action": "indices",
 	})
 	if err != nil {
 		t.Fatal(err)

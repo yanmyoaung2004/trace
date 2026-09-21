@@ -39,6 +39,9 @@ func New() *Agent {
 	}
 }
 
+// NewWithConfig wires config-supplied credentials; input params can never
+// override secrets (secret inputs are rejected, not merged). Non-secret
+// routing (which channel config to use, message text) still comes from input.
 func NewWithConfig(cfg AgentConfig) *Agent {
 	return &Agent{
 		httpClient:          &http.Client{Timeout: 15 * time.Second},
@@ -72,15 +75,36 @@ type AgentConfig struct {
 	WebhookURL          string `json:"webhook_url"`
 }
 
+// secretInputKeys are rejected from LLM input on every channel: webhooks,
+// tokens, routing keys, and SMTP credentials are config-wired at
+// construction. Message text and routing labels stay input-supplied.
+// Exception: the generic `webhook` action's per-call `url` stays
+// input-supplied — it is an arbitrary per-alert destination, not a stored
+// credential (the config WebhookURL is only a default).
+var secretInputKeys = map[string]bool{
+	"webhook_url": true, "bot_token": true, "routing_key": true,
+	"smtp_host": true, "smtp_port": true, "smtp_user": true,
+	"smtp_password": true,
+}
+
+// rejectSecretInputs refuses secrets smuggled in via LLM input params.
+func rejectSecretInputs(input agent.Input) *agent.Output {
+	for k := range secretInputKeys {
+		if _, ok := input[k]; ok {
+			return &agent.Output{"status": "error", "error": "secret '" + k + "' must come from central config (NewWithConfig), not input params"}
+		}
+	}
+	return nil
+}
 func (a *Agent) Name() string { return "notifier" }
 
 func (a *Agent) Capabilities() []agent.Capability {
 	return []agent.Capability{
-		{Action: "slack", Inputs: []string{"webhook_url", "message", "title"}, Outputs: []string{"status"}},
-		{Action: "discord", Inputs: []string{"webhook_url", "message", "title"}, Outputs: []string{"status"}},
-		{Action: "telegram", Inputs: []string{"bot_token", "chat_id", "message"}, Outputs: []string{"status"}},
+		{Action: "slack", Inputs: []string{"message", "title"}, Outputs: []string{"status"}},
+		{Action: "discord", Inputs: []string{"message", "title"}, Outputs: []string{"status"}},
+		{Action: "telegram", Inputs: []string{"message"}, Outputs: []string{"status"}},
 		{Action: "email", Inputs: []string{"to", "subject", "body"}, Outputs: []string{"status"}},
-		{Action: "pagerduty", Inputs: []string{"routing_key", "summary", "severity"}, Outputs: []string{"status"}},
+		{Action: "pagerduty", Inputs: []string{"summary", "severity"}, Outputs: []string{"status"}},
 		{Action: "webhook", Inputs: []string{"url", "method", "body"}, Outputs: []string{"status"}},
 	}
 }
@@ -123,15 +147,15 @@ func (a *Agent) Execute(ctx context.Context, input agent.Input) (agent.Output, e
 }
 
 func (a *Agent) sendSlack(ctx context.Context, input agent.Input) (agent.Output, error) {
-	webhookURL, _ := input["webhook_url"].(string)
-	if webhookURL == "" {
-		webhookURL = a.SlackWebhookURL
+	if rej := rejectSecretInputs(input); rej != nil {
+		return *rej, nil
 	}
+	webhookURL := a.SlackWebhookURL
 	message, _ := input["message"].(string)
 	title, _ := input["title"].(string)
 
 	if webhookURL == "" {
-		return agent.Output{"status": "error", "error": "webhook_url is required (set via config or --param)"}, nil
+		return agent.Output{"status": "error", "error": "webhook_url is required (central config)"}, nil
 	}
 	if !isHTTPURL(webhookURL) {
 		return agent.Output{"status": "error", "error": "invalid webhook URL"}, nil
@@ -157,15 +181,15 @@ func (a *Agent) sendSlack(ctx context.Context, input agent.Input) (agent.Output,
 }
 
 func (a *Agent) sendDiscord(ctx context.Context, input agent.Input) (agent.Output, error) {
-	webhookURL, _ := input["webhook_url"].(string)
-	if webhookURL == "" {
-		webhookURL = a.DiscordWebhookURL
+	if rej := rejectSecretInputs(input); rej != nil {
+		return *rej, nil
 	}
+	webhookURL := a.DiscordWebhookURL
 	message, _ := input["message"].(string)
 	title, _ := input["title"].(string)
 
 	if webhookURL == "" {
-		return agent.Output{"status": "error", "error": "webhook_url is required (set via config or --param)"}, nil
+		return agent.Output{"status": "error", "error": "webhook_url is required (central config)"}, nil
 	}
 	if !isHTTPURL(webhookURL) {
 		return agent.Output{"status": "error", "error": "invalid webhook URL"}, nil
@@ -236,18 +260,15 @@ func (a *Agent) postWebhook(ctx context.Context, url string, payload any) (agent
 }
 
 func (a *Agent) sendTelegram(ctx context.Context, input agent.Input) (agent.Output, error) {
-	botToken, _ := input["bot_token"].(string)
-	if botToken == "" {
-		botToken = a.TelegramBotToken
+	if rej := rejectSecretInputs(input); rej != nil {
+		return *rej, nil
 	}
-	chatID, _ := input["chat_id"].(string)
-	if chatID == "" {
-		chatID = a.TelegramChatID
-	}
+	botToken := a.TelegramBotToken
+	chatID := a.TelegramChatID
 	message, _ := input["message"].(string)
 
 	if botToken == "" || chatID == "" || message == "" {
-		return agent.Output{"status": "error", "error": "bot_token, chat_id, and message are required (set via config or --param)"}, nil
+		return agent.Output{"status": "error", "error": "bot_token, chat_id, and message are required (token/chat from central config)"}, nil
 	}
 
 	base := a.TelegramAPIBase
@@ -266,37 +287,28 @@ func (a *Agent) sendTelegram(ctx context.Context, input agent.Input) (agent.Outp
 }
 
 func (a *Agent) sendEmail(ctx context.Context, input agent.Input) (agent.Output, error) {
+	if rej := rejectSecretInputs(input); rej != nil {
+		return *rej, nil
+	}
 	to, _ := input["to"].(string)
 	if to == "" {
 		to = a.EmailTo
 	}
 	subject, _ := input["subject"].(string)
 	body, _ := input["body"].(string)
-	host, _ := input["smtp_host"].(string)
-	if host == "" {
-		host = a.SMTPHost
-	}
-	portF, _ := input["smtp_port"].(float64)
-	port := int(portF)
-	if port == 0 {
-		port = a.SMTPPort
-	}
-	user, _ := input["smtp_user"].(string)
-	if user == "" {
-		user = a.SMTPUser
-	}
-	pass, _ := input["smtp_password"].(string)
-	if pass == "" {
-		pass = a.SMTPPassword
-	}
+	host := a.SMTPHost
+	port := a.SMTPPort
+	user := a.SMTPUser
+	pass := a.SMTPPassword
 	from, _ := input["from"].(string)
 	if from == "" {
 		from = a.SMTPFrom
 	}
 
 	if host == "" || port == 0 || to == "" {
-		return agent.Output{"status": "error", "error": "smtp_host, smtp_port, and to are required"}, nil
+		return agent.Output{"status": "error", "error": "smtp_host, smtp_port, and to are required (smtp from central config)"}, nil
 	}
+
 
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html\r\n\r\n%s",
 		from, to, subject, body)
@@ -344,10 +356,10 @@ func (a *Agent) sendEmail(ctx context.Context, input agent.Input) (agent.Output,
 }
 
 func (a *Agent) sendPagerDuty(ctx context.Context, input agent.Input) (agent.Output, error) {
-	routingKey, _ := input["routing_key"].(string)
-	if routingKey == "" {
-		routingKey = a.PagerDutyRoutingKey
+	if rej := rejectSecretInputs(input); rej != nil {
+		return *rej, nil
 	}
+	routingKey := a.PagerDutyRoutingKey
 	summary, _ := input["summary"].(string)
 	sev, _ := input["severity"].(string)
 	if sev == "" {
@@ -359,8 +371,9 @@ func (a *Agent) sendPagerDuty(ctx context.Context, input agent.Input) (agent.Out
 	}
 
 	if routingKey == "" || summary == "" {
-		return agent.Output{"status": "error", "error": "routing_key and summary are required"}, nil
+		return agent.Output{"status": "error", "error": "routing_key and summary are required (routing_key from central config)"}, nil
 	}
+
 
 	dedupHash := sha256.Sum256([]byte(summary + source))
 	payload := map[string]any{

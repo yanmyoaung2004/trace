@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -118,14 +119,14 @@ var knownIOCs = map[string][]IntelEntry{
 	"185.220.101.24": {
 		{IOC: "185.220.101.24", Type: "ip", Source: "builtin", Reputation: "malicious", Description: "Known C2 server — Tor exit node with malware associations", Tags: []string{"c2", "tor", "malware"}, Confidence: 0.8},
 	},
-	"185.220.101.0": {
-		{IOC: "185.220.101.0", Type: "ip", Source: "builtin", Reputation: "malicious", Description: "Tor exit node — common C2 infrastructure", Tags: []string{"tor", "c2", "proxy"}, Confidence: 0.75},
+	"185.220.101.0/24": {
+		{IOC: "185.220.101.0/24", Type: "cidr", Source: "builtin", Reputation: "malicious", Description: "Tor exit / C2-adjacent range covering 185.220.101.0-255", Tags: []string{"tor", "c2", "proxy"}, Confidence: 0.75},
 	},
 	"45.33.32.156": {
 		{IOC: "45.33.32.156", Type: "ip", Source: "builtin", Reputation: "suspicious", Description: "Known scanner — Shodan/Shadowserver scanning infrastructure", Tags: []string{"scanner", "census", "shodan"}, Confidence: 0.7},
 	},
-	"104.16.0.0": {
-		{IOC: "104.16.0.0", Type: "ip", Source: "builtin", Reputation: "suspicious", Description: "Cloudflare IP range — often abused for C2 proxy", Tags: []string{"proxy", "c2", "cloudflare"}, Confidence: 0.3},
+	"104.16.0.0/12": {
+		{IOC: "104.16.0.0/12", Type: "cidr", Source: "builtin", Reputation: "suspicious", Description: "Cloud-hosted range often abused for C2 proxy", Tags: []string{"proxy", "c2", "cloudflare"}, Confidence: 0.3},
 	},
 	"evil.com": {
 		{IOC: "evil.com", Type: "domain", Source: "builtin", Reputation: "malicious", Description: "Known malware C2 domain — referenced in multiple threat reports", Tags: []string{"c2", "malware", "command-control"}, Confidence: 0.8},
@@ -143,16 +144,32 @@ func (ic *IntelCache) LookupBuiltin(ioc string) []IntelEntry {
 	defer ic.mu.RUnlock()
 
 	normalized := strings.ToLower(strings.TrimSpace(ioc))
+	if normalized == "" {
+		return nil
+	}
 
+	// Exact normalized match: hashes, domains, plain IPs, CVEs, MITRE IDs.
+	// No substring fallback: partial-string matching was a false-positive
+	// source (e.g. "evil" matching "evil.com", short hashes matching
+	// unrelated entries). Callers needing looser matching must do it
+	// explicitly at a higher layer.
 	if entries, ok := knownIOCs[normalized]; ok {
 		return entries
 	}
 
-	for _, entry := range knownIOCs {
-		for _, e := range entry {
-			if strings.Contains(e.IOC, normalized) || strings.Contains(normalized, e.IOC) {
-				return entry
-			}
+	// CIDR containment: a query IP matches a builtin CIDR entry when the
+	// entry key parses as a prefix containing the query address.
+	addr, err := netip.ParseAddr(normalized)
+	if err != nil {
+		return nil
+	}
+	for key, entries := range knownIOCs {
+		prefix, err := netip.ParsePrefix(key)
+		if err != nil {
+			continue
+		}
+		if prefix.Contains(addr) {
+			return entries
 		}
 	}
 

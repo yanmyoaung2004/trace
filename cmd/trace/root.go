@@ -400,8 +400,16 @@ func (a *App) initRegistry() error {
 	a.registry.Register(edr.NewAgentFromConfig(edr.Config{Provider: "crowdstrike"}))
 	a.registry.Register(abuseipdb.NewAgent(a.cfg.AbuseIPDBKey, a.sqlDB))
 	a.registry.Register(otx.NewAgent(a.cfg.OTXAPIKey, a.sqlDB))
-	a.registry.Register(splunk.New())
-	a.registry.Register(elastic.New())
+	a.registry.Register(splunk.NewWithConfig(splunk.AgentConfig{
+		BaseURL:  a.cfg.SplunkURL,
+		Username: a.cfg.SplunkUsername,
+		Password: a.cfg.SplunkPassword,
+		Token:    a.cfg.SplunkToken,
+	}))
+	a.registry.Register(elastic.NewWithConfig(elastic.AgentConfig{
+		BaseURL: a.cfg.ElasticURL,
+		APIKey:  a.cfg.ElasticAPIKey,
+	}))
 
 	a.dispatchAgent = dispatch.New(a.playbooks)
 	if w, err := dispatch.LoadScoringWeights(""); err == nil {
@@ -549,6 +557,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newServerCmd())
 	cmd.AddCommand(newHuntCmd())
 	cmd.AddCommand(newCaseCmd())
+	cmd.AddCommand(newAssetCmd())
 	cmd.AddCommand(newComplianceCmd())
 	cmd.AddCommand(newUpdateCmd())
 	cmd.AddCommand(newVersionCmd())

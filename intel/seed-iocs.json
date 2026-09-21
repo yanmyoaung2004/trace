@@ -108,6 +108,24 @@
     "confidence": 0.6
   },
   {
+    "ioc": "185.220.101.0/24",
+    "type": "cidr",
+    "source": "builtin",
+    "reputation": "malicious",
+    "description": "Tor exit / C2-adjacent range covering 185.220.101.0-255",
+    "tags": ["tor", "c2", "proxy"],
+    "confidence": 0.75
+  },
+  {
+    "ioc": "104.16.0.0/12",
+    "type": "cidr",
+    "source": "builtin",
+    "reputation": "suspicious",
+    "description": "Cloud-hosted range often abused for C2 proxying",
+    "tags": ["proxy", "c2"],
+    "confidence": 0.3
+  },
+  {
     "ioc": "T1003.001",
     "type": "mitre",
     "source": "mitre-attack",

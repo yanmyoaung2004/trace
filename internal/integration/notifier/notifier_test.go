@@ -16,11 +16,10 @@ func TestSlackSendsMessage(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := New()
+	a := NewWithConfig(AgentConfig{SlackWebhookURL: server.URL})
 	result, err := a.sendSlack(context.Background(), map[string]any{
-		"webhook_url": server.URL,
-		"title":       "Test Alert",
-		"message":     "This is a test",
+		"title":   "Test Alert",
+		"message": "This is a test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -46,6 +45,20 @@ func TestSlackRequiresWebhook(t *testing.T) {
 	}
 }
 
+func TestSlackRejectsInputWebhook(t *testing.T) {
+	a := NewWithConfig(AgentConfig{SlackWebhookURL: "https://hooks.slack.com/x"})
+	result, err := a.sendSlack(context.Background(), map[string]any{
+		"webhook_url": "https://evil.example/",
+		"message":     "test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["status"] != "error" {
+		t.Errorf("expected error for input secret, got %v", result)
+	}
+}
+
 func TestDiscordSendsEmbed(t *testing.T) {
 	var received map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -54,11 +67,10 @@ func TestDiscordSendsEmbed(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := New()
+	a := NewWithConfig(AgentConfig{DiscordWebhookURL: server.URL})
 	result, err := a.sendDiscord(context.Background(), map[string]any{
-		"webhook_url": server.URL,
-		"title":       "Test",
-		"message":     "Description",
+		"title":   "Test",
+		"message": "Description",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -84,14 +96,10 @@ func TestTelegramSendsMessage(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := &Agent{
-		httpClient:      http.DefaultClient,
-		TelegramAPIBase: server.URL,
-	}
+	a := NewWithConfig(AgentConfig{TelegramBotToken: "test:token", TelegramChatID: "12345"})
+	a.TelegramAPIBase = server.URL
 	result, err := a.sendTelegram(context.Background(), map[string]any{
-		"bot_token": "test:token",
-		"chat_id":   "12345",
-		"message":   "Hello from Trace",
+		"message": "Hello from Trace",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -144,14 +152,11 @@ func TestPagerDutySendsAlert(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := &Agent{
-		httpClient:       http.DefaultClient,
-		PagerDutyAPIBase: server.URL,
-	}
+	a := NewWithConfig(AgentConfig{PagerDutyRoutingKey: "test-key"})
+	a.PagerDutyAPIBase = server.URL
 	result, err := a.sendPagerDuty(context.Background(), map[string]any{
-		"routing_key": "test-key",
-		"summary":     "Test alert from Trace",
-		"severity":    "critical",
+		"summary":  "Test alert from Trace",
+		"severity": "critical",
 	})
 	if err != nil {
 		t.Fatal(err)
