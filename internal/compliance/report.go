@@ -580,6 +580,10 @@ func (r *Report) WriteFile(path string) error {
 	case strings.HasSuffix(path, ".json"):
 		s, _ := r.RenderJSON()
 		data = []byte(s)
+	case strings.HasSuffix(path, ".csv"):
+		data = []byte(r.RenderCSV())
+	case strings.HasSuffix(path, ".cef"):
+		data = []byte(r.RenderCEF())
 	default:
 		data = []byte(r.RenderMarkdown())
 	}
@@ -593,6 +597,10 @@ func (r *Report) Bytes(format string) []byte {
 	case "json":
 		s, _ := r.RenderJSON()
 		return []byte(s)
+	case "csv":
+		return []byte(r.RenderCSV())
+	case "cef":
+		return []byte(r.RenderCEF())
 	default:
 		return []byte(r.RenderMarkdown())
 	}

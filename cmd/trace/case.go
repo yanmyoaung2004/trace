@@ -223,6 +223,7 @@ Examples:
 		Args:  cobra.ExactArgs(1),
 		ValidArgsFunction: caseIDCompletionFunc,
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
+			format, _ := cmdCobra.Flags().GetString("format")
 			c, err := app.caseManager.Get(context.Background(), args[0])
 			if err != nil {
 				c, err = app.caseManager.GetByPrefix(context.Background(), args[0])
@@ -230,21 +231,39 @@ Examples:
 					return fmt.Errorf("case not found: %s", args[0])
 				}
 			}
-			events, _ := app.caseManager.GetEvents(context.Background(), c.ID)
-			iocs, _ := app.caseManager.GetIOCs(context.Background(), c.ID)
-			evidence, _ := app.caseManager.ListEvidence(context.Background(), c.ID)
-
-			output := map[string]any{
-				"case":     c,
-				"events":   events,
-				"iocs":     iocs,
-				"evidence": evidence,
+			ctx := context.Background()
+			switch format {
+			case "", "json":
+				events, _ := app.caseManager.GetEvents(ctx, c.ID)
+				iocs, _ := app.caseManager.GetIOCs(ctx, c.ID)
+				evidence, _ := app.caseManager.ListEvidence(ctx, c.ID)
+				output := map[string]any{
+					"case":     c,
+					"events":   events,
+					"iocs":     iocs,
+					"evidence": evidence,
+				}
+				data, _ := json.MarshalIndent(output, "", "  ")
+				fmt.Println(string(data))
+			case "csv":
+				out, err := app.caseManager.ExportCSV(ctx, c.ID)
+				if err != nil {
+					return err
+				}
+				fmt.Print(out)
+			case "cef":
+				out, err := app.caseManager.ExportCEF(ctx, c.ID)
+				if err != nil {
+					return err
+				}
+				fmt.Print(out)
+			default:
+				return fmt.Errorf("unknown format %q (want json|csv|cef)", format)
 			}
-			data, _ := json.MarshalIndent(output, "", "  ")
-			fmt.Println(string(data))
 			return nil
 		},
 	}
+	exportCmd.Flags().String("format", "", "output format: json|csv|cef (default json)")
 
 	exportPdfCmd := &cobra.Command{
 		Use:   "export-pdf [id]",

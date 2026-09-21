@@ -8,6 +8,7 @@ Available Commands:
   admin       Administrative commands (org and user management)
   agent       Manage EDR agents and view status
   approval    Manage HITL approval requests
+  asset       Manage asset inventory and risk scoring
   build       Build artifacts (agent binaries for distribution)
   case        Manage security cases
   completion  Generate the autocompletion script for the specified shell

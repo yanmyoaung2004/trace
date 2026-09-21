@@ -50,7 +50,7 @@ Examples:
 		RunE: func(cmdCobra *cobra.Command, args []string) error {
 			framework, _ := cmdCobra.Flags().GetString("framework")
 			output, _ := cmdCobra.Flags().GetString("output")
-
+			format, _ := cmdCobra.Flags().GetString("format")
 			if framework == "" {
 				if tui.IsInteractive() {
 					p := tui.NewPrompter()
@@ -74,10 +74,24 @@ Examples:
 			}
 
 			if output != "" {
-				if err := report.WriteFile(output); err != nil {
+				if format != "" {
+					rendered, ferr := report.RenderFormat(format)
+					if ferr != nil {
+						return ferr
+					}
+					if err := os.WriteFile(output, []byte(rendered), 0644); err != nil {
+						return fmt.Errorf("write report: %w", err)
+					}
+				} else if err := report.WriteFile(output); err != nil {
 					return fmt.Errorf("write report: %w", err)
 				}
 				fmt.Printf("Report saved to %s\n", output)
+			} else if format != "" {
+				rendered, ferr := report.RenderFormat(format)
+				if ferr != nil {
+					return ferr
+				}
+				fmt.Println(rendered)
 			} else {
 				fmt.Println(report.RenderText())
 			}
@@ -110,7 +124,7 @@ Examples:
 	}
 	reportCmd.Flags().StringP("framework", "f", "", "Compliance framework")
 	reportCmd.Flags().StringP("output", "o", "", "Output file path")
-
+	reportCmd.Flags().String("format", "", "Output format: text|markdown|html|json|csv|cef (default text to stdout, by extension with --output)")
 	assessCmd := &cobra.Command{
 		Use:   "assess",
 		Short: "Manually assess a compliance control (pass/fail/na)",
@@ -203,10 +217,10 @@ Examples:
 			for _, p := range history {
 				score := int(p.Score)
 				bar := ""
-				for i := 0; i < score/5; i++ {
+				for range score / 5 {
 					bar += "█"
 				}
-				for i := score / 5; i < 20; i++ {
+				for range 20 - score/5 {
 					bar += "░"
 				}
 				fmt.Printf("  %s  %3d%%  %s\n", p.Date[:10], score, bar)
