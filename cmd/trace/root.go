@@ -560,6 +560,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newAssetCmd())
 	cmd.AddCommand(newComplianceCmd())
 	cmd.AddCommand(newUpdateCmd())
+	cmd.AddCommand(newUpdateKeysCmd())
 	cmd.AddCommand(newVersionCmd())
 	cmd.AddCommand(newEDRCmd())
 	cmd.AddCommand(newAdminCmd())

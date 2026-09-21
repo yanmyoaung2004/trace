@@ -1,10 +1,14 @@
 #!/bin/bash
 # Soak test: Run agent for 24h on real system, collect metrics
-# Usage: ./deploy/soak-test.sh [duration] [server-url] [api-key]
+# Usage: ./deploy/soak-test.sh [duration] [server-url] [provision-token]
+# Enrollment uses the provision-token flow: mint a single-use token as admin
+# (trace admin token mint <org-id>), then pass it as $3 or via
+# TRACE_AGENT_PROVISION_TOKEN. The server consumes the token and returns the
+# agent API key (persisted 0600); restarts reuse the persisted enrollment.
 
 DURATION="${1:-86400}"
 SERVER="${2:-http://localhost:8080}"
-API_KEY="${3:-test-key}"
+PROVISION_TOKEN="${3:-${TRACE_AGENT_PROVISION_TOKEN:-$(trace admin token mint soak-test-org --label soak-test 2>/dev/null)}}"
 RESULTS_DIR="/tmp/trace-soak-$(date +%s)"
 AGENT_PID=""
 
@@ -25,7 +29,7 @@ trap cleanup EXIT INT TERM
 
 # Start agent
 echo "Starting agent..."
-trace-agent --server "$SERVER" --api-key "$API_KEY" &
+trace-agent --server "$SERVER" --provision-token "$PROVISION_TOKEN" &
 AGENT_PID=$!
 sleep 2
 
@@ -48,7 +52,7 @@ while [ "$ELAPSED" -lt "$DURATION" ]; do
     if ! kill -0 "$AGENT_PID" 2>/dev/null; then
         echo "CRASH at ${ELAPSED}s" >> "$RESULTS_DIR/crashes.txt"
         CRASH_COUNT=$((CRASH_COUNT + 1))
-        trace-agent --server "$SERVER" --api-key "$API_KEY" &
+        trace-agent --server "$SERVER" --provision-token "$PROVISION_TOKEN" &
         AGENT_PID=$!
         sleep 2
     fi

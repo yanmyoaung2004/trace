@@ -9,8 +9,10 @@ Usage:
 Flags:
   -h, --help                      help for server
       --http-addr string          HTTP API + dashboard address (default ":8080")
+      --tls-auto                  auto-generate self-signed TLS certificate into ~/.trace/tls/
       --tls-cert string           TLS certificate file path
       --tls-key string            TLS private key file path
+      --tls-require               refuse to serve plaintext HTTP (default: warn and serve HTTP)
       --tse-storage-path string   TSE storage path (enables long-term event storage)
 
 Global Flags:

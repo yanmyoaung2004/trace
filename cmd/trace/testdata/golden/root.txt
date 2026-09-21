@@ -29,6 +29,7 @@ Available Commands:
   status      View investigation status
   tse         Trace Storage Engine management
   update      Update Trace or its data
+  update-keys Offline update-signing ceremony tooling (gen/publish/verify)
   version     Print version information
 
 Flags:

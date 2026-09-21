@@ -558,7 +558,7 @@ go build -o trace.exe ./cmd/trace/
 trace-agent.exe --help
 ```
 
-Expected: Output shows flags: `--config`, `--server`, `--api-key`, `--install`, `--uninstall`, `--service`, `--status`, `--version`.
+Expected: Output shows flags: `--config`, `--server`, `--provision-token`, `--api-key`, `--install`, `--uninstall`, `--service`, `--status`, `--version`. (`--provision-token` is the one-time enroll credential; `--api-key` is server-issued at enroll and only passed manually for re-enrolled agents.)
 
 ```bash
 # Vet the entire agent package
@@ -856,23 +856,27 @@ go test ./cmd/trace-agent/... -tags=integration -count=1 -v
 These scripts run against a live agent to verify production behavior under load, stress, and fault conditions.
 
 ```bash
-# Prerequisites: deploy and run both server and agent
+# Prerequisites: deploy and run both server and agent.
+# First-time enrollment needs a one-time provision token minted by an admin;
+# the server consumes the token and returns the agent API key (persisted 0600).
+PROVISION_TOKEN="$(trace admin token mint <org-id> --label drill)"
 go build -o trace-agent.exe ./cmd/trace-agent/
 trace.exe server --http-addr :8080
 # In another terminal:
-trace-agent.exe --server http://localhost:8080 --api-key test-key --verbose
+TRACE_AGENT_PROVISION_TOKEN="$PROVISION_TOKEN" trace-agent.exe --server http://localhost:8080 --verbose
 ```
 
 #### Soak Test (long-running stability)
 
 ```bash
-# Syntax: bash deploy/soak-test.sh <duration-seconds> <server-url> <api-key>
+# Syntax: bash deploy/soak-test.sh <duration-seconds> <server-url> <provision-token>
+# (or export TRACE_AGENT_PROVISION_TOKEN from `trace admin token mint <org-id>`)
 
 # Run for 1 hour
-bash deploy/soak-test.sh 3600 http://localhost:8080 test-key
+bash deploy/soak-test.sh 3600 http://localhost:8080 "$PROVISION_TOKEN"
 
 # Run for 24 hours
-bash deploy/soak-test.sh 86400 http://localhost:8080 test-key
+bash deploy/soak-test.sh 86400 http://localhost:8080 "$PROVISION_TOKEN"
 ```
 
 What it does:
@@ -946,11 +950,11 @@ trace-agent.exe --version
 # Check agent status (before running)
 trace-agent.exe --status
 
-# Start agent (foreground, verbose)
-trace-agent.exe --server http://localhost:8080 --api-key test-key --verbose
+# Start agent (foreground, verbose; first-time enroll uses the provision token)
+TRACE_AGENT_PROVISION_TOKEN="$PROVISION_TOKEN" trace-agent.exe --server http://localhost:8080 --verbose
 
-# Start agent as Windows service
-trace-agent.exe --install --server http://localhost:8080 --api-key test-key
+# Start agent as Windows service (provision token via env; consumed once at enroll)
+TRACE_AGENT_PROVISION_TOKEN="$PROVISION_TOKEN" trace-agent.exe --install --server http://localhost:8080
 
 # Verify service status
 trace-agent.exe --status
@@ -1062,8 +1066,8 @@ Test the full event pipeline end-to-end:
 # Terminal 1 — Start Trace server
 trace.exe server --http-addr :8080
 
-# Terminal 2 — Start agent in verbose mode
-trace-agent.exe --server http://localhost:8080 --api-key test-key --verbose --poll-interval 5s
+# Terminal 2 — Start agent in verbose mode (provision token via env, consumed once at enroll)
+TRACE_AGENT_PROVISION_TOKEN="$PROVISION_TOKEN" trace-agent.exe --server http://localhost:8080 --verbose --poll-interval 5s
 
 # Terminal 3 — Generate events and verify
 ```
@@ -1195,11 +1199,11 @@ go build -o trace-agent.exe .\cmd\trace-agent\
 # Start server (in a terminal)
 .\trace.exe server --http-addr :8080
 
-# In another terminal — start agent
-.\trace-agent.exe --server http://localhost:8080 --api-key test-key --verbose
+# In another terminal — start agent (provision-token enroll; mint first via `trace admin token mint <org-id>`)
+$env:TRACE_AGENT_PROVISION_TOKEN = "<token-from-admin>"
+.\trace-agent.exe --server http://localhost:8080 --verbose
 
-# In another terminal — run tests
-$env:TRACE_API_KEY = "f19efa85-834f-4978-901d-"
+# In another terminal — run tests (server-issued agent key, never sent on enroll)
 
 # List active agents
 .\trace.exe edr list
@@ -1307,3 +1311,20 @@ Large-snapshot restore drill: use `trace tse snapshot --storage-path <dir>
 --output <file>` then `trace tse recover --from <file> --storage-path
 <dir>` on a host with spare disk; record sizes + timings in the release
 notes (drill itself deferred with the gates above).
+
+#### W3 drill-script + rotation status (2026-09-21)
+
+- Ran here (facts, no gate execution): `deploy/crash-test.sh` and
+  `deploy/soak-test.sh` were switched to the provision-token flow
+  (`trace admin token mint <org-id>` → `--provision-token` /
+  `TRACE_AGENT_PROVISION_TOKEN`); the 4 stale enroll spots above (§5
+  prerequisites + soak usage, §6 CLI verify, §7 pipeline, §10 smoke) were
+  updated the same way. Sleeps, assertions, and thresholds are unchanged.
+- Rotation filter: present — `TestSchedulerRotationKeepsForeignFiles`
+  (`internal/storage/backup/scheduler_test.go:113`) asserts foreign files are
+  never deleted; no new test file added.
+- Deferred (not run on this host): `-race` is blocked by the Windows
+  toolchain — `cc1.exe: sorry, unimplemented: 64-bit mode not compiled in`
+  (CGO MinGW block, verbatim per `yma/FULLY_WORKING_PLAN.md` B3); kill-9 /
+  crash recovery and the 24h soak need a live Linux deployment and are
+  deferred to CI/nightly (see gate table above).

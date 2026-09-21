@@ -934,6 +934,8 @@ trace-agent
 
 Wrong or missing tokens surface the server's 401 message (e.g. `enrollment requires a provision token (ask an admin to mint one)`).
 
+Provision-token enroll is the only documented path: pass the token via `--provision-token`, `TRACE_AGENT_PROVISION_TOKEN`, or `provision_token` in the config file. `--api-key` is server-issued at enroll (persisted automatically) and is only set manually for already-enrolled agents — never to enroll a new one. Kubernetes installs pin the agent image by tag+digest (see "DaemonSet image digest pinning" in `docs/deployment-guide.md`; `deploy/daemonset.yaml` ships failing-closed until `scripts/pin-digest.sh` pins the real digest).
+
 ### Deploying as a Service
 
 ```bash

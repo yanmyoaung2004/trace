@@ -1,5 +1,8 @@
 #!/bin/bash
 # Crash & recovery tests
+# Enrollment uses the provision-token flow: mint a single-use token as admin,
+# then pass it via --provision-token (or TRACE_AGENT_PROVISION_TOKEN).
+# The server consumes the token and returns the agent API key (persisted 0600).
 
 RESULTS_DIR="/tmp/trace-crash-$(date +%s)"
 mkdir -p "$RESULTS_DIR"
@@ -10,15 +13,19 @@ FAIL=0
 green() { echo -e "\033[32m$1\033[0m"; }
 red() { echo -e "\033[31m$1\033[0m"; }
 
+# Provision-token enroll: mint a single-use token (admin auth required).
+# Override with TRACE_AGENT_PROVISION_TOKEN when the server is remote/pre-minted.
+PROVISION_TOKEN="${TRACE_AGENT_PROVISION_TOKEN:-$(trace admin token mint crash-test-org --label crash-test 2>/dev/null)}"
+
 # Test 1: kill -9 recovery
 echo -n "Test 1: kill -9 recovery... "
-trace-agent --server "http://localhost:8080" --api-key "crash-test" &
+trace-agent --server "http://localhost:8080" --provision-token "$PROVISION_TOKEN" &
 PID=$!
 sleep 2
 kill -9 $PID 2>/dev/null
 sleep 1
 # Restart
-trace-agent --server "http://localhost:8080" --api-key "crash-test" &
+trace-agent --server "http://localhost:8080" --provision-token "$PROVISION_TOKEN" &
 PID2=$!
 sleep 2
 if kill -0 $PID2 2>/dev/null; then
@@ -79,7 +86,7 @@ fi
 mount -t tmpfs -o size=10M tmpfs /tmp/trace-full-test 2>/dev/null
 if [ $? -eq 0 ]; then
     dd if=/dev/zero of=/tmp/trace-full-test/fill bs=1M count=9 2>/dev/null
-    trace-agent --server "http://localhost:8080" --api-key "disk-test" --data-dir /tmp/trace-full-test/data &
+    trace-agent --server "http://localhost:8080" --provision-token "$PROVISION_TOKEN" --data-dir /tmp/trace-full-test/data &
     PID=$!
     sleep 2
     # Agent should handle gracefully — not crash
@@ -97,7 +104,7 @@ rm -rf /tmp/trace-full-test
 
 # Test 4: Server down recovery
 echo -n "Test 4: Server disconnection recovery... "
-trace-agent --server "http://localhost:19999" --api-key "down-test" &
+trace-agent --server "http://localhost:19999" --provision-token "$PROVISION_TOKEN" &
 PID=$!
 sleep 3
 if kill -0 $PID 2>/dev/null; then

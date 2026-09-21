@@ -34,11 +34,18 @@ Use --tse-storage-path to enable long-term storage of EDR agent events in TSE.`,
 				app.cfg.Server.Addr = httpAddr
 				app.cfg.Server.HTTPAddr = httpAddr
 			}
-			if cert, _ := cmdCobra.Flags().GetString("tls-cert"); cert != "" {
+			cert, _ := cmdCobra.Flags().GetString("tls-cert")
+			key, _ := cmdCobra.Flags().GetString("tls-key")
+			// W1: --tls-auto generates a genkey-equivalent self-signed pair into
+			// ~/.trace/tls/; --tls-require refuses plaintext (default: warn in ServeHTTP).
+			if err := resolveServerTLS(cmdCobra, &cert, &key); err != nil {
+				return err
+			}
+			if cert != "" {
 				app.cfg.Server.TLS.CertFile = cert
 				app.cfg.Server.TLS.Enabled = true
 			}
-			if key, _ := cmdCobra.Flags().GetString("tls-key"); key != "" {
+			if key != "" {
 				app.cfg.Server.TLS.KeyFile = key
 			}
 			app.cfg.Server.Enabled = true
@@ -63,6 +70,8 @@ Use --tse-storage-path to enable long-term storage of EDR agent events in TSE.`,
 	cmd.Flags().String("http-addr", ":8080", "HTTP API + dashboard address")
 	cmd.Flags().String("tls-cert", "", "TLS certificate file path")
 	cmd.Flags().String("tls-key", "", "TLS private key file path")
+	cmd.Flags().Bool("tls-auto", false, "auto-generate self-signed TLS certificate into ~/.trace/tls/")
+	cmd.Flags().Bool("tls-require", false, "refuse to serve plaintext HTTP (default: warn and serve HTTP)")
 	cmd.Flags().StringVar(&tseStoragePath, "tse-storage-path", "", "TSE storage path (enables long-term event storage)")
 	return cmd
 }

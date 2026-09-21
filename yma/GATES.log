@@ -1,0 +1,59 @@
+BUILD-EXIT:0
+VET-DONE
+=== closure greps ===
+--- synchronous=OFF ---
+exit:1
+--- OR org_id (code) ---
+exit:1
+--- InsecureSkipVerify (code) ---
+exit:1
+--- deploy placeholders ---
+deploy/daemonset.yaml:100:        image: ghcr.io/yanmyoaung2004/trace-agent:v0.1.1@sha256:0000000000000000000000000000000000000000000000000000000000000000
+exit:0
+--- sh -c variable ---
+exit:1
+=== tenant isolation ===
+ok  	github.com/yanmyoaung2004/trace/internal/server	0.235s
+=== backup/snapshot ===
+ok  	github.com/yanmyoaung2004/trace/internal/storage/backup	0.172s
+ok  	github.com/yanmyoaung2004/trace/internal/storage/snapshot	0.214s
+=== cli goldens ===
+ok  	github.com/yanmyoaung2004/trace/cmd/trace	2.977s
+=== enroll integration (shortчат) ===
+ok  	github.com/yanmyoaung2004/trace/cmd/trace-agent	27.451s
+=== race attempt (expected MinGW block) ===
+# runtime/cgo
+cc1.exe: sorry, unimplemented: 64-bit mode not compiled in
+FAIL	github.com/yanmyoaung2004/trace/internal/storage/sqlite [build failed]
+FAIL
+=== seed-key perms ===
+18:// seedKeyPath is the write-once admin key location (0600).
+19:func seedKeyPath(dataDir string) string {
+26:// writeOnceKeyFile persists the seed key with 0600 perms, refusing to
+28:func writeOnceKeyFile(dataDir, key string) error {
+29:	path := seedKeyPath(dataDir)
+33:	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+52:		// Write-once 0600 file; never print the key to stdout (it would
+54:		if err := writeOnceKeyFile(cfg.DataDir, key); err != nil {
+=== provision-token enroll contract ===
+internal/edr_agent/transport/client.go:59:	ProvisionToken string `json:"provision_token,omitempty"`
+cmd/trace-agent/main.go:30:		provisionToken = flag.String("provision-token", "", "One-time enrollment token minted by an admin (`trace admin token mint --org <id>`). Required for first-time enrollment against a provision-gated server; also TRACE_AGENT_PROVISION_TOKEN or `provision_token` in the config file.")
+cmd/trace-agent/main.go:64:		cfg.ProvisionToken = *provisionToken
+cmd/trace-agent/main.go:170:	if cfg.ProvisionToken == "" {
+cmd/trace-agent/main.go:171:		cfg.ProvisionToken = os.Getenv("TRACE_AGENT_PROVISION_TOKEN")
+internal/server/edr.go:160:		ProvisionToken string `json:"provision_token,omitempty"`
+internal/server/edr.go:178:	if req.ProvisionToken != "" {
+internal/server/edr.go:180:		orgID, err = h.manager.consumeProvisionToken(r.Context(), req.ProvisionToken)
+internal/server/edr.go:182:			h.metrics.incAuthFailure("bad_provision_token")
+internal/server/edr.go:189:		h.metrics.incAuthFailure("missing_provision_token")
+internal/server/edr.go:204:	h.manager.finalizeProvisionUse(r.Context(), req.ProvisionToken, agentID)
+internal/server/edr.go:206:	auditWrite(h.audit, r.Context(), "provision:"+shortID(req.ProvisionToken), "agent.enrolled", "agent", agentID, "org="+orgID)
+=== TLS-auto flags ===
+cmd/trace/server_cmd.go:39:			// W1: --tls-auto generates a genkey-equivalent self-signed pair into
+cmd/trace/server_cmd.go:40:			// ~/.trace/tls/; --tls-require refuses plaintext (default: warn in ServeHTTP).
+cmd/trace/server_cmd.go:73:	cmd.Flags().Bool("tls-auto", false, "auto-generate self-signed TLS certificate into ~/.trace/tls/")
+cmd/trace/server_cmd.go:74:	cmd.Flags().Bool("tls-require", false, "refuse to serve plaintext HTTP (default: warn and serve HTTP)")
+cmd/trace/serve.go:75:			// here so --tls-auto materialises the genkey-equivalent pair for
+cmd/trace/serve.go:76:			// later `server` use, and --tls-require fails closed on the daemon's
+cmd/trace/serve.go:80:			if auto, _ := cmd.Flags().GetBool("tls-auto"); auto && tlsCert == "" && tlsKey == "" {
+cmd/trace/serve.go:88:			tlsRequire, _ := cmd.Flags().GetBool("tls-require")

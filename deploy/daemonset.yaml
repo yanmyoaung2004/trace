@@ -89,12 +89,14 @@ spec:
       containers:
       - name: agent
         # Pinned immutable tag (never a floating tag). The @sha256 digest below is
-        # still REPLACE-ME (zeros): replace with the real ghcr digest after
-        # the first tagged push, keeping tag+digest together, e.g.:
+        # still REPLACE-ME (all zeros): this manifest MUST NOT be applied as-is.
+        # Never invent or hand-type a digest. After the first tagged push, pin
+        # tag+digest together with scripts/pin-digest.sh, e.g.:
         #   TAG=v0.1.1
         #   DIGEST=$(crane digest ghcr.io/yanmyoaung2004/trace-agent:${TAG})
-        #   # then set: image: ghcr.io/yanmyoaung2004/trace-agent:${TAG}@${DIGEST}
-        # Until then this DaemonSet must not be applied as-is.
+        #   scripts/pin-digest.sh "${TAG}" "${DIGEST}"
+        # The script verifies the digest shape, rewrites the image line below,
+        # and fails if any zero placeholder remains on an image line.
         image: ghcr.io/yanmyoaung2004/trace-agent:v0.1.1@sha256:0000000000000000000000000000000000000000000000000000000000000000
         imagePullPolicy: Always
         args: ["--config", "/etc/trace-agent/config.yaml"]

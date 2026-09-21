@@ -94,6 +94,11 @@ func (h *SyncHandler) RegisterRoutes(mux *http.ServeMux) {
 		auth = newAuth(h.manager, h.metrics)
 		h.auth = auth
 	}
+	if h.metrics == nil {
+		h.metrics = newServerMetrics()
+		auth = newAuth(h.manager, h.metrics)
+		h.auth = auth
+	}
 	auditGate := func(next http.HandlerFunc) http.HandlerFunc {
 		if h.auditHTTP == nil {
 			return func(w http.ResponseWriter, r *http.Request) {

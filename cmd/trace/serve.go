@@ -70,6 +70,25 @@ Examples:
 			log.SetOutput(os.Stderr)
 			log.Printf("Trace v%s starting", Version)
 			log.Printf("Database: %s", app.cfg.DBPath)
+			// W1: the daemon starts no TLS listener of its own — ServeHTTP runs
+			// only via `trace server` (server.RunServer). Resolve the TLS flags
+			// here so --tls-auto materialises the genkey-equivalent pair for
+			// later `server` use, and --tls-require fails closed on the daemon's
+			// only plaintext listener (--export, plaintext-only HTTP).
+			tlsCert, _ := cmd.Flags().GetString("tls-cert")
+			tlsKey, _ := cmd.Flags().GetString("tls-key")
+			if auto, _ := cmd.Flags().GetBool("tls-auto"); auto && tlsCert == "" && tlsKey == "" {
+				certPath, keyPath, err := ensureSelfSignedTLS(defaultTLSDir(), "localhost")
+				if err != nil {
+					return err
+				}
+				tlsCert, tlsKey = certPath, keyPath
+				log.Printf("[tls] auto-generated self-signed pair: cert=%s key=%s (TLS terminates at `trace server`)", certPath, keyPath)
+			}
+			tlsRequire, _ := cmd.Flags().GetBool("tls-require")
+			if exportFlag, _ := cmd.Flags().GetString("export"); tlsRequire && exportFlag == "" {
+				log.Printf("[tls] WARNING: --tls-require set but the daemon exposes no TLS listener; TLS is terminated by `trace server`")
+			}
 
 			// Initialize TSE if enabled
 			tseEnabled, _ := cmd.Flags().GetBool("tse")
@@ -278,6 +297,11 @@ Examples:
 			go app.huntScheduler.Start(ctx)
 
 			exportAddr, _ := cmd.Flags().GetString("export")
+			if tlsRequire && exportAddr != "" {
+				// The --export report server is plaintext-only HTTP: refuse it
+				// when --tls-require is set (flag-gated W1 behaviour change).
+				return fmt.Errorf("refusing plaintext: --tls-require set but --export report server is plaintext-only HTTP")
+			}
 			if exportAddr != "" {
 				exporterAgent := app.registry.Get("exporter")
 				if exporterAgent != nil {
@@ -366,9 +390,10 @@ Examples:
 	cmd.Flags().String("syslog-addr", "", "syslog listener address (e.g. :514)")
 	cmd.Flags().StringSlice("log-dir", nil, "directories to watch for log files")
 	cmd.Flags().String("export", "", "start HTML report server on given address (e.g. :8080)")
-	cmd.Flags().String("tls-cert", "", "TLS certificate file")
-	cmd.Flags().String("tls-key", "", "TLS private key file")
-	cmd.Flags().Bool("tls-auto", false, "auto-generate self-signed TLS certificate")
+	cmd.Flags().String("tls-cert", "", "TLS certificate file (used by `trace server`; daemon has no TLS listener)")
+	cmd.Flags().String("tls-key", "", "TLS private key file (used by `trace server`; daemon has no TLS listener)")
+	cmd.Flags().Bool("tls-auto", false, "auto-generate self-signed TLS certificate into ~/.trace/tls/ (used by `trace server`)")
+	cmd.Flags().Bool("tls-require", false, "refuse plaintext --export report server (TLS terminates at `trace server`)")
 	cmd.Flags().String("server-addr", "", "address of central server for edge sync (e.g. http://localhost:8080)")
 	return cmd
 }
