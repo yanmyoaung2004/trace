@@ -10,10 +10,17 @@ import (
 )
 
 type Config struct {
-	ServerURL   string `json:"server_url"`
-	APIKey      string `json:"api_key"`
-	Hostname    string `json:"hostname,omitempty"`
-	AgentID     string `json:"agent_id,omitempty"`
+	ServerURL string `json:"server_url"`
+	// APIKey is the server-issued key from enrollment. It auths
+	// heartbeat/events/actions but is never sent on the enroll path.
+	APIKey string `json:"api_key"`
+	// ProvisionToken is the one-time enroll credential (admin-minted,
+	// single-use, server-consumed). Flag --provision-token, env
+	// TRACE_AGENT_PROVISION_TOKEN, or this file key. Sent only in the
+	// register body; never persisted after use.
+	ProvisionToken string `json:"provision_token,omitempty"`
+	Hostname       string `json:"hostname,omitempty"`
+	AgentID        string `json:"agent_id,omitempty"`
 
 	PollInterval    time.Duration `json:"poll_interval"`
 	HeartbeatInterval time.Duration `json:"heartbeat_interval"`

@@ -132,8 +132,10 @@ Trace ships its own endpoint agent (`trace-agent`) — no third-party EDR requir
 
 **Deploy:**
 ```bash
-# On the endpoint
-trace-agent --server https://trace-server:8080 --api-key xxx
+# Ask an admin for a one-time provision token, then on the endpoint:
+trace-agent --server https://trace-server:8080 --provision-token <token-from-admin>
+# (env TRACE_AGENT_PROVISION_TOKEN or `provision_token` in the config file works too;
+# the server returns the agent API key at enroll and it is persisted 0600 — never send api_key on enroll)
 
 # From the Trace server
 trace edr list

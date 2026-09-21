@@ -2,8 +2,10 @@ package transport
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -51,15 +53,33 @@ func TestRegister(t *testing.T) {
 		if r.Method != "POST" {
 			t.Errorf("method = %s", r.Method)
 		}
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("enroll must not send Authorization header, got %q", got)
+		}
+		if got := r.Header.Get("X-Signature"); got != "" {
+			t.Errorf("enroll must not send X-Signature header, got %q", got)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode enroll body: %v", err)
+		}
+		if body["provision_token"] != "tok-123" {
+			t.Errorf("provision_token = %v, want tok-123", body["provision_token"])
+		}
+		if _, has := body["api_key"]; has {
+			t.Errorf("enroll body must not contain api_key: %v", body)
+		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"agent_id":"agent-1","status":"ok"}`))
+		w.Write([]byte(`{"data":{"agent_id":"agent-1","status":"ok","api_key":"issued-1"},"code":200}`))
 	}))
 	defer server.Close()
 
-	c := NewClient(&Config{ServerURL: server.URL, APIKey: "key", Timeout: 5 * time.Second})
+	// Even with a stale/leftover key configured, enroll must not emit it —
+	// the provision token in the body is the only credential.
+	c := NewClient(&Config{ServerURL: server.URL, APIKey: "stale-key", Timeout: 5 * time.Second})
 	c.client = server.Client()
 
-	resp, err := c.Register(context.Background(), &RegisterRequest{Hostname: "test-host", Platform: "linux"})
+	resp, err := c.Register(context.Background(), &RegisterRequest{Hostname: "test-host", Platform: "linux", ProvisionToken: "tok-123"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,6 +88,28 @@ func TestRegister(t *testing.T) {
 	}
 	if resp.Status != "ok" {
 		t.Errorf("status = %q", resp.Status)
+	}
+	if resp.APIKey != "issued-1" {
+		t.Errorf("api_key = %q, want issued-1", resp.APIKey)
+	}
+}
+
+func TestRegister_UnauthorizedSurfacesServerMessage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error":"enrollment requires a provision token (ask an admin to mint one)","code":401}`))
+	}))
+	defer server.Close()
+
+	c := NewClient(&Config{ServerURL: server.URL, Timeout: 5 * time.Second})
+	c.client = server.Client()
+
+	_, err := c.Register(context.Background(), &RegisterRequest{Hostname: "h"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "401") || !strings.Contains(err.Error(), "provision token") {
+		t.Errorf("expected 401 with server message, got: %v", err)
 	}
 }
 

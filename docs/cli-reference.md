@@ -402,7 +402,8 @@ trace-agent [flags]
 |------|-----|-------------|
 | `--config` | — | Path to config file (default `~/.trace-agent/config.json`) |
 | `--server` | `TRACE_AGENT_SERVER` | Trace server URL |
-| `--api-key` | `TRACE_AGENT_API_KEY` | API key for agent registration |
+| `--provision-token` | `TRACE_AGENT_PROVISION_TOKEN` | One-time enrollment token (admin-minted; required for first-time enroll; also `provision_token` in the config file; consumed at enroll, never written to `<data_dir>/agent.json`) |
+| `--api-key` | `TRACE_AGENT_API_KEY` | Server-issued API key for heartbeat/events/actions auth (set automatically at enrollment; manual use only for re-enrolled agents) |
 | `--install` | — | Install as system service (Windows SCM or systemd) |
 | `--uninstall` | — | Remove system service |
 | `--service` | — | Run as Windows service (used by SCM) |
@@ -414,6 +415,8 @@ trace-agent [flags]
 | Field | Default | Description |
 |-------|---------|-------------|
 | `server_url` | `https://127.0.0.1:8080` | Trace server URL |
+| `provision_token` | — | One-time enrollment token (same source as `--provision-token`; consumed at enroll, never written to `data/agent.json`) |
+| `api_key` | — | Server-issued key persisted at enroll; auths heartbeat/events/actions (never sent on the enroll path) |
 | `poll_interval` | `5s` | Action polling interval |
 | `heartbeat_interval` | `30s` | Heartbeat interval |
 | `batch_interval` | `2s` | Event batch interval |

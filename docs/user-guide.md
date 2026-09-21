@@ -924,13 +924,15 @@ go build -o trace-agent ./cmd/trace-agent
 
 ### Configuration
 
-The agent looks for `~/.trace-agent/config.json`. Generate one with defaults or set env vars:
+The agent looks for `~/.trace-agent/config.json`. First-time enrollment needs a one-time provision token minted by an admin (`trace admin token mint --org <id>`); the server consumes the token, assigns the org, and returns the agent's API key (persisted 0600 in `<data_dir>/agent.json` with the agent id). The key then auths heartbeat/events/actions — it is never sent on the enroll path.
 
 ```bash
 export TRACE_AGENT_SERVER="https://trace-server:8080"
-export TRACE_AGENT_API_KEY="your-api-key"
+export TRACE_AGENT_PROVISION_TOKEN="<token-from-admin>"
 trace-agent
 ```
+
+Wrong or missing tokens surface the server's 401 message (e.g. `enrollment requires a provision token (ask an admin to mint one)`).
 
 ### Deploying as a Service
 

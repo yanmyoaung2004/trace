@@ -24,15 +24,16 @@ var version = "0.1.1"
 
 func main() {
 	var (
-		configPath   = flag.String("config", "", "Path to config file")
-		serverURL    = flag.String("server", "", "Trace server URL")
-		apiKey       = flag.String("api-key", "", "API key for server authentication")
-		installSvc   = flag.Bool("install", false, "Install as system service")
-		uninstallSvc = flag.Bool("uninstall", false, "Remove system service")
-		serviceMode  = flag.Bool("service", false, "Run as system service (used by SCM)")
-		showVersion  = flag.Bool("version", false, "Show version")
-		showStatus   = flag.Bool("status", false, "Show agent status")
-		verbose      = flag.Bool("verbose", false, "Enable verbose logging")
+		configPath     = flag.String("config", "", "Path to config file")
+		serverURL      = flag.String("server", "", "Trace server URL")
+		apiKey         = flag.String("api-key", "", "Server-issued API key for heartbeat/events/actions auth (set automatically at enrollment; manual use only for re-enrolled agents)")
+		provisionToken = flag.String("provision-token", "", "One-time enrollment token minted by an admin (`trace admin token mint --org <id>`). Required for first-time enrollment against a provision-gated server; also TRACE_AGENT_PROVISION_TOKEN or `provision_token` in the config file.")
+		installSvc     = flag.Bool("install", false, "Install as system service")
+		uninstallSvc   = flag.Bool("uninstall", false, "Remove system service")
+		serviceMode    = flag.Bool("service", false, "Run as system service (used by SCM)")
+		showVersion    = flag.Bool("version", false, "Show version")
+		showStatus     = flag.Bool("status", false, "Show agent status")
+		verbose        = flag.Bool("verbose", false, "Enable verbose logging")
 	)
 	flag.Parse()
 
@@ -58,6 +59,9 @@ func main() {
 	}
 	if *apiKey != "" {
 		cfg.APIKey = *apiKey
+	}
+	if *provisionToken != "" {
+		cfg.ProvisionToken = *provisionToken
 	}
 
 	if *installSvc {
@@ -162,6 +166,9 @@ func loadConfig(path string) *edr_agent.Config {
 
 	if cfg.APIKey == "" {
 		cfg.APIKey = os.Getenv("TRACE_AGENT_API_KEY")
+	}
+	if cfg.ProvisionToken == "" {
+		cfg.ProvisionToken = os.Getenv("TRACE_AGENT_PROVISION_TOKEN")
 	}
 	if cfg.ServerURL == "" {
 		cfg.ServerURL = os.Getenv("TRACE_AGENT_SERVER")

@@ -2,8 +2,6 @@ package edr_agent
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -25,12 +23,6 @@ import (
 
 // Version is set at build time via -ldflags.
 var Version = "0.1.1"
-
-func generateAPIKey() string {
-	b := make([]byte, 32)
-	rand.Read(b)
-	return hex.EncodeToString(b)
-}
 
 type Agent struct {
 	config *Config
@@ -99,18 +91,16 @@ func New(cfg *Config) *Agent {
 		hostname = cfg.Hostname
 	}
 
-	// Auto-generate API key for first-time enrollment
-	apiKey := cfg.APIKey
-	if apiKey == "" {
-		apiKey = generateAPIKey()
-		cfg.APIKey = apiKey
-	}
+	// No client-minted keys: the server issues api_key at enrollment (see
+	// register) and rejects any client-supplied api_key on that path (400).
+	// cfg.APIKey may already hold a previously issued key; heartbeat,
+	// events, and actions auth with it, and the updater polls with it too.
 
 	eventCh := make(chan *monitor.Event, cfg.EventQueueSize)
 
 	client := transport.NewClient(&transport.Config{
 		ServerURL:    cfg.ServerURL,
-		APIKey:       apiKey,
+		APIKey:       cfg.APIKey,
 		AgentID:      cfg.AgentID,
 		TLSCertFile:  cfg.TLSCertFile,
 		TLSKeyFile:   cfg.TLSKeyFile,
@@ -133,7 +123,7 @@ func New(cfg *Config) *Agent {
 		yara:     monitor.NewYaraMatcher(),
 		procTree: monitor.NewProcessTree(filepath.Join(cfg.DataDir, "tree")),
 		dedup:    monitor.NewDeduplicator(filepath.Join(cfg.DataDir, "dedup")),
-		updater:  updater.New(cfg.ServerURL, apiKey, Version, cfg.DataDir),
+		updater:  updater.New(cfg.ServerURL, cfg.APIKey, Version, cfg.DataDir),
 	}
 
 	if cfg.AgentID != "" {
@@ -427,24 +417,48 @@ func (a *Agent) register(ctx context.Context) error {
 	if a.agentID != "" {
 		return nil
 	}
+	// Resume from a previous enrollment: the issued key + id live in
+	// DataDir/agent.json (0600). Re-enrolling with the same one-time token
+	// would fail (consume-once), so pick those up instead of minting.
+	if data, err := os.ReadFile(filepath.Join(a.config.DataDir, "agent.json")); err == nil {
+		var meta struct {
+			AgentID string `json:"agent_id"`
+			APIKey  string `json:"api_key"`
+		}
+		if err := json.Unmarshal(data, &meta); err == nil && meta.AgentID != "" {
+			a.agentID = meta.AgentID
+			a.client.SetAgentID(meta.AgentID)
+			if meta.APIKey != "" {
+				a.config.APIKey = meta.APIKey
+				a.client.SetAPIKey(meta.APIKey)
+				if a.updater != nil {
+					a.updater.SetAPIKey(meta.APIKey)
+				}
+			}
+			return nil
+		}
+	}
 
 	info, err := a.collectSystemInfo()
 	if err != nil {
 		return fmt.Errorf("collect system info: %w", err)
 	}
 
+	// The provision token is the only enroll credential. No api_key is sent
+	// (the server 400s client keys); the server-issued key comes back in
+	// the response and auths everything after enrollment.
 	regReq := &transport.RegisterRequest{
-		Hostname:      info.Hostname,
-		Platform:      info.Platform,
-		Arch:          info.Arch,
-		Version:       info.Version,
-		KernelVersion: info.KernelVersion,
-		CPUCount:      info.CPUCount,
-		CPUName:       info.CPUName,
-		MemoryMB:      info.MemoryMB,
-		AgentVersion:  info.AgentVersion,
-		Monitors:      info.Monitors,
-		APIKey:        a.config.APIKey,
+		Hostname:       info.Hostname,
+		Platform:       info.Platform,
+		Arch:           info.Arch,
+		Version:        info.Version,
+		KernelVersion:  info.KernelVersion,
+		CPUCount:       info.CPUCount,
+		CPUName:        info.CPUName,
+		MemoryMB:       info.MemoryMB,
+		AgentVersion:   info.AgentVersion,
+		Monitors:       info.Monitors,
+		ProvisionToken: a.config.ProvisionToken,
 	}
 
 	resp, err := a.client.Register(ctx, regReq)
@@ -455,7 +469,15 @@ func (a *Agent) register(ctx context.Context) error {
 	a.agentID = resp.AgentID
 	a.client.SetAgentID(resp.AgentID)
 
-	// Save agent_id and any auto-generated API key to config
+	// Persist the enrollment for restart: agent_id + server-issued api_key,
+	// file 0600. The provision token is consumable and is never written.
+	if resp.APIKey != "" {
+		a.config.APIKey = resp.APIKey
+		a.client.SetAPIKey(resp.APIKey)
+		if a.updater != nil {
+			a.updater.SetAPIKey(resp.APIKey)
+		}
+	}
 	cfgPath := filepath.Join(a.config.DataDir, "agent.json")
 	meta := map[string]string{"agent_id": a.agentID}
 	if resp.APIKey != "" {

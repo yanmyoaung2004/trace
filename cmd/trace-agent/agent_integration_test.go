@@ -17,6 +17,35 @@ import (
 	"github.com/yanmyoaung2004/trace/internal/edr_agent"
 )
 
+// serveProvisionEnroll mirrors the real server enroll contract: it expects
+// provision_token in the body, rejects any client-sent api_key (400, like
+// internal/server/edr.go), 401s a missing/wrong token, and returns the
+// {data:{agent_id,status,api_key}} envelope the server wraps payloads in.
+func serveProvisionEnroll(t *testing.T, w http.ResponseWriter, r *http.Request, wantToken, agentID, apiKey string) {
+	t.Helper()
+	var body struct {
+		ProvisionToken string `json:"provision_token"`
+		APIKey         string `json:"api_key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	if body.APIKey != "" {
+		t.Errorf("enroll must not send api_key (server rejects it with 400)")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error":"client api_key rejected: enroll with a provision token","code":400}`))
+		return
+	}
+	if body.ProvisionToken != wantToken {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error":"enrollment requires a provision token (ask an admin to mint one)","code":401}`))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"data":{"agent_id":%q,"status":"registered","api_key":%q},"code":200}`, agentID, apiKey)
+}
+
 func TestAgentRegistrationAndHeartbeat(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test")
@@ -30,8 +59,7 @@ func TestAgentRegistrationAndHeartbeat(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/v1/edr/register":
 			registered.Store(true)
-			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"agent_id":"test-id-123","status":"registered"}`))
+			serveProvisionEnroll(t, w, r, "test-provision-token", "test-id-123", "test-issued-key")
 		case "/api/v1/edr/heartbeat":
 			heartbeats.Add(1)
 			w.WriteHeader(http.StatusOK)
@@ -47,7 +75,7 @@ func TestAgentRegistrationAndHeartbeat(t *testing.T) {
 
 	cfg := edr_agent.DefaultConfig()
 	cfg.ServerURL = ts.URL
-	cfg.APIKey = "test-key"
+	cfg.ProvisionToken = "test-provision-token"
 	cfg.DataDir = filepath.Join(dir, "data")
 	cfg.HeartbeatInterval = 100 * time.Millisecond
 	cfg.PollInterval = 500 * time.Millisecond
@@ -72,6 +100,25 @@ func TestAgentRegistrationAndHeartbeat(t *testing.T) {
 	if heartbeats.Load() < 5 {
 		t.Errorf("expected at least 5 heartbeats, got %d", heartbeats.Load())
 	}
+	data, err := os.ReadFile(filepath.Join(cfg.DataDir, "agent.json"))
+	if err != nil {
+		t.Errorf("enroll must persist agent.json: %v", err)
+	} else {
+		var meta map[string]string
+		if err := json.Unmarshal(data, &meta); err != nil {
+			t.Errorf("parse persisted agent.json: %v", err)
+		} else {
+			if meta["agent_id"] != "test-id-123" {
+				t.Errorf("persisted agent_id = %q", meta["agent_id"])
+			}
+			if meta["api_key"] != "test-issued-key" {
+				t.Errorf("persisted api_key = %q", meta["api_key"])
+			}
+			if _, has := meta["provision_token"]; has {
+				t.Error("one-time provision token must never be persisted")
+			}
+		}
+	}
 
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer stopCancel()
@@ -86,17 +133,16 @@ func TestAgentSendsEvents(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	var eventsReceived int64
+	var eventsReceived atomic.Int64
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/edr/register":
-			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"agent_id":"test-id-events","status":"registered"}`))
+			serveProvisionEnroll(t, w, r, "test-provision-token", "test-id-events", "test-issued-key")
 		case "/api/v1/edr/heartbeat":
 			w.WriteHeader(http.StatusOK)
 		case "/api/v1/edr/events":
-			atomic.AddInt64(&eventsReceived, 1)
+			eventsReceived.Add(1)
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{"stored":1,"received":1}`))
 		default:
@@ -107,7 +153,7 @@ func TestAgentSendsEvents(t *testing.T) {
 
 	cfg := edr_agent.DefaultConfig()
 	cfg.ServerURL = ts.URL
-	cfg.APIKey = "test-key"
+	cfg.ProvisionToken = "test-provision-token"
 	cfg.DataDir = filepath.Join(dir, "data")
 	cfg.HeartbeatInterval = 500 * time.Millisecond
 	cfg.BatchInterval = 100 * time.Millisecond
@@ -155,8 +201,7 @@ func TestAgentRecoversFromServerDown(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/api/v1/edr/register":
-			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"agent_id":"recovery-test","status":"registered"}`))
+			serveProvisionEnroll(t, w, r, "test-provision-token", "recovery-test", "test-issued-key")
 		case "/api/v1/edr/heartbeat":
 			w.WriteHeader(http.StatusOK)
 		case "/api/v1/edr/events":
@@ -170,7 +215,7 @@ func TestAgentRecoversFromServerDown(t *testing.T) {
 
 	cfg := edr_agent.DefaultConfig()
 	cfg.ServerURL = ts.URL
-	cfg.APIKey = "test-key"
+	cfg.ProvisionToken = "test-provision-token"
 	cfg.DataDir = filepath.Join(dir, "data")
 	cfg.HeartbeatInterval = 200 * time.Millisecond
 	cfg.BatchInterval = 200 * time.Millisecond
@@ -211,8 +256,7 @@ func TestAgentDiskQueueFull(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/api/v1/edr/register":
-			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"agent_id":"queue-test","status":"registered"}`))
+			serveProvisionEnroll(t, w, r, "test-provision-token", "queue-test", "test-issued-key")
 		case "/api/v1/edr/events":
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{"stored":1,"received":1}`))
@@ -224,7 +268,7 @@ func TestAgentDiskQueueFull(t *testing.T) {
 
 	cfg := edr_agent.DefaultConfig()
 	cfg.ServerURL = ts.URL
-	cfg.APIKey = "test-key"
+	cfg.ProvisionToken = "test-provision-token"
 	cfg.DataDir = filepath.Join(dir, "data")
 	cfg.HeartbeatInterval = time.Hour
 	cfg.BatchInterval = 100 * time.Millisecond
@@ -260,8 +304,8 @@ func TestAgentConfigPersistence(t *testing.T) {
 	dir := t.TempDir()
 	cfg := edr_agent.DefaultConfig()
 	cfg.APIKey = "persist-key"
+	cfg.ProvisionToken = "persist-provision-token"
 	cfg.ServerURL = "https://persist-test:8080"
-	cfg.DataDir = filepath.Join(dir, "data")
 
 	// Save and reload
 	cfgPath := filepath.Join(dir, "config.json")
@@ -276,8 +320,8 @@ func TestAgentConfigPersistence(t *testing.T) {
 	if loaded.APIKey != "persist-key" {
 		t.Errorf("API key persistence: got %s", loaded.APIKey)
 	}
-	if loaded.ServerURL != "https://persist-test:8080" {
-		t.Errorf("ServerURL persistence: got %s", loaded.ServerURL)
+	if loaded.ProvisionToken != "persist-provision-token" {
+		t.Errorf("provision token persistence: got %s", loaded.ProvisionToken)
 	}
 }
 

@@ -41,19 +41,23 @@ type Client struct {
 	agentID string
 }
 
+// RegisterRequest is the enroll body. The credential is the one-time
+// provision token (admin-minted, single-use, server-consumed); the client
+// MUST NOT send api_key here — the server rejects it (400) and the issued
+// key flows only server→agent in the enroll response.
 type RegisterRequest struct {
-	Hostname      string `json:"hostname"`
-	Platform      string `json:"platform"`
-	Arch          string `json:"arch"`
-	Version       string `json:"version"`
-	KernelVersion string `json:"kernel_version,omitempty"`
-	CPUCount      int    `json:"cpu_count"`
-	CPUName       string `json:"cpu_name,omitempty"`
-	MemoryMB      int64  `json:"memory_mb"`
-	AgentVersion  string `json:"agent_version"`
-		Monitors      string `json:"monitors"`
-		APIKey        string `json:"api_key,omitempty"`
-	}
+	Hostname       string `json:"hostname"`
+	Platform       string `json:"platform"`
+	Arch           string `json:"arch"`
+	Version        string `json:"version"`
+	KernelVersion  string `json:"kernel_version,omitempty"`
+	CPUCount       int    `json:"cpu_count"`
+	CPUName        string `json:"cpu_name,omitempty"`
+	MemoryMB       int64  `json:"memory_mb"`
+	AgentVersion   string `json:"agent_version"`
+	Monitors       string `json:"monitors"`
+	ProvisionToken string `json:"provision_token,omitempty"`
+}
 
 type RegisterResponse struct {
 	AgentID string `json:"agent_id"`
@@ -152,6 +156,14 @@ func (c *Client) SetAgentID(id string) {
 	c.agentID = id
 }
 
+// SetAPIKey installs the server-issued key after enrollment. It auths
+// heartbeat/events/actions but is never emitted on the enroll path.
+func (c *Client) SetAPIKey(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.config.APIKey = key
+}
+
 func (c *Client) baseURL() string {
 	url := strings.TrimRight(c.config.ServerURL, "/")
 	if !strings.HasPrefix(url, "http") {
@@ -170,6 +182,13 @@ func (c *Client) signRequest(body []byte) string {
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body any) ([]byte, error) {
+	return c.doWithAuth(ctx, method, path, body, true)
+}
+
+// doWithAuth is the single request path. Enroll passes sendAuth=false: the
+// provision token in the body is the only credential, so neither the Bearer
+// header nor the HMAC signature (both keyed by api_key) is emitted there.
+func (c *Client) doWithAuth(ctx context.Context, method, path string, body any, sendAuth bool) ([]byte, error) {
 	var reqBody []byte
 	var err error
 	if body != nil {
@@ -201,12 +220,12 @@ func (c *Client) do(ctx context.Context, method, path string, body any) ([]byte,
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("User-Agent", "trace-agent/0.1.1")
 
-		if c.config.APIKey != "" {
-			req.Header.Set("Authorization", "Bearer "+c.config.APIKey)
-			if len(reqBody) > 0 {
-				req.Header.Set("X-Signature", c.signRequest(reqBody))
-			}
+	if sendAuth && c.config.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.config.APIKey)
+		if len(reqBody) > 0 {
+			req.Header.Set("X-Signature", c.signRequest(reqBody))
 		}
+	}
 
 		resp, err := c.client.Do(req)
 		if err != nil {
@@ -228,9 +247,9 @@ func (c *Client) do(ctx context.Context, method, path string, body any) ([]byte,
 			lastErr = fmt.Errorf("server error: HTTP %d", resp.StatusCode)
 			continue
 		}
-		if resp.StatusCode >= 400 {
-			return nil, fmt.Errorf("request failed: HTTP %d — %s", resp.StatusCode, string(data))
-		}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("request failed: HTTP %d — %s", resp.StatusCode, apiErrorText(data))
+	}
 
 		return data, nil
 	}
@@ -252,15 +271,37 @@ func (c *Client) backoff(attempt int) time.Duration {
 }
 
 func (c *Client) Register(ctx context.Context, info *RegisterRequest) (*RegisterResponse, error) {
-	data, err := c.do(ctx, "POST", "/api/v1/edr/register", info)
+	// Enroll carries no api_key auth (header or body): the provision token
+	// inside info is the credential.
+	data, err := c.doWithAuth(ctx, "POST", "/api/v1/edr/register", info, false)
 	if err != nil {
 		return nil, err
+	}
+	// The server wraps payloads in {data:{...}, code, request_id}; accept a
+	// bare payload too (test stubs, older servers).
+	var env struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(data, &env); err == nil && len(env.Data) > 0 {
+		data = env.Data
 	}
 	var resp RegisterResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
 	return &resp, nil
+}
+
+// apiErrorText prefers the server envelope's error string so e.g. a 401
+// reads as the admin-actionable message instead of raw JSON.
+func apiErrorText(data []byte) string {
+	var env struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(data, &env); err == nil && env.Error != "" {
+		return env.Error
+	}
+	return string(data)
 }
 
 func (c *Client) Heartbeat(ctx context.Context, hb *Heartbeat) error {
