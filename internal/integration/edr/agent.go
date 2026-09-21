@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/yanmyoaung2004/trace/internal/agent"
+	shared "github.com/yanmyoaung2004/trace/internal/response"
 )
 
 type Agent struct {
@@ -113,6 +114,12 @@ func (a *Agent) Execute(ctx context.Context, input agent.Input) (agent.Output, e
 		return agent.Output{"task_id": taskID, "hostname": hostname, "action": "scan"}, nil
 
 	case "run_script":
+		// Deny-by-default: flag + signed policy + per-execution approval
+		// token (deny-closed on any absence). The provider API call below
+		// only runs after the gate passes.
+		if err := shared.CheckRunScriptGate(input); err != nil {
+			return agent.Output{"error": err.Error()}, nil
+		}
 		hostname, _ := input["hostname"].(string)
 		script, _ := input["script"].(string)
 		if hostname == "" || script == "" {

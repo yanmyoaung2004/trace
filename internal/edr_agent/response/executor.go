@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/yanmyoaung2004/trace/internal/edr_agent/monitor"
 	"github.com/yanmyoaung2004/trace/internal/edr_agent/transport"
+	shared "github.com/yanmyoaung2004/trace/internal/response"
 )
 
 type Executor struct {
@@ -29,6 +29,12 @@ func NewExecutor(eventCh chan<- *monitor.Event) *Executor {
 func (e *Executor) Execute(ctx context.Context, action *transport.PendingAction) (map[string]any, error) {
 	log.Printf("[executor] action: %s type=%s target=%s", action.ID, action.Type, action.Target)
 
+	// Client-side chains are rejected: the server must expand chains into
+	// individually authorized actions.
+	if err := shared.CheckChainRejected(action.Params); err != nil {
+		return nil, err
+	}
+
 	timeout := 30 * time.Second
 	if action.Timeout > 0 {
 		timeout = time.Duration(action.Timeout) * time.Second
@@ -37,55 +43,7 @@ func (e *Executor) Execute(ctx context.Context, action *transport.PendingAction)
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	// Snapshot registry before modification
-	if action.Type == "block_ip" || action.Type == "quarantine_file" {
-		e.snapshotBefore(action)
-	}
-
-	result, err := e.executeSingle(ctx, action)
-	if err != nil {
-		return nil, err
-	}
-
-	// Execute chained actions
-	if chain, ok := action.Params["chain"].([]any); ok && len(chain) > 0 {
-		chainResults := make([]map[string]any, 0)
-		for _, link := range chain {
-			if linkStr, ok := link.(string); ok && linkStr != "" {
-				chainAction := &transport.PendingAction{
-					ID:   action.ID + "_chain_" + linkStr,
-					Type: linkStr,
-					Params: action.Params,
-				}
-				chainResult, chainErr := e.executeSingle(ctx, chainAction)
-				if chainErr != nil {
-					result["chain_aborted"] = true
-					result["chain_error"] = chainErr.Error()
-					break
-				}
-				chainResults = append(chainResults, chainResult)
-			}
-		}
-		if len(chainResults) > 0 {
-			result["chain_results"] = chainResults
-		}
-	}
-
-	return result, nil
-}
-
-func (e *Executor) snapshotBefore(action *transport.PendingAction) {
-	if action.Type != "block_ip" {
-		return
-	}
-	ip, _ := action.Params["ip"].(string)
-	if ip == "" {
-		return
-	}
-	out, _ := e.runShell(context.Background(), getRegistryBackupCmd(ip))
-	if out != "" {
-		log.Printf("[executor] registry backup: %s", out[:min(len(out), 200)])
-	}
+	return e.executeSingle(ctx, action)
 }
 
 func (e *Executor) executeSingle(ctx context.Context, action *transport.PendingAction) (map[string]any, error) {
@@ -111,41 +69,71 @@ func (e *Executor) executeSingle(ctx context.Context, action *transport.PendingA
 	}
 }
 
+// paramPID accepts float64 (JSON), int, or digits-only string.
+func paramPID(params map[string]any) (int, bool, error) {
+	v, ok := params["pid"]
+	if !ok || v == nil {
+		return 0, false, nil
+	}
+	switch n := v.(type) {
+	case float64:
+		if n != float64(int(n)) || n <= 0 {
+			return 0, true, fmt.Errorf("invalid pid %v", v)
+		}
+		if err := shared.ValidatePID(int(n)); err != nil {
+			return 0, true, err
+		}
+		return int(n), true, nil
+	case int:
+		if err := shared.ValidatePID(n); err != nil {
+			return 0, true, err
+		}
+		return n, true, nil
+	case string:
+		pid, err := shared.ValidatePIDString(n)
+		if err != nil {
+			return 0, true, err
+		}
+		return pid, true, nil
+	default:
+		return 0, true, fmt.Errorf("invalid pid %v", v)
+	}
+}
+
 func (e *Executor) killProcess(ctx context.Context, action *transport.PendingAction) (map[string]any, error) {
-	pid := 0
-	if p, ok := action.Params["pid"].(float64); ok {
-		pid = int(p)
+	pid, hasPID, err := paramPID(action.Params)
+	if err != nil {
+		return nil, err
 	}
 	name, _ := action.Params["name"].(string)
 
-	if pid == 0 && name == "" {
+	if !hasPID && name == "" {
 		return nil, fmt.Errorf("pid or name required")
 	}
 
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		if pid > 0 {
-			cmd = exec.CommandContext(ctx, "taskkill", "/F", "/PID", fmt.Sprintf("%d", pid))
+	var argv []string
+	if hasPID {
+		if runtime.GOOS == "windows" {
+			argv = shared.TaskkillPIDArgv(pid)
 		} else {
-			cmd = exec.CommandContext(ctx, "taskkill", "/F", "/IM", name)
+			argv = shared.KillPIDArgv(pid)
 		}
-	case "linux", "darwin":
-		if pid > 0 {
-			cmd = exec.CommandContext(ctx, "kill", "-9", fmt.Sprintf("%d", pid))
+	} else {
+		if err := shared.ValidateProcessName(name); err != nil {
+			return nil, err
+		}
+		if runtime.GOOS == "windows" {
+			argv = shared.TaskkillNameArgv(name)
 		} else {
-			cmd = exec.CommandContext(ctx, "pkill", "-9", name)
+			argv = shared.PkillArgv(name)
 		}
-	default:
-		return nil, fmt.Errorf("unsupported OS: %s", runtime.GOOS)
 	}
 
-	output, err := cmd.CombinedOutput()
-	outStr := string(output)
+	output, err := shared.RunArgv(ctx, argv)
 	if err != nil {
 		return map[string]any{
 			"status": "failed",
-			"error":  fmt.Sprintf("%v: %s", err, outStr),
+			"error":  fmt.Sprintf("%v: %s", err, output),
 			"pid":    pid,
 			"name":   name,
 		}, nil
@@ -153,7 +141,7 @@ func (e *Executor) killProcess(ctx context.Context, action *transport.PendingAct
 
 	return map[string]any{
 		"status": "killed",
-		"output": outStr,
+		"output": output,
 		"pid":    pid,
 		"name":   name,
 	}, nil
@@ -164,28 +152,29 @@ func (e *Executor) quarantineFile(ctx context.Context, action *transport.Pending
 	if path == "" {
 		path = action.Target
 	}
-	if path == "" {
-		return nil, fmt.Errorf("path required")
+	if err := shared.ValidateFilePath(path); err != nil {
+		return nil, err
 	}
 
 	info, err := os.Stat(path)
 	if os.IsNotExist(err) {
 		return map[string]any{"status": "not_found", "path": path}, nil
 	}
-
-	dest := filepath.Join(e.quarantineDir, filepath.Base(path)+".quarantined")
-
-	var cmdStr, rollbackCmd string
-	switch runtime.GOOS {
-	case "windows":
-		cmdStr = fmt.Sprintf("move /Y \"%s\" \"%s\"", path, dest)
-		rollbackCmd = fmt.Sprintf("move /Y \"%s\" \"%s\"", dest, path)
-	default:
-		cmdStr = fmt.Sprintf("mv \"%s\" \"%s\"", path, dest)
-		rollbackCmd = fmt.Sprintf("mv \"%s\" \"%s\"", dest, path)
+	if err != nil {
+		return nil, err
+	}
+	if err := shared.CheckSymlinkOrDevice(path); err != nil {
+		return nil, err
 	}
 
-	output, err := e.runShell(ctx, cmdStr)
+	os.MkdirAll(e.quarantineDir, 0700)
+	dest, err := shared.ResolveQuarantineDest(e.quarantineDir, path)
+	if err != nil {
+		return nil, err
+	}
+
+	argv, inverse := shared.MoveArgv(path, dest)
+	output, err := shared.RunArgv(ctx, argv)
 	if err != nil {
 		return map[string]any{
 			"status": "failed",
@@ -200,38 +189,24 @@ func (e *Executor) quarantineFile(ctx context.Context, action *transport.Pending
 		"status":           "quarantined",
 		"original_path":    path,
 		"quarantine_path":  dest,
-		"rollback_command": rollbackCmd,
+		"rollback_command": shared.EncodeArgv(inverse, argv),
 		"output":           output,
 		"size":             info.Size(),
 	}, nil
 }
 
 func (e *Executor) blockIP(ctx context.Context, action *transport.PendingAction) (map[string]any, error) {
-	ip, _ := action.Params["ip"].(string)
-	if ip == "" {
-		ip = action.Target
+	ipStr, _ := action.Params["ip"].(string)
+	if ipStr == "" {
+		ipStr = action.Target
 	}
-	if ip == "" {
-		return nil, fmt.Errorf("ip required")
-	}
-
-	var cmdStr, rollbackCmd string
-	switch runtime.GOOS {
-	case "windows":
-		ruleName := fmt.Sprintf("trace-block-%s", strings.ReplaceAll(ip, ".", "-"))
-		cmdStr = fmt.Sprintf("netsh advfirewall firewall add rule name=%s dir=in action=block remoteip=%s", ruleName, ip)
-		rollbackCmd = fmt.Sprintf("netsh advfirewall firewall delete rule name=%s", ruleName)
-	case "linux":
-		cmdStr = fmt.Sprintf("iptables -A INPUT -s %s -j DROP", ip)
-		rollbackCmd = fmt.Sprintf("iptables -D INPUT -s %s -j DROP", ip)
-	case "darwin":
-		cmdStr = fmt.Sprintf("echo 'block in from %s to any' | pfctl -ef -", ip)
-		rollbackCmd = fmt.Sprintf("pfctl -F rules")
-	default:
-		return nil, fmt.Errorf("unsupported OS: %s", runtime.GOOS)
+	addr, err := shared.ValidateIP(ipStr)
+	if err != nil {
+		return nil, err
 	}
 
-	output, err := e.runShell(ctx, cmdStr)
+	argv, inverse := shared.BlockIPArgv(addr)
+	output, err := shared.RunArgv(ctx, argv)
 	status := "blocked"
 	errMsg := ""
 	if err != nil {
@@ -248,72 +223,76 @@ func (e *Executor) blockIP(ctx context.Context, action *transport.PendingAction)
 
 	return map[string]any{
 		"status":           status,
-		"ip":               ip,
-		"command":          cmdStr,
+		"ip":               addr.String(),
+		"command":          shared.EncodeArgv(argv, inverse),
 		"output":           output,
-		"rollback_command": rollbackCmd,
+		"rollback_command": shared.EncodeArgv(inverse, argv),
 		"error":            errMsg,
 	}, nil
 }
 
-func (e *Executor) runScript(ctx context.Context, action *transport.PendingAction) (map[string]any, error) {
+func (e *Executor) runScript(_ context.Context, action *transport.PendingAction) (map[string]any, error) {
+	// Deny-by-default: flag + signed policy + per-execution approval token.
+	// Deny-closed: any absence is an error, and the script body is never run.
+	if err := shared.CheckRunScriptGate(action.Params); err != nil {
+		return nil, err
+	}
+	// Even when gated open, scripts execute only via provider-side RunScript
+	// in this build; the on-host executor refuses raw bodies so no shell
+	// string is ever spawned here.
 	script, _ := action.Params["script"].(string)
 	if script == "" {
 		return nil, fmt.Errorf("script content required")
 	}
+	return nil, fmt.Errorf("run_script enabled but no script runner configured: refusing to execute script body on host")
+}
 
-	var cmd *exec.Cmd
+func (e *Executor) isolateHost(ctx context.Context, action *transport.PendingAction) (map[string]any, error) {
+	serverIP, err := validatedServerIP(action)
+	if err != nil {
+		return nil, err
+	}
+
+	// Ordered argv steps, no shell. Each step runs independently.
+	var steps [][]string
 	switch runtime.GOOS {
 	case "windows":
-		cmd = exec.CommandContext(ctx, "powershell", "-Command", script)
-	case "linux", "darwin":
-		cmd = exec.CommandContext(ctx, "sh", "-c", script)
+		name := "trace-isolate-allow"
+		steps = [][]string{
+			{"netsh", "advfirewall", "set", "allprofiles", "firewallpolicy", "blockinbound,blockoutbound"},
+			{"netsh", "advfirewall", "firewall", "add", "rule", "name=" + name, "dir=out", "action=allow", "remoteip=" + serverIP},
+		}
+	case "linux":
+		steps = [][]string{
+			{"iptables", "-P", "INPUT", "DROP"},
+			{"iptables", "-P", "OUTPUT", "DROP"},
+			{"iptables", "-P", "FORWARD", "DROP"},
+			{"iptables", "-A", "OUTPUT", "-d", serverIP, "-j", "ACCEPT"},
+		}
+	case "darwin":
+		// pf rules go through a temp file loaded by argv; never a shell pipe.
+		tmp, err := os.CreateTemp("", "trace-isolate-*.pf.conf")
+		if err != nil {
+			return nil, err
+		}
+		defer os.Remove(tmp.Name())
+		if _, err := tmp.WriteString("block all\npass out to " + serverIP + "\n"); err != nil {
+			tmp.Close()
+			return nil, err
+		}
+		tmp.Close()
+		steps = [][]string{
+			{"pfctl", "-e"},
+			{"pfctl", "-f", tmp.Name()},
+		}
 	default:
 		return nil, fmt.Errorf("unsupported OS: %s", runtime.GOOS)
 	}
 
-	output, err := cmd.CombinedOutput()
-	outStr := string(output)
-	status := "completed"
-	errMsg := ""
-	if err != nil {
-		status = "failed"
-		errMsg = err.Error()
-	}
-
-	return map[string]any{
-		"status": status,
-		"output": outStr,
-		"error":  errMsg,
-	}, nil
-}
-
-func (e *Executor) isolateHost(ctx context.Context, action *transport.PendingAction) (map[string]any, error) {
-	var cmds []string
-	switch runtime.GOOS {
-	case "windows":
-		cmds = []string{
-			"netsh advfirewall set allprofiles firewallpolicy blockinbound,blockoutbound",
-			"netsh advfirewall firewall add rule name=trace-isolate-allow dir=out action=allow remoteip=" + getServerIP(action),
-		}
-	case "linux":
-		cmds = []string{
-			"iptables -P INPUT DROP",
-			"iptables -P OUTPUT DROP",
-			"iptables -P FORWARD DROP",
-			fmt.Sprintf("iptables -A OUTPUT -d %s -j ACCEPT", getServerIP(action)),
-		}
-	case "darwin":
-		cmds = []string{
-			"pfctl -e",
-			fmt.Sprintf("echo 'block all\\npass out to %s' | pfctl -ef -", getServerIP(action)),
-		}
-	}
-
-	results := make([]map[string]any, 0)
-	for _, cmdStr := range cmds {
-		output, err := e.runShell(ctx, cmdStr)
-		r := map[string]any{"command": cmdStr, "output": output}
+	results := make([]map[string]any, 0, len(steps))
+	for _, argv := range steps {
+		output, err := shared.RunArgv(ctx, argv)
+		r := map[string]any{"command": argv, "output": output}
 		if err != nil {
 			r["status"] = "failed"
 			r["error"] = err.Error()
@@ -329,47 +308,63 @@ func (e *Executor) isolateHost(ctx context.Context, action *transport.PendingAct
 	}, nil
 }
 
-func (e *Executor) releaseHost(ctx context.Context, action *transport.PendingAction) (map[string]any, error) {
-	var cmds []string
+func (e *Executor) releaseHost(ctx context.Context, _ *transport.PendingAction) (map[string]any, error) {
+	var steps [][]string
 	switch runtime.GOOS {
 	case "windows":
-		cmds = []string{"netsh advfirewall set allprofiles firewallpolicy allowinbound,allowoutbound"}
+		steps = [][]string{
+			{"netsh", "advfirewall", "set", "allprofiles", "firewallpolicy", "allowinbound,allowoutbound"},
+		}
 	case "linux":
-		cmds = []string{
-			"iptables -P INPUT ACCEPT",
-			"iptables -P OUTPUT ACCEPT",
-			"iptables -P FORWARD ACCEPT",
-			"iptables -F",
+		steps = [][]string{
+			{"iptables", "-P", "INPUT", "ACCEPT"},
+			{"iptables", "-P", "OUTPUT", "ACCEPT"},
+			{"iptables", "-P", "FORWARD", "ACCEPT"},
+			{"iptables", "-F"},
 		}
 	case "darwin":
-		cmds = []string{"pfctl -F all", "pfctl -d"}
+		steps = [][]string{{"pfctl", "-F", "all"}, {"pfctl", "-d"}}
+	default:
+		return nil, fmt.Errorf("unsupported OS: %s", runtime.GOOS)
 	}
 
-	for _, cmdStr := range cmds {
-		e.runShell(ctx, cmdStr)
+	for _, argv := range steps {
+		shared.RunArgv(ctx, argv)
 	}
 
 	return map[string]any{"status": "released"}, nil
 }
 
-func (e *Executor) collectForensics(ctx context.Context, action *transport.PendingAction) (map[string]any, error) {
+// runFixed runs a fixed argv (no variable input) and returns at most the
+// first 50 lines, truncated. Errors are swallowed by the caller.
+func runFixed(ctx context.Context, argv []string) string {
+	out, _ := shared.RunArgv(ctx, argv)
+	lines := strings.Split(out, "\n")
+	if len(lines) > 50 {
+		lines = lines[:50]
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (e *Executor) collectForensics(ctx context.Context, _ *transport.PendingAction) (map[string]any, error) {
 	forensics := map[string]any{}
-
-	ps, _ := e.runShell(ctx, getProcessListCmd())
-	forensics["process_list"] = ps
-
-	net, _ := e.runShell(ctx, getNetstatCmd())
-	forensics["network_connections"] = net
-
-	df, _ := e.runShell(ctx, getDiskUsageCmd())
-	forensics["disk_usage"] = df
-
-	mem, _ := e.runShell(ctx, getMemoryCmd())
-	forensics["memory_info"] = mem
-
-	if runtime.GOOS == "windows" {
-		recent, _ := e.runShell(ctx, "wevtutil qe System /c:50 /f:text /q:\"*[System[TimeCreated[timediff(@SystemTime) <= 86400000]]]\"")
-		forensics["recent_events"] = recent
+	switch runtime.GOOS {
+	case "windows":
+		forensics["process_list"] = runFixed(ctx, []string{"tasklist"})
+		forensics["network_connections"] = runFixed(ctx, []string{"netstat", "-ano"})
+		forensics["disk_usage"] = runFixed(ctx, []string{"wmic", "logicaldisk", "get", "name,freespace,size"})
+		forensics["memory_info"] = runFixed(ctx, []string{"wmic", "os", "get", "freephysicalmemory,totalvisiblememorysize"})
+		forensics["recent_events"] = runFixed(ctx, []string{"wevtutil", "qe", "System", "/c:50", "/f:text", "/q:*[System[TimeCreated[timediff(@SystemTime) <= 86400000]]]"})
+	case "linux":
+		forensics["process_list"] = runFixed(ctx, []string{"ps", "aux"})
+		forensics["network_connections"] = runFixed(ctx, []string{"ss", "-tunap"})
+		forensics["disk_usage"] = runFixed(ctx, []string{"df", "-h", "/"})
+		forensics["memory_info"] = runFixed(ctx, []string{"free", "-h"})
+	default:
+		forensics["process_list"] = runFixed(ctx, []string{"ps", "aux"})
+		forensics["network_connections"] = runFixed(ctx, []string{"lsof", "-i", "-P", "-n"})
+		forensics["disk_usage"] = runFixed(ctx, []string{"df", "-h", "/"})
+		forensics["memory_info"] = runFixed(ctx, []string{"vm_stat"})
 	}
 
 	return map[string]any{
@@ -379,6 +374,7 @@ func (e *Executor) collectForensics(ctx context.Context, action *transport.Pendi
 }
 
 func (e *Executor) systemSnapshot(ctx context.Context) (map[string]any, error) {
+	_ = ctx
 	evt := &monitor.Event{
 		Timestamp: time.Now().UTC(),
 		Type:      monitor.EventSystemSnapshot,
@@ -397,82 +393,36 @@ func (e *Executor) systemSnapshot(ctx context.Context) (map[string]any, error) {
 	}, nil
 }
 
-func (e *Executor) runShell(ctx context.Context, cmdStr string) (string, error) {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.CommandContext(ctx, "powershell", "-Command", cmdStr)
-	default:
-		cmd = exec.CommandContext(ctx, "sh", "-c", cmdStr)
-	}
-	data, err := cmd.CombinedOutput()
-	return strings.TrimSpace(string(data)), err
+// deniedShell is the single gated legacy-string helper for this package. It
+// always denies and never spawns a process: argv-only mode has no string
+// runner. It exists so a grep for a string runner lands here and stops.
+func deniedShell(_ context.Context, cmdStr string) (string, error) {
+	_ = cmdStr
+	return "", fmt.Errorf("legacy string execution disabled: argv-only mode")
 }
 
-func getServerIP(action *transport.PendingAction) string {
-	if ip, ok := action.Params["server_ip"].(string); ok && ip != "" {
-		return ip
+func validatedServerIP(action *transport.PendingAction) (string, error) {
+	ipStr, _ := action.Params["server_ip"].(string)
+	if ipStr == "" {
+		return "127.0.0.1", nil
 	}
-	return "127.0.0.1"
-}
-
-func getProcessListCmd() string {
-	switch runtime.GOOS {
-	case "windows":
-		return "Get-Process | Select-Object Id, ProcessName, CPU, @{N='MB';E={[math]::Round($_.WorkingSet64/1MB)}} | ConvertTo-Json -Compress"
-	case "linux":
-		return "ps aux --sort=-%cpu | head -50"
-	default:
-		return "ps aux -r | head -50"
+	addr, err := shared.ValidateIP(ipStr)
+	if err != nil {
+		return "", err
 	}
-}
-
-func getNetstatCmd() string {
-	switch runtime.GOOS {
-	case "windows":
-		return "netstat -ano | Select-String TCP,UDP"
-	case "linux":
-		return "ss -tunap | head -50"
-	default:
-		return "lsof -i -P -n | head -50"
-	}
-}
-
-func getDiskUsageCmd() string {
-	switch runtime.GOOS {
-	case "windows":
-		return "Get-PSDrive -PSProvider FileSystem | Select-Object Name, Used, Free | ConvertTo-Json -Compress"
-	default:
-		return "df -h / | tail -1"
-	}
-}
-
-func getMemoryCmd() string {
-	switch runtime.GOOS {
-	case "windows":
-		return "Get-CimInstance Win32_OperatingSystem | Select-Object @{N='Total';E={[math]::Round($_.TotalVisibleMemorySize/1MB)}},@{N='Free';E={[math]::Round($_.FreePhysicalMemory/1MB)}} | ConvertTo-Json -Compress"
-	case "linux":
-		return "free -h"
-	default:
-		return "vm_stat"
-	}
-}
-
-func getRegistryBackupCmd(ip string) string {
-	switch runtime.GOOS {
-	case "windows":
-		ruleName := "trace-block-" + strings.ReplaceAll(ip, ".", "-")
-		return fmt.Sprintf("reg export HKLM\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy %s_fw_backup.reg", ruleName)
-	default:
-		return "true"
-	}
+	return addr.String(), nil
 }
 
 func getUptime() string {
 	switch runtime.GOOS {
 	case "windows":
-		out, _ := exec.Command("powershell", "-Command", "(Get-CimInstance Win32_OperatingSystem).LastBootUpTime").Output()
-		return strings.TrimSpace(string(out))
+		out, _ := shared.RunArgv(context.Background(), []string{"net", "statistics", "workstation"})
+		for _, line := range strings.Split(out, "\n") {
+			if strings.Contains(strings.ToLower(line), "since") {
+				return strings.TrimSpace(line)
+			}
+		}
+		return "unknown"
 	case "linux":
 		data, _ := os.ReadFile("/proc/uptime")
 		parts := strings.Fields(string(data))
@@ -481,7 +431,10 @@ func getUptime() string {
 		}
 		return "unknown"
 	default:
-		out, _ := exec.Command("uptime").Output()
-		return strings.TrimSpace(string(out))
+		out, _ := shared.RunArgv(context.Background(), []string{"uptime"})
+		if out == "" {
+			return "unknown"
+		}
+		return out
 	}
 }

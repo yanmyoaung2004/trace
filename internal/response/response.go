@@ -7,10 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,20 +15,20 @@ import (
 )
 
 type ActionRecord struct {
-	ID              string    `json:"id"`
-	InvestigationID string    `json:"investigation_id"`
-	Action          string    `json:"action"`
-	Target          string    `json:"target"`
-	Status          string    `json:"status"`
-	Command         string    `json:"command"`
-	Output          string    `json:"output"`
-	RollbackCmd     string    `json:"rollback_command"`
-	RollbackStatus  string    `json:"rollback_status"`
-	CreatedAt       string    `json:"created_at"`
+	ID              string `json:"id"`
+	InvestigationID string `json:"investigation_id"`
+	Action          string `json:"action"`
+	Target          string `json:"target"`
+	Status          string `json:"status"`
+	Command         string `json:"command"`
+	Output          string `json:"output"`
+	RollbackCmd     string `json:"rollback_command"`
+	RollbackStatus  string `json:"rollback_status"`
+	CreatedAt       string `json:"created_at"`
 }
 
 type Agent struct {
-	db        *sql.DB
+	db            *sql.DB
 	quarantineDir string
 }
 
@@ -49,6 +46,7 @@ func (a *Agent) Capabilities() []agent.Capability {
 		{Action: "quarantine_file", Inputs: []string{"path"}, Outputs: []string{"status", "quarantine_path", "rollback_command"}},
 		{Action: "kill_process", Inputs: []string{"name", "pid"}, Outputs: []string{"status", "rollback_command"}},
 		{Action: "restart_service", Inputs: []string{"name"}, Outputs: []string{"status", "rollback_command"}},
+		{Action: "run_script", Inputs: []string{"script"}, Outputs: []string{"status"}},
 		{Action: "rollback", Inputs: []string{"action_id"}, Outputs: []string{"status"}},
 	}
 }
@@ -64,6 +62,8 @@ func (a *Agent) Execute(ctx context.Context, input agent.Input) (agent.Output, e
 		return a.killProcess(ctx, input)
 	case "restart_service":
 		return a.restartService(ctx, input)
+	case "run_script":
+		return a.runScript(ctx, input)
 	case "rollback":
 		return a.rollbackAction(ctx, input)
 	default:
@@ -71,178 +71,181 @@ func (a *Agent) Execute(ctx context.Context, input agent.Input) (agent.Output, e
 	}
 }
 
-func (a *Agent) blockIP(_ context.Context, input agent.Input) (agent.Output, error) {
-	ip, _ := input["ip"].(string)
-	if ip == "" {
-		return agent.Output{"error": "ip is required"}, nil
+func (a *Agent) blockIP(ctx context.Context, input agent.Input) (agent.Output, error) {
+	ipStr, _ := input["ip"].(string)
+	addr, err := ValidateIP(ipStr)
+	if err != nil {
+		return agent.Output{"error": err.Error()}, nil
 	}
 
-	var cmdStr, rollbackCmd string
-	switch runtime.GOOS {
-	case "windows":
-		ruleName := fmt.Sprintf("trace-block-%s", strings.ReplaceAll(ip, ".", "-"))
-		cmdStr = fmt.Sprintf("netsh advfirewall firewall add rule name=%s dir=in action=block remoteip=%s", ruleName, ip)
-		rollbackCmd = fmt.Sprintf("netsh advfirewall firewall delete rule name=%s", ruleName)
-	case "linux":
-		cmdStr = fmt.Sprintf("iptables -A INPUT -s %s -j DROP", ip)
-		rollbackCmd = fmt.Sprintf("iptables -D INPUT -s %s -j DROP", ip)
-	case "darwin":
-		cmdStr = fmt.Sprintf("pfctl -t trace -T add %s", ip)
-		rollbackCmd = fmt.Sprintf("pfctl -t trace -T delete %s", ip)
-	default:
-		return agent.Output{"error": fmt.Sprintf("unsupported OS: %s", runtime.GOOS)}, nil
-	}
-
-	output, err := a.runCommand(cmdStr)
+	argv, inverse := BlockIPArgv(addr)
+	output, err := RunArgv(ctx, argv)
 	status := "executed"
 	if err != nil {
 		status = fmt.Sprintf("failed: %v", err)
 	}
 
-	rec := a.recordAction("block_ip", ip, status, cmdStr, output, rollbackCmd)
+	cmdStored := EncodeArgv(argv, inverse)
+	rollbackStored := EncodeArgv(inverse, argv)
+	rec := a.recordAction("block_ip", addr.String(), status, cmdStored, output, rollbackStored)
 
 	return agent.Output{
-		"status":          status,
-		"ip":              ip,
-		"command":         cmdStr,
-		"output":          output,
-		"rollback_command": rollbackCmd,
-		"action_id":       rec.ID,
+		"status":           status,
+		"ip":               addr.String(),
+		"command":          cmdStored,
+		"output":           output,
+		"rollback_command": rollbackStored,
+		"action_id":        rec.ID,
 	}, nil
 }
 
-func (a *Agent) quarantineFile(_ context.Context, input agent.Input) (agent.Output, error) {
+func (a *Agent) quarantineFile(ctx context.Context, input agent.Input) (agent.Output, error) {
 	path, _ := input["path"].(string)
-	if path == "" {
-		return agent.Output{"error": "path is required"}, nil
+	if err := ValidateFilePath(path); err != nil {
+		return agent.Output{"error": err.Error()}, nil
 	}
 
 	info, err := os.Stat(path)
 	if err != nil {
 		return agent.Output{"error": fmt.Sprintf("file not accessible: %v", err)}, nil
 	}
-
-	dest := filepath.Join(a.quarantineDir, filepath.Base(path)+"."+uuid.New().String()[:8])
-
-	var cmdStr, rollbackCmd string
-	switch runtime.GOOS {
-	case "windows":
-		cmdStr = fmt.Sprintf("move \"%s\" \"%s\"", path, dest)
-		rollbackCmd = fmt.Sprintf("move \"%s\" \"%s\"", dest, path)
-	default:
-		cmdStr = fmt.Sprintf("mv \"%s\" \"%s\"", path, dest)
-		rollbackCmd = fmt.Sprintf("mv \"%s\" \"%s\"", dest, path)
+	if err := CheckSymlinkOrDevice(path); err != nil {
+		return agent.Output{"error": err.Error()}, nil
 	}
 
-	output, err := a.runCommand(cmdStr)
-	status := "executed"
+	dest, err := ResolveQuarantineDest(a.quarantineDir, path)
 	if err != nil {
-		status = fmt.Sprintf("failed: %v", err)
+		return agent.Output{"error": err.Error()}, nil
+	}
+
+	argv, inverse := MoveArgv(path, dest)
+	output, runErr := RunArgv(ctx, argv)
+	status := "executed"
+	if runErr != nil {
+		status = fmt.Sprintf("failed: %v", runErr)
 	} else {
 		os.Chmod(dest, 0400)
 		_ = info
 	}
 
-	rec := a.recordAction("quarantine_file", path, status, cmdStr, output, rollbackCmd)
+	cmdStored := EncodeArgv(argv, inverse)
+	rollbackStored := EncodeArgv(inverse, argv)
+	rec := a.recordAction("quarantine_file", path, status, cmdStored, output, rollbackStored)
 
 	return agent.Output{
 		"status":           status,
 		"original_path":    path,
 		"quarantine_path":  dest,
-		"command":          cmdStr,
-		"rollback_command": rollbackCmd,
+		"command":          cmdStored,
+		"rollback_command": rollbackStored,
 		"action_id":        rec.ID,
 	}, nil
 }
 
-func (a *Agent) killProcess(_ context.Context, input agent.Input) (agent.Output, error) {
+func (a *Agent) killProcess(ctx context.Context, input agent.Input) (agent.Output, error) {
 	name, _ := input["name"].(string)
-	pid, _ := input["pid"].(string)
+	pidStr, _ := input["pid"].(string)
 
-	if name == "" && pid == "" {
+	if name == "" && pidStr == "" {
 		return agent.Output{"error": "name or pid is required"}, nil
 	}
 
-	var cmdStr, rollbackCmd string
+	var argv []string
 	target := name
-	if pid != "" {
-		target = pid
+	if pidStr != "" {
+		pid, err := ValidatePIDString(pidStr)
+		if err != nil {
+			return agent.Output{"error": err.Error()}, nil
+		}
+		target = pidStr
+		if isWindows() {
+			argv = TaskkillPIDArgv(pid)
+		} else {
+			argv = KillPIDArgv(pid)
+		}
+	} else {
+		if err := ValidateProcessName(name); err != nil {
+			return agent.Output{"error": err.Error()}, nil
+		}
+		if isWindows() {
+			argv = TaskkillNameArgv(name)
+		} else {
+			argv = PkillArgv(name)
+		}
 	}
 
-	switch runtime.GOOS {
-	case "windows":
-		if pid != "" {
-			cmdStr = fmt.Sprintf("taskkill /F /PID %s", pid)
-		} else {
-			cmdStr = fmt.Sprintf("taskkill /F /IM %s", name)
-		}
-		rollbackCmd = "N/A (process cannot be unkilled)"
-	case "linux", "darwin":
-		if pid != "" {
-			cmdStr = fmt.Sprintf("kill -9 %s", pid)
-		} else {
-			cmdStr = fmt.Sprintf("pkill -9 %s", name)
-		}
-		rollbackCmd = "N/A (process cannot be unkilled)"
-	default:
-		return agent.Output{"error": fmt.Sprintf("unsupported OS: %s", runtime.GOOS)}, nil
-	}
-
-	output, err := a.runCommand(cmdStr)
+	output, err := RunArgv(ctx, argv)
 	status := "executed"
 	if err != nil {
 		status = fmt.Sprintf("failed: %v", err)
 	}
 
-	rec := a.recordAction("kill_process", target, status, cmdStr, output, rollbackCmd)
+	cmdStored := EncodeArgv(argv, nil)
+	const noRollback = "N/A (process cannot be unkilled)"
+	rec := a.recordAction("kill_process", target, status, cmdStored, output, noRollback)
 
 	return agent.Output{
-		"status":          status,
-		"target":          target,
-		"command":         cmdStr,
-		"output":          output,
-		"rollback_command": rollbackCmd,
-		"action_id":       rec.ID,
+		"status":           status,
+		"target":           target,
+		"command":          cmdStored,
+		"output":           output,
+		"rollback_command": noRollback,
+		"action_id":        rec.ID,
 	}, nil
 }
 
-func (a *Agent) restartService(_ context.Context, input agent.Input) (agent.Output, error) {
+func (a *Agent) restartService(ctx context.Context, input agent.Input) (agent.Output, error) {
 	name, _ := input["name"].(string)
-	if name == "" {
-		return agent.Output{"error": "name is required"}, nil
+	if err := ValidateServiceName(name); err != nil {
+		return agent.Output{"error": err.Error()}, nil
 	}
 
-	var cmdStr, rollbackCmd string
-	switch runtime.GOOS {
-	case "windows":
-		cmdStr = fmt.Sprintf("sc stop %s; sc start %s", name, name)
-		rollbackCmd = fmt.Sprintf("sc stop %s; sc start %s", name, name)
-	case "linux":
-		cmdStr = fmt.Sprintf("systemctl restart %s", name)
-		rollbackCmd = fmt.Sprintf("systemctl restart %s", name)
-	case "darwin":
-		cmdStr = fmt.Sprintf("launchctl kickstart -k system/%s", name)
-		rollbackCmd = fmt.Sprintf("launchctl kickstart -k system/%s", name)
+	// Ordered argv steps; each runs with no shell.
+	var steps [][]string
+	switch {
+	case isWindows():
+		steps = [][]string{ScStopArgv(name), ScStartArgv(name)}
+	case isDarwin():
+		steps = [][]string{LaunchctlRestartArgv(name)}
 	default:
-		return agent.Output{"error": fmt.Sprintf("unsupported OS: %s", runtime.GOOS)}, nil
+		steps = [][]string{SystemctlRestartArgv(name)}
 	}
 
-	output, err := a.runCommand(cmdStr)
+	var output string
 	status := "executed"
-	if err != nil {
-		status = fmt.Sprintf("failed: %v", err)
+	for _, argv := range steps {
+		out, err := RunArgv(ctx, argv)
+		output += out
+		if err != nil {
+			status = fmt.Sprintf("failed: %v", err)
+			break
+		}
 	}
 
-	rec := a.recordAction("restart_service", name, status, cmdStr, output, rollbackCmd)
+	// Rollback of a restart is another restart of the same service.
+	rollbackArgv := steps[len(steps)-1]
+	cmdStored := EncodeArgv(steps[0], rollbackArgv)
+	rollbackStored := EncodeArgv(rollbackArgv, rollbackArgv)
+	rec := a.recordAction("restart_service", name, status, cmdStored, output, rollbackStored)
 
 	return agent.Output{
-		"status":          status,
-		"service":         name,
-		"command":         cmdStr,
-		"output":          output,
-		"rollback_command": rollbackCmd,
-		"action_id":       rec.ID,
+		"status":           status,
+		"service":          name,
+		"command":          cmdStored,
+		"output":           output,
+		"rollback_command": rollbackStored,
+		"action_id":        rec.ID,
 	}, nil
+}
+
+func (a *Agent) runScript(_ context.Context, input agent.Input) (agent.Output, error) {
+	// Deny-by-default: flag + signed policy + per-execution approval token.
+	// Deny-closed: CheckRunScriptGate refuses when any piece is absent, and
+	// this server stack never spawns a shell for script bodies.
+	if err := CheckRunScriptGate(input); err != nil {
+		return agent.Output{"error": err.Error()}, nil
+	}
+	return agent.Output{"error": "run_script enabled but no script runner configured: refusing to execute script body"}, nil
 }
 
 func (a *Agent) rollbackAction(ctx context.Context, input agent.Input) (agent.Output, error) {
@@ -260,11 +263,21 @@ func (a *Agent) rollbackAction(ctx context.Context, input agent.Input) (agent.Ou
 		return agent.Output{"error": fmt.Sprintf("action not found: %v", err)}, nil
 	}
 
-	if rec.RollbackCmd == "" || rec.RollbackCmd == "N/A" {
+	if rec.RollbackCmd == "" || rec.RollbackCmd == "N/A" || isNoRollbackSentinel(rec.RollbackCmd) {
+		return agent.Output{"status": "skipped", "message": "action cannot be rolled back"}, nil
+	}
+	if IsLegacyRollback(rec.RollbackCmd) {
+		a.db.ExecContext(ctx,
+			`UPDATE response_actions SET rollback_status = ? WHERE id = ?`, "legacy_unexecutable", actionID)
+		log.Printf("response: rollback refused (legacy string row): id=%s action=%s", actionID, rec.Action)
+		return agent.Output{"status": "legacy_unexecutable", "message": "stored string command predates argv-only mode and will not run", "action_id": actionID}, nil
+	}
+	stored, ok := DecodeStored(rec.RollbackCmd)
+	if !ok {
 		return agent.Output{"status": "skipped", "message": "action cannot be rolled back"}, nil
 	}
 
-	output, err := a.runCommand(rec.RollbackCmd)
+	output, err := RunArgv(ctx, stored.Argv)
 	status := "rolled_back"
 	if err != nil {
 		status = fmt.Sprintf("rollback_failed: %v", err)
@@ -274,31 +287,15 @@ func (a *Agent) rollbackAction(ctx context.Context, input agent.Input) (agent.Ou
 		`UPDATE response_actions SET rollback_status = ? WHERE id = ?`, status, actionID)
 
 	return agent.Output{
-		"status":       status,
-		"action_id":    actionID,
+		"status":           status,
+		"action_id":        actionID,
 		"rollback_command": rec.RollbackCmd,
-		"output":       output,
+		"output":           output,
 	}, nil
 }
 
-func (a *Agent) runCommand(cmd string) (string, error) {
-	var c *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		c = exec.Command("powershell", "-Command", cmd)
-	default:
-		c = exec.Command("sh", "-c", cmd)
-	}
-
-	output, err := c.CombinedOutput()
-	outStr := strings.TrimSpace(string(output))
-	if err != nil {
-		log.Printf("response: command failed: %s\noutput: %s\nerror: %v", cmd, outStr, err)
-		return outStr, err
-	}
-
-	log.Printf("response: command succeeded: %s\noutput: %s", cmd, outStr)
-	return outStr, nil
+func isNoRollbackSentinel(s string) bool {
+	return len(s) >= 3 && s[:3] == "N/A"
 }
 
 func (a *Agent) recordAction(action, target, status, command, output, rollbackCmd string) *ActionRecord {
@@ -322,3 +319,5 @@ func (a *Agent) recordAction(action, target, status, command, output, rollbackCm
 	_ = data
 	return rec
 }
+// TestDB exposes the handle for hermetic tests (seeding legacy rows).
+func (a *Agent) TestDB() *sql.DB { return a.db }
