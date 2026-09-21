@@ -1,8 +1,13 @@
-version: "3.8"
+# Trace stack. Secrets come from the environment / external Secret files —
+# never committed. Copy .env.example to .env and fill in:
+#   MINIO_ROOT_USER, MINIO_ROOT_PASSWORD (required)
+#   TRACE_API_KEY (agent enrollment key; optional for local dev)
+# Image digests are pinned (no :latest). Ports: server :8080 everywhere
+# (single ServerAddr default; see Dockerfile CMD + daemonset + agent.yaml).
 
 services:
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z.hotfix.7aa24e772@sha256:cf3dadcfa1fb0324f43958bad1abba986d53c4ecc04d4d50b46c7dcda28bd3cd
     command: server /data --console-address ":9001"
     ports:
       - "9000:9000"
@@ -10,26 +15,38 @@ services:
     volumes:
       - minio-data:/data
     environment:
-      MINIO_ROOT_USER: trace
-      MINIO_ROOT_PASSWORD: tracetrace
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env (min 8 chars)}
       MINIO_DOMAIN: minio
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 5s
-      timeout: 3s
+      # Vendor health endpoint; curl-or-wget so the probe works regardless
+      # of which tool the pinned image ships (old curl-only probe went
+      # never-healthy on curl-less tags).
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9000/minio/health/live || wget -qO- http://127.0.0.1:9000/minio/health/live | grep -q ."]
+      interval: 10s
+      timeout: 5s
       retries: 5
+      start_period: 20s
+    restart: unless-stopped
 
   createbuckets:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     depends_on:
       minio:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
-      mc alias set myminio http://minio:9000 trace tracetrace;
+      for i in 1 2 3 4 5 6; do
+        if mc alias set myminio http://minio:9000 \"$${MINIO_ROOT_USER}\" \"$${MINIO_ROOT_PASSWORD}\"; then break; fi;
+        sleep 5;
+      done;
       mc mb myminio/trace-events --ignore-existing;
       echo 'Bucket created';
       "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+    restart: "no"
 
   trace-leader:
     build: .
@@ -37,7 +54,7 @@ services:
       minio:
         condition: service_healthy
       createbuckets:
-        condition: service_started
+        condition: service_completed_successfully
     ports:
       - "8080:8080"
     command: >
@@ -47,9 +64,27 @@ services:
       --tse-s3-endpoint minio:9000
       --tse-s3-region us-east-1
     volumes:
-      - trace-leader-data:/root/.trace
+      # Image runs as trace (/home/trace) — keep the mount on that path
+      # (was /root/.trace, which the image user cannot write).
+      - trace-leader-data:/home/trace/.trace
     environment:
-      TRACE_DB_PATH: /root/.trace/trace.db
+      TRACE_HTTP_ADDR: ":8080"
+      TRACE_DB_PATH: /home/trace/.trace/trace.db
+      # Local MinIO runs without TLS, so this compose override is "false".
+      # Production default (server-side, StorageFixer-owned) is USE_SSL=true;
+      # any non-local endpoint must use SSL.
+      TRACE_S3_USE_SSL: "false"
+      TRACE_S3_ENDPOINT: minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          memory: 512M
 
   trace-follower:
     build: .
@@ -57,7 +92,7 @@ services:
       minio:
         condition: service_healthy
       createbuckets:
-        condition: service_started
+        condition: service_completed_successfully
     ports:
       - "8081:8080"
     command: >
@@ -67,9 +102,23 @@ services:
       --tse-s3-endpoint minio:9000
       --tse-s3-region us-east-1
     volumes:
-      - trace-follower-data:/root/.trace
+      - trace-follower-data:/home/trace/.trace
     environment:
-      TRACE_DB_PATH: /root/.trace/trace.db
+      TRACE_HTTP_ADDR: ":8080"
+      TRACE_DB_PATH: /home/trace/.trace/trace.db
+      # Local-only override (see trace-leader comment): production default is USE_SSL=true.
+      TRACE_S3_USE_SSL: "false"
+      TRACE_S3_ENDPOINT: minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          memory: 512M
 
   trace-agent:
     build:
@@ -81,14 +130,31 @@ services:
     command: >
       --server http://trace-leader:8080
       --verbose
+    environment:
+      TRACE_API_KEY_FILE: /run/secrets/agent_key
+    secrets:
+      - agent_key
     volumes:
       - /var/log:/var/log:ro
-      - /etc:/host/etc:ro
-    cap_add:
-      - SYS_PTRACE
-      - SYS_ADMIN
-    pid: host
-    privileged: true
+    # Least-priv: no privileged, no pid:host, no host /etc mount.
+    # Needs no extra caps by default; add NET_RAW only when packet
+    # capture is enabled.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          memory: 128M
+
+secrets:
+  agent_key:
+    file: ${TRACE_API_KEY_FILE:?set TRACE_API_KEY_FILE in .env (path to agent key file)}
 
 volumes:
   minio-data:

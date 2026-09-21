@@ -1,0 +1,17 @@
+# Keep secrets, state, and build junk out of the image (COPY . . otherwise
+# bakes them into GHCR layers).
+*.exe
+.trace/
+**/*.log
+logs/
+config.json
+**/config.json
+intel/*.db
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.*
+.git/
+landing/node_modules/
+tmp/

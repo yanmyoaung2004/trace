@@ -1,3 +1,7 @@
+# Default agent config baked into the image. No secrets here: the API key
+# is injected at deploy time via TRACE_API_KEY / TRACE_API_KEY_FILE env
+# or a mounted agent.key (see install.sh, daemonset.yaml). server_url
+# matches the server image default (:8080).
 server_url: https://trace-server:8080
 poll_interval: 5s
 heartbeat_interval: 30s

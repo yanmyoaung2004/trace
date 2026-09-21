@@ -19,7 +19,15 @@ data:
     monitor_file: true
     monitor_network: true
     data_dir: /var/lib/trace-agent
+    # Key is injected via TRACE_AGENT_API_KEY_FILE (Secret mount), never
+    # committed here.
+    api_key_file: /etc/trace-agent-secrets/api-key
 ---
+# Create the Secret out-of-band before applying the DaemonSet, e.g.:
+#   kubectl -n trace-system create secret generic trace-agent-key \
+#     --from-file=api-key=/path/to/agent.key
+# The placeholder below exists only so `kubectl apply -k` type flows have a
+# named object; replace it — never deploy with the placeholder value.
 apiVersion: v1
 kind: Secret
 metadata:
@@ -27,13 +35,14 @@ metadata:
   namespace: trace-system
 type: Opaque
 stringData:
-  api-key: "CHANGE_ME_TO_YOUR_API_KEY"
+  api-key: "REPLACE_ME_VIA_EXTERNAL_SECRET"
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: trace-agent
   namespace: trace-system
+automountServiceAccountToken: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -41,8 +50,8 @@ metadata:
   name: trace-agent
 rules:
 - apiGroups: [""]
-  resources: ["nodes", "pods"]
-  verbs: ["get", "list", "watch"]
+  resources: ["nodes"]
+  verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -74,20 +83,18 @@ spec:
         app: trace-agent
     spec:
       serviceAccountName: trace-agent
-      hostPID: true
-      hostNetwork: true
-      dnsPolicy: ClusterFirstWithHostNet
+      # Least-priv: no hostPID / hostNetwork / privileged. Host visibility
+      # is via read-only /proc + log mounts, not the host namespaces.
+      dnsPolicy: ClusterFirst
       containers:
       - name: agent
-        image: trace-agent:latest
-        imagePullPolicy: IfNotPresent
+        # Pinned by digest (update the tag+digest together on release).
+        image: ghcr.io/yanmyoaung2004/trace-agent:v0.1.1@sha256:0000000000000000000000000000000000000000000000000000000000000000
+        imagePullPolicy: Always
         args: ["--config", "/etc/trace-agent/config.yaml"]
         env:
-        - name: TRACE_AGENT_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: trace-agent-key
-              key: api-key
+        - name: TRACE_AGENT_API_KEY_FILE
+          value: "/etc/trace-agent-secrets/api-key"
         - name: TRACE_AGENT_SERVER
           value: "https://trace-server:8080"
         - name: TRACE_AGENT_HOSTNAME
@@ -95,25 +102,26 @@ spec:
             fieldRef:
               fieldPath: spec.nodeName
         securityContext:
-          privileged: true
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65532
           capabilities:
-            add:
-            - SYS_ADMIN
-            - SYS_PTRACE
-            - NET_ADMIN
-            - SYSLOG
-            - NET_RAW
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
         volumeMounts:
         - name: config
           mountPath: /etc/trace-agent
+          readOnly: true
+        - name: secrets
+          mountPath: /etc/trace-agent-secrets
           readOnly: true
         - name: data
           mountPath: /var/lib/trace-agent
         - name: proc
           mountPath: /host/proc
-          readOnly: true
-        - name: docker
-          mountPath: /var/lib/docker
           readOnly: true
         resources:
           requests:
@@ -131,6 +139,9 @@ spec:
       - name: config
         configMap:
           name: trace-agent-config
+      - name: secrets
+        secret:
+          secretName: trace-agent-key
       - name: data
         hostPath:
           path: /var/lib/trace-agent
@@ -138,6 +149,4 @@ spec:
       - name: proc
         hostPath:
           path: /proc
-      - name: docker
-        hostPath:
-          path: /var/lib/docker
+          readOnly: true

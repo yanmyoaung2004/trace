@@ -34,8 +34,8 @@ tidy:
 	$(GO) mod verify
 
 cross:
-	GOOS=linux GOARCH=amd64 $(GO) build -o $(BINARY)-linux-amd64 ./cmd/$(BINARY)
-	GOOS=linux GOARCH=arm64 $(GO) build -o $(BINARY)-linux-arm64 ./cmd/$(BINARY)
-	GOOS=darwin GOARCH=amd64 $(GO) build -o $(BINARY)-darwin-amd64 ./cmd/$(BINARY)
-	GOOS=darwin GOARCH=arm64 $(GO) build -o $(BINARY)-darwin-arm64 ./cmd/$(BINARY)
-	GOOS=windows GOARCH=amd64 $(GO) build -o $(BINARY)-windows-amd64.exe ./cmd/$(BINARY)
+	GOOS=linux GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BINARY)-linux-amd64 ./cmd/$(BINARY)
+	GOOS=linux GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BINARY)-linux-arm64 ./cmd/$(BINARY)
+	GOOS=darwin GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BINARY)-darwin-amd64 ./cmd/$(BINARY)
+	GOOS=darwin GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BINARY)-darwin-arm64 ./cmd/$(BINARY)
+	GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BINARY)-windows-amd64.exe ./cmd/$(BINARY)

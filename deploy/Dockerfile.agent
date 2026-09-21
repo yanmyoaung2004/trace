@@ -1,17 +1,26 @@
-FROM golang:1.26-alpine AS build
+FROM golang:1.26-alpine3.24@sha256:51a7c389a5ddaf82f527191a1e9bff9928655130a44e4975dd1d7e0acf59f1ae AS build
 RUN apk add --no-cache git ca-certificates
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
+RUN go mod download && go mod verify
 COPY . .
-RUN CGO_ENABLED=0 go build -o /trace-agent ./cmd/trace-agent
+RUN CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/yanmyoaung2004/trace/internal/edr_agent.Version=$(git describe --tags --always --dirty 2>/dev/null || echo '0.1.0-dev')" -o /trace-agent ./cmd/trace-agent
 
-FROM alpine:3.21
+FROM alpine:3.21.8@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507
 RUN apk add --no-cache ca-certificates iptables
 COPY --from=build /trace-agent /usr/local/bin/trace-agent
 RUN mkdir -p /etc/trace-agent /var/lib/trace-agent
+# Default config without secrets: server port matches the server image
+# default (:8080); point at your server via TRACE_SERVER_URL / --server.
+# The API key is injected at deploy time (env TRACE_API_KEY or mounted
+# agent.key), never baked into the image.
 COPY deploy/agent.yaml /etc/trace-agent/config.yaml
+RUN adduser -D -h /home/trace-agent trace-agent && \
+    chown -R trace-agent:trace-agent /etc/trace-agent /var/lib/trace-agent
+USER trace-agent
 
 EXPOSE 19780
+HEALTHCHECK --interval=60s --timeout=5s --start-period=30s --retries=3 \
+  CMD ["trace-agent", "--status"]
 ENTRYPOINT ["trace-agent"]
 CMD ["--config", "/etc/trace-agent/config.yaml"]

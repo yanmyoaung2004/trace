@@ -1,8 +1,11 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +14,142 @@ import (
 	"strconv"
 	"strings"
 )
+
+// CLI flags: -in <ruleset root> -out <repo root>. Both default to the
+// historical layout (ruleset checkout next to the repo) but no path is
+// absolute or machine-specific anymore. -verify checks ruleset.lock
+// without writing outputs (CI gate). -write=false + -verify is the
+// reproducible check: same inputs => same bytes.
+var (
+	flagIn     = flag.String("in", "", "wazuh ruleset root (contains rules/ decoders/ lists/ mitre/ rootcheck/ sca/)")
+	flagOut    = flag.String("out", "", "repo root output base (generated files land under internal/...)")
+	flagVerify = flag.Bool("verify", false, "verify outputs against ruleset.lock + regenerate and diff (no writes)")
+)
+
+func rulesetRoot() string {
+	if *flagIn != "" {
+		return *flagIn
+	}
+	if v := strings.TrimSpace(os.Getenv("WAZUH_RULESET_DIR")); v != "" {
+		return v
+	}
+	// Historical default: ruleset extracted next to the checkout.
+	return filepath.Join(os.TempDir(), "wazuh-rules", "ruleset")
+}
+
+func repoRoot() string {
+	if *flagOut != "" {
+		return *flagOut
+	}
+	if v := strings.TrimSpace(os.Getenv("TRACE_REPO_ROOT")); v != "" {
+		return v
+	}
+	// tools/wazuh-converter -> repo root (two levels up).
+	if exe, err := os.Executable(); err == nil {
+		_ = exe
+	}
+	abs, err := filepath.Abs(filepath.Join("tools", "wazuh-converter"))
+	if err == nil {
+		if _, err := os.Stat(abs); err == nil {
+			if up, err := filepath.Abs("."); err == nil {
+				return up
+			}
+		}
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	// Walk up until go.mod is found (repo root), else use cwd.
+	dir := wd
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return wd
+		}
+		dir = parent
+	}
+}
+
+// lockEntry pins one input file (sha256) so CI can prove the ruleset is
+// the reviewed one. ruleset.lock lives next to main.go and is committed.
+type lockEntry struct {
+	Path   string `json:"path"`
+	SHA256 string `json:"sha256"`
+}
+
+func loadLock(converterDir string) ([]lockEntry, error) {
+	raw, err := os.ReadFile(filepath.Join(converterDir, "ruleset.lock"))
+	if err != nil {
+		return nil, err
+	}
+	var entries []lockEntry
+	if err := json.Unmarshal(raw, &entries); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+func hashFile(path string) (string, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func converterDir() string {
+	return filepath.Join(repoRoot(), "tools", "wazuh-converter")
+}
+
+// writeOutput writes data to path, or in -verify mode diffs against the
+// existing file and records drift. Returns true when drift was found.
+func writeOutput(path string, data []byte, drift *[]string) error {
+	if *flagVerify {
+		existing, err := os.ReadFile(path)
+		if err != nil {
+			*drift = append(*drift, path+" (missing)")
+			return nil
+		}
+		if string(existing) != string(data) {
+			*drift = append(*drift, path+" (content differs)")
+		}
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+// verifyLock checks every locked input file still hashes to the pinned
+// value. Missing lock file fails closed in -verify mode (CI must review
+// the ruleset before pinning); in normal mode it warns once.
+func verifyLock(root string) error {
+	entries, err := loadLock(converterDir())
+	if err != nil {
+		if *flagVerify {
+			return fmt.Errorf("ruleset.lock missing/unreadable: %w (pin the reviewed ruleset first)", err)
+		}
+		fmt.Fprintln(os.Stderr, "Warning: no ruleset.lock; outputs unpinned (run with -verify in CI after pinning).")
+		return nil
+	}
+	var bad []string
+	for _, e := range entries {
+		got, err := hashFile(filepath.Join(root, filepath.FromSlash(e.Path)))
+		if err != nil || got != strings.ToLower(e.SHA256) {
+			bad = append(bad, e.Path)
+		}
+	}
+	if len(bad) > 0 {
+		return fmt.Errorf("ruleset.lock mismatch (%d files): %s", len(bad), strings.Join(bad, ", "))
+	}
+	return nil
+}
 
 type WazuhDecoderDef struct {
 	Name        string `xml:"name,attr"`
@@ -41,9 +180,9 @@ type DecoderEntry struct {
 	Order       []string `json:"order,omitempty"`
 }
 
-func convertDecoders() {
-	decodersDir := `C:\Users\YMA\AppData\Local\Temp\wazuh-rules\ruleset\decoders`
-	outputPath := `D:\Projects_And_Learning\AI\Trace\dev\internal\siem\wazuh_decoders_gen.go`
+func convertDecoders(root, outBase string, drift *[]string) {
+	decodersDir := filepath.Join(root, "decoders")
+	outputPath := filepath.Join(outBase, "internal", "siem", "wazuh_decoders_gen.go")
 
 	var allDecoders []DecoderEntry
 
@@ -87,6 +226,12 @@ func convertDecoders() {
 
 	fmt.Printf("Converted %d decoders from %d files\n", len(allDecoders), len(files))
 
+	sort.Slice(allDecoders, func(i, j int) bool {
+		if allDecoders[i].Name == allDecoders[j].Name {
+			return allDecoders[i].Parent < allDecoders[j].Parent
+		}
+		return allDecoders[i].Name < allDecoders[j].Name
+	})
 	jsonData, _ := json.Marshal(allDecoders)
 	var goBuf strings.Builder
 	goBuf.WriteString("package siem\n\n")
@@ -95,7 +240,10 @@ func convertDecoders() {
 	goBuf.WriteString(string(jsonData))
 	goBuf.WriteString("`\n")
 
-	os.WriteFile(outputPath, []byte(goBuf.String()), 0644)
+	if err := writeOutput(outputPath, []byte(goBuf.String()), drift); err != nil {
+		fmt.Fprintf(os.Stderr, "write decoders: %v\n", err)
+		return
+	}
 	fmt.Printf("Written to %s\n", outputPath)
 }
 
@@ -124,9 +272,9 @@ func extractDecoderTags(content string) []string {
 	return tags
 }
 
-func convertLists() {
-	listsDir := `C:\Users\YMA\AppData\Local\Temp\wazuh-rules\ruleset\lists`
-	outputPath := `D:\Projects_And_Learning\AI\Trace\dev\internal\siem\wazuh_lists_gen.go`
+func convertLists(root, outBase string, drift *[]string) {
+	listsDir := filepath.Join(root, "lists")
+	outputPath := filepath.Join(outBase, "internal", "siem", "wazuh_lists_gen.go")
 
 	data := make(map[string]map[string]string)
 
@@ -167,13 +315,16 @@ func convertLists() {
 	buf.WriteString(string(jsonData))
 	buf.WriteString("`\n")
 
-	os.WriteFile(outputPath, []byte(buf.String()), 0644)
+	if err := writeOutput(outputPath, []byte(buf.String()), drift); err != nil {
+		fmt.Fprintf(os.Stderr, "write lists: %v\n", err)
+		return
+	}
 	fmt.Printf("Converted %d lists to %s\n", len(data), outputPath)
 }
 
-func convertMitre() {
-	inputPath := `C:\Users\YMA\AppData\Local\Temp\wazuh-rules\ruleset\mitre\enterprise-attack.json`
-	outputPath := `D:\Projects_And_Learning\AI\Trace\dev\internal\archive\mitre_seed_gen.go`
+func convertMitre(root, outBase string, drift *[]string) {
+	inputPath := filepath.Join(root, "mitre", "enterprise-attack.json")
+	outputPath := filepath.Join(outBase, "internal", "archive", "mitre_seed_gen.go")
 
 	data, err := os.ReadFile(inputPath)
 	if err != nil {
@@ -301,6 +452,7 @@ func convertMitre() {
 		})
 	}
 
+	sort.Slice(techniques, func(i, j int) bool { return techniques[i].ID < techniques[j].ID })
 	jsonData, _ := json.Marshal(techniques)
 	escaped := strings.ReplaceAll(string(jsonData), "`", "` + \"`\" + `")
 	var buf strings.Builder
@@ -310,13 +462,16 @@ func convertMitre() {
 	buf.WriteString(escaped)
 	buf.WriteString("`\n")
 
-	os.WriteFile(outputPath, []byte(buf.String()), 0644)
+	if err := writeOutput(outputPath, []byte(buf.String()), drift); err != nil {
+		fmt.Fprintf(os.Stderr, "write mitre: %v\n", err)
+		return
+	}
 	fmt.Printf("Converted %d MITRE techniques to %s\n", len(techniques), outputPath)
 }
 
-func convertRootkits() {
-	rootcheckDir := `C:\Users\YMA\AppData\Local\Temp\wazuh-rules\ruleset\rootcheck\db`
-	outputPath := `D:\Projects_And_Learning\AI\Trace\dev\internal\sift\rootkit_gen.go`
+func convertRootkits(root, outBase string, drift *[]string) {
+	rootcheckDir := filepath.Join(root, "rootcheck", "db")
+	outputPath := filepath.Join(outBase, "internal", "sift", "rootkit_gen.go")
 
 	type rootkitEntry struct {
 		Pattern string `json:"pattern"`
@@ -372,6 +527,18 @@ func convertRootkits() {
 		}
 	}
 
+	sort.Slice(rootkits, func(i, j int) bool {
+		if rootkits[i].Pattern == rootkits[j].Pattern {
+			return rootkits[i].Name < rootkits[j].Name
+		}
+		return rootkits[i].Pattern < rootkits[j].Pattern
+	})
+	sort.Slice(trojans, func(i, j int) bool {
+		if trojans[i].Binary == trojans[j].Binary {
+			return trojans[i].Signature < trojans[j].Signature
+		}
+		return trojans[i].Binary < trojans[j].Binary
+	})
 	rkJSON, _ := json.Marshal(rootkits)
 	tjJSON, _ := json.Marshal(trojans)
 
@@ -388,14 +555,16 @@ func convertRootkits() {
 	buf.WriteString(escTJ)
 	buf.WriteString("`\n")
 
-	os.WriteFile(outputPath, []byte(buf.String()), 0644)
+	if err := writeOutput(outputPath, []byte(buf.String()), drift); err != nil {
+		fmt.Fprintf(os.Stderr, "write rootkits: %v\n", err)
+		return
+	}
 	fmt.Printf("Converted %d rootkit files and %d trojan signatures\n", len(rootkits), len(trojans))
 }
 
-func convertSCA() {
-	scaDir := `C:\Users\YMA\AppData\Local\Temp\wazuh-rules\ruleset\sca`
-	outputPath := `D:\Projects_And_Learning\AI\Trace\dev\internal\plugins\sca\policies_gen.go`
-
+func convertSCA(root, outBase string, drift *[]string) {
+	scaDir := filepath.Join(root, "sca")
+	outputPath := filepath.Join(outBase, "internal", "plugins", "sca", "policies_gen.go")
 	type policyEntry struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
@@ -422,6 +591,7 @@ func convertSCA() {
 		return nil
 	})
 
+	sort.Slice(policies, func(i, j int) bool { return policies[i].ID < policies[j].ID })
 	jsonData, _ := json.Marshal(policies)
 	escaped := strings.ReplaceAll(string(jsonData), "`", "` + \"`\" + `")
 
@@ -432,7 +602,10 @@ func convertSCA() {
 	buf.WriteString(escaped)
 	buf.WriteString("`\n")
 
-	os.WriteFile(outputPath, []byte(buf.String()), 0644)
+	if err := writeOutput(outputPath, []byte(buf.String()), drift); err != nil {
+		fmt.Fprintf(os.Stderr, "write sca: %v\n", err)
+		return
+	}
 	fmt.Printf("Converted %d SCA policies to %s\n", len(policies), outputPath)
 }
 
@@ -641,10 +814,24 @@ func convertRule(r WazuhRule) *OutputRule {
 }
 
 func main() {
-	rulesDir := `C:\Users\YMA\AppData\Local\Temp\wazuh-rules\ruleset\rules`
-	outputDir := `D:\Projects_And_Learning\AI\Trace\dev\internal\siem`
+	flag.Parse()
+	root := rulesetRoot()
+	outBase := repoRoot()
+	rulesDir := filepath.Join(root, "rules")
+	outputDir := filepath.Join(outBase, "internal", "siem")
 
-	os.MkdirAll(outputDir, 0755)
+	fmt.Printf("Ruleset: %s\nOutput:  %s\n", root, outBase)
+	if st, err := os.Stat(rulesDir); err != nil || !st.IsDir() {
+		fmt.Fprintf(os.Stderr, "rules dir not found: %s (pass -in <ruleset root> or set WAZUH_RULESET_DIR)\n", rulesDir)
+		os.Exit(1)
+	}
+
+	if err := verifyLock(root); err != nil {
+		fmt.Fprintf(os.Stderr, "ruleset lock: %v\n", err)
+		os.Exit(1)
+	}
+
+	var drift []string
 
 	type namedRules struct {
 		name  string
@@ -693,6 +880,8 @@ func main() {
 		}
 
 		if len(converted) > 0 {
+			// Deterministic within a file: sort by RuleID.
+			sort.Slice(converted, func(i, j int) bool { return converted[i].RuleID < converted[j].RuleID })
 			allRuleSets = append(allRuleSets, namedRules{name: f.Name(), rules: converted})
 		}
 	}
@@ -708,6 +897,8 @@ func main() {
 
 	var goBuf strings.Builder
 	goBuf.WriteString("package siem\n\n")
+	goBuf.WriteString("// Code generated by tools/wazuh-converter. DO NOT EDIT.\n")
+	goBuf.WriteString("// Source ruleset pinned in tools/wazuh-converter/ruleset.lock.\n")
 	goBuf.WriteString("import \"time\"\n\n")
 	goBuf.WriteString("func loadWazuhRules() []CompiledRule {\n")
 	goBuf.WriteString("\treturn []CompiledRule{\n")
@@ -741,12 +932,17 @@ func main() {
 
 			if r.Playbook != "" {
 				goBuf.WriteString(fmt.Sprintf("\t\t\tActions:     []RuleAction{{Playbook: %q, Params: map[string]any{", r.Playbook))
+				keys := make([]string, 0, len(r.PlaybookParams))
+				for k := range r.PlaybookParams {
+					keys = append(keys, k)
+				}
+				sort.Strings(keys)
 				first := true
-				for k, v := range r.PlaybookParams {
+				for _, k := range keys {
 					if !first {
 						goBuf.WriteString(", ")
 					}
-					goBuf.WriteString(fmt.Sprintf("%q: %q", k, v))
+					goBuf.WriteString(fmt.Sprintf("%q: %q", k, r.PlaybookParams[k]))
 					first = false
 				}
 				goBuf.WriteString("}}},\n")
@@ -760,16 +956,31 @@ func main() {
 	goBuf.WriteString("}\n")
 
 	outPath := filepath.Join(outputDir, "wazuh_rules_gen.go")
-	if err := os.WriteFile(outPath, []byte(goBuf.String()), 0644); err != nil {
+	if err := writeOutput(outPath, []byte(goBuf.String()), &drift); err != nil {
 		fmt.Fprintf(os.Stderr, "write output: %v\n", err)
 		os.Exit(1)
 	}
 
 	fmt.Printf("\nGenerated %s with %d rules\n", outPath, ruleCount)
 
-	convertDecoders()
-	convertLists()
-	convertMitre()
-	convertRootkits()
-	convertSCA()
+	convertDecoders(root, outBase, &drift)
+	convertLists(root, outBase, &drift)
+	convertMitre(root, outBase, &drift)
+	convertRootkits(root, outBase, &drift)
+	convertSCA(root, outBase, &drift)
+
+	if *flagVerify {
+		if err := verifyLock(root); err != nil {
+			fmt.Fprintf(os.Stderr, "verify: %v\n", err)
+			os.Exit(1)
+		}
+		if len(drift) > 0 {
+			fmt.Fprintf(os.Stderr, "verify: %d generated files differ (regenerate with the pinned ruleset):\n", len(drift))
+			for _, d := range drift {
+				fmt.Fprintf(os.Stderr, "  - %s\n", d)
+			}
+			os.Exit(1)
+		}
+		fmt.Println("verify: generated files match the pinned ruleset.")
+	}
 }
