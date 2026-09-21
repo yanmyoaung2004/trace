@@ -69,3 +69,22 @@
 2. Whether to keep the `0000` digest placeholder failing-closed (current: comment says must-not-apply) or switch daemonset to tag-only until the digest exists.
 3. Your TLS posture: self-signed via `--tls-auto` acceptable for LAN, or bring your own CA/cert paths?
 4. Signing keys: you generate offline (I provide the tool + verify steps), or want me to generate a DEV-only pair marked as such?
+
+# Wave B Completion — 2026-09-21 (this pass, all committed)
+
+> Commit: `6e3927b feat(fully-working): tenant proof, TLS-auto, signing tool, drills, digest pin` (20 files). Tree clean after commit. Evidence: `yma/GATES.log` (59 lines, recorded this pass).
+
+| Item | Done | Evidence |
+| ---- | ---- | -------- |
+| W0 tenant-A/B proof | YES | `internal/server/tenant_isolation_test.go` (new, 361 lines); `go test ./internal/server/ -run TestTenantIsolationTwoOrgs` → ok (GATES.log). Cross-org 403/empty + legacy `''` invisible asserted; nil-metrics panic fixed (`sync.go` nil-guard). |
+| W1 TLS-auto + `--tls-require` | YES | `cmd/trace/tls_auto.go` (new, genkey-equivalent RSA-2048/1yr, 0700/0644/0600+Chmod, reuse path); wired in `server_cmd.go` (real listener) + `serve.go` (pair materialisation + `--export` plaintext refusal); goldens regenerated via `UPDATE_GOLDEN=1` (root/serve/server); deployment-guide TLS-auto subsection. |
+| W2 signing-key tooling | YES | `cmd/trace/update-keys.go` (`gen`/`publish`/`verify`, byte layout mirrors `update_sign.go` + `updater.go`); `root.go` one-line wiring; ceremony docs. No production keys generated (facts only). |
+| W3 drills | YES | `crash-test.sh` + `soak-test.sh` on provision-token flow; testing-guide 4 stale spots updated + gate-status section; rotation filter already present (`scheduler_test.go:113`). Snapshot round-trip: `storage/backup` + `storage/snapshot` ok (GATES.log). Enroll round-trip: `TestAgentRegistrationAndHeartbeat` PASS 29s (GATES.log); heartbeat-count assertion fixed to match ticker reality (register ~4s, require ≥1). |
+| W4 digest/docs | YES | `scripts/pin-digest.sh` (validates `sha256:`+64hex, rewrites tag+digest, fails on `0000`); daemonset keeps `0000` failing-closed with must-not-apply comment (no fake digest — facts only); deployment/user-guide enroll + digest sections match code. |
+| Gates | YES | build exit 0; vet clean (ETW note only); short suite zero `FAIL`; closure greps zero except the intentional failing-closed `0000` placeholder (recorded, not hidden). |
+
+## Residuals (explicit, need your help — nothing else code-side blocks)
+
+1. Tag + digest: run `git tag v0.1.1 && git push origin v0.1.1`, then `DIGEST=$(crane digest ghcr.io/yanmyoaung2004/trace-agent:v0.1.1)` and `scripts/pin-digest.sh v0.1.1 $DIGEST`. I cannot push tags or invent the digest from here.
+2. Signing keys: generate offline (`trace update-keys gen`), set `TRACE_UPDATE_SIGNING_KEY` on the server, publish `TRACE_UPDATE_VERIFY_KEY_HEX` to agents, dual-publish `.sha256`+`.sig` one release, then enforce. I did not mint production keys.
+3. Linux CI gates (`-race`, kill-9/soak, DuckDB CGO): CI workflow already runs them (`.github/workflows/ci.yml:64-68`); this Windows box has no 64-bit cgo (`cc1.exe` block recorded in GATES.log pattern from prior passes). Push and read CI results.
