@@ -8,6 +8,9 @@
       Authorization: Bearer <key> (required)
       X-Trace-SHA256 verified always; X-Trace-Signature verified when
       TRACE_UPDATE_VERIFY_KEY_HEX is set (fail-closed when key set).
+    Verify happens BEFORE copy into the install dir; the same signature
+    is served as "signature" in the update-check JSON. Unsigned when the
+    verify key is set, or a hash/signature mismatch, refuses the install.
     Usage: .\install.ps1 -ServerUrl https://trace-server:8080 -ApiKey "key"
            .\install.ps1 -ServerUrl https://trace-server:8080 -ApiKeyFile C:\path\agent.key
 #>

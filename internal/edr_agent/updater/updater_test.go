@@ -78,6 +78,63 @@ func TestCheck_UpdateAvailable(t *testing.T) {
 	}
 }
 
+func TestCheck_EnvelopedSignature(t *testing.T) {
+	// Server writeData wraps in {data,...}; signature must survive the
+	// envelope or keyed fleets refuse every update as unsigned.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"data":{"version":"v2.0.0","download_url":"/agent","sha256":"abc123","signature":"c2ln","required":false},"code":200}`))
+	}))
+	defer server.Close()
+
+	u := New(server.URL, "test-key", "v1.0.0", t.TempDir())
+	u.client = server.Client()
+
+	info, err := u.Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info == nil {
+		t.Fatal("expected update info from enveloped payload")
+	}
+	if info.Signature != "c2ln" {
+		t.Errorf("signature = %q, want passthrough from envelope", info.Signature)
+	}
+}
+
+func TestSetVerifyKeyFromHex(t *testing.T) {
+	pub, _, _ := ed25519.GenerateKey(nil)
+	defer SetVerifyKey(nil)
+	if err := SetVerifyKeyFromHex(hex.EncodeToString(pub)); err != nil {
+		t.Fatal(err)
+	}
+	if !VerifyKeyConfigured() {
+		t.Fatal("expected verify key armed from hex")
+	}
+	if err := SetVerifyKeyFromHex("not-hex"); err == nil {
+		t.Fatal("expected malformed-hex refusal")
+	}
+	if err := SetVerifyKeyFromHex(""); err != nil {
+		t.Fatal(err)
+	}
+	if VerifyKeyConfigured() {
+		t.Fatal("expected empty hex to clear the key")
+	}
+}
+
+func TestVerifySignature_EnvFallback(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	defer SetVerifyKey(nil)
+	SetVerifyKey(nil)
+	t.Setenv(UpdateVerifyKeyHexEnv, hex.EncodeToString(pub))
+	h := sha256.Sum256([]byte("payload"))
+	sig := ed25519.Sign(priv, h[:])
+	if err := verifySignatureHex(hex.EncodeToString(h[:]), base64.StdEncoding.EncodeToString(sig)); err != nil {
+		t.Fatalf("env-provisioned key should verify: %v", err)
+	}
+}
+
 func TestCheck_ServerError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -206,6 +263,27 @@ func TestApply_UnsignedRefused_WhenKeyConfigured(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected unsigned refusal")
+	}
+}
+
+func TestApply_Refused_WhenNoKeyConfigured(t *testing.T) {
+	// No verify key provisioned (and env unset): fail-closed, Apply must
+	// refuse before any download/stage even for a signed-looking payload.
+	SetVerifyKey(nil)
+	t.Setenv(UpdateVerifyKeyHexEnv, "")
+	u := New("https://127.0.0.1:8443", "", "v1.0.0", t.TempDir())
+	h := sha256.Sum256([]byte("x"))
+	err := u.Apply(context.Background(), &UpdateInfo{
+		Version:     "v1.0.1",
+		SHA256:      hex.EncodeToString(h[:]),
+		Signature:   base64.StdEncoding.EncodeToString(make([]byte, ed25519.SignatureSize)),
+		DownloadURL: "https://127.0.0.1:8443/agent",
+	})
+	if err == nil {
+		t.Fatal("expected no-key refusal")
+	}
+	if !strings.Contains(err.Error(), "signature") && !strings.Contains(err.Error(), "verify key") {
+		t.Fatalf("expected signature/no-key refusal, got: %v", err)
 	}
 }
 

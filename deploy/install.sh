@@ -11,7 +11,10 @@ set -euo pipefail
 # Server answers with the binary plus:
 #   X-Trace-SHA256    hex sha256 of the bytes (always)
 #   X-Trace-Signature base64 ed25519 over the raw digest (when the server
-#                   signing key is configured; absent otherwise)
+#                   signing key is configured; absent otherwise). The same
+#                   signature is served as "signature" in the update-check
+#                   JSON; agent and installer verify the staged bytes against
+#                   it and refuse keyed-but-unsigned (fail-closed).
 # The installer verifies hash (+ signature via TRACE_UPDATE_VERIFY_KEY_HEX
 # when set) BEFORE chmod, and writes the key file 0600.
 

@@ -78,6 +78,7 @@ func (h *SyncHandler) handleEDRUpdateCheck(w http.ResponseWriter, r *http.Reques
 		"version":      latestVer,
 		"download_url": downloadURL,
 		"sha256":       hex.EncodeToString(sha[:]),
+		"signature":    signUpdateSHA(sha[:]),
 		"required":     false,
 	})
 }
@@ -215,9 +216,12 @@ func (h *SyncHandler) handleEDRUpdateDownload(w http.ResponseWriter, r *http.Req
 	_, _ = w.Write(data)
 }
 
-// signUpdateSHA returns base64(ed25519(sha)) when TRACE_UPDATE_SIGNING_KEY is
-// set, else "". SupplyDeployFixer verifies when present; the updater refuses
-// unsigned-when-keyed per its fail-closed policy.
+// signUpdateSHA returns base64(ed25519(sha)) over the published
+// (version, sha256) binding when TRACE_UPDATE_SIGNING_KEY is set, else ""
+// (SHA-only + warn, never refusal, when unkeyed). Served both as
+// "signature" in the check JSON (agent trust root) and as
+// X-Trace-Signature on downloads (installer path); the agent updater
+// refuses unsigned-when-keyed per its fail-closed policy.
 func signUpdateSHA(sha []byte) string {
 	return updateSignatureFor(sha)
 }

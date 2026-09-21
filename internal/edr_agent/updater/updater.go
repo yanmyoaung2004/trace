@@ -4,10 +4,19 @@
 // server is the distribution point. Every update refuses unless ALL of
 // the following hold: HTTPS base URL, semver-newer version, non-empty
 // SHA256 that matches the staged bytes, valid ed25519 signature over
-// the SHA when a verify key is configured, download URL confined to
-// the configured server origin (no redirects off-origin), and a
-// contained stage/verify/swap sequence with fsync before rename and
-// rollback on swap failure.
+// the raw SHA256 digest (the Check-response version<->sha<->signature
+// binds the artifact; the download X-Trace-* headers are cross-check
+// only), download URL confined to the configured server origin (no
+// redirects off-origin), and a contained stage/verify/swap sequence
+// with fsync before rename and rollback on swap failure. Unsigned,
+// tampered, and downgraded updates are all refused; there is no
+// warn-only mode here (CLI/installer warn-only paths are separate).
+//
+// Key provisioning: the ed25519 public key comes from local config via
+// SetVerifyKey / SetVerifyKeyFromHex, with TRACE_UPDATE_VERIFY_KEY_HEX
+// (32-byte hex) as the env fallback -- never from the network. When no
+// key is provisioned every update is refused (fail-closed); when a key
+// is provisioned an absent/invalid signature is refused.
 //
 // Stage layout: <dataDir>/updates/stage-<version>/binary (staged),
 // swap target is the running executable, backup is <exe>.bak kept only
@@ -35,16 +44,51 @@ import (
 )
 
 // VerifyKey is the ed25519 public key updates are verified against.
-// It is empty until provisioned; wire it from agent config or build-time
-// flag, never from the network. When empty, signature-bearing updates
-// are refused (fail-closed): an attacker who can strip the signature
-// header must not downgrade verification. Call SetVerifyKey at startup
-// from local config.
+// It is empty until provisioned via SetVerifyKey/SetVerifyKeyFromHex
+// (local config or TRACE_UPDATE_VERIFY_KEY_HEX); verifySignatureHex
+// lazily loads the env fallback. It is never taken from the network:
+// when empty, ALL updates are refused (fail-closed) so an attacker who
+// strips the signature cannot downgrade verification.
 var verifyKey ed25519.PublicKey
+
+// UpdateVerifyKeyHexEnv carries the hex-encoded ed25519 public key
+// (32 bytes -> 64 hex chars) that updates are verified against.
+const UpdateVerifyKeyHexEnv = "TRACE_UPDATE_VERIFY_KEY_HEX"
 
 // SetVerifyKey provisions the offline update-signature public key.
 // Passing an empty key clears it (verification then refuses everything).
 func SetVerifyKey(key ed25519.PublicKey) { verifyKey = key }
+
+// SetVerifyKeyFromHex parses a 32-byte hex public key and provisions it.
+// An empty string clears the key (verification then refuses everything).
+func SetVerifyKeyFromHex(s string) error {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		verifyKey = nil
+		return nil
+	}
+	b, err := hex.DecodeString(s)
+	if err != nil || len(b) != ed25519.PublicKeySize {
+		return fmt.Errorf("malformed update verify key: want 64 hex chars")
+	}
+	verifyKey = ed25519.PublicKey(append([]byte(nil), b...))
+	return nil
+}
+
+// loadVerifyKeyFromEnv provisions the verify key from
+// TRACE_UPDATE_VERIFY_KEY_HEX when SetVerifyKey has not already armed
+// one. Malformed env refuses loudly (fail-closed); unset env leaves the
+// key unconfigured and callers refuse with the no-key error.
+func loadVerifyKeyFromEnv() error {
+	if VerifyKeyConfigured() {
+		return nil
+	}
+	raw := strings.TrimSpace(os.Getenv(UpdateVerifyKeyHexEnv))
+	if raw == "" {
+		return nil
+	}
+	return SetVerifyKeyFromHex(raw)
+}
 
 // VerifyKeyConfigured reports whether signature verification is armed.
 func VerifyKeyConfigured() bool { return len(verifyKey) == ed25519.PublicKeySize }
@@ -59,7 +103,11 @@ type Updater struct {
 }
 
 // UpdateInfo describes one available update. Signature is base64 ed25519
-// over the raw SHA256 digest bytes of the binary.
+// over the raw SHA256 digest bytes of the binary, as served in the Check
+// JSON "signature" field (server-signed with TRACE_UPDATE_SIGNING_KEY).
+// The download X-Trace-Signature header carries the same value for the
+// installer path; here it is cross-check only, the Check response is the
+// trust root. An empty signature refuses whenever a verify key is armed.
 type UpdateInfo struct {
 	Version     string `json:"version"`
 	DownloadURL string `json:"download_url"`
@@ -92,6 +140,10 @@ func New(serverURL, apiKey, currentVer, dataDir string) *Updater {
 		},
 	}
 }
+
+// SetAPIKey installs the server-issued key (post-enrollment) used to auth
+// update check/download polls. Never used on the enroll path.
+func (u *Updater) SetAPIKey(key string) { u.apiKey = key }
 
 // requireHTTPSBase rejects non-https bases except loopback http (tests/dev).
 func requireHTTPSBase(raw string) error {
@@ -138,6 +190,8 @@ func IsNewer(current, candidate string) bool {
 
 // Check queries the server for an available update. Returns (nil, nil)
 // when up to date. Downgrades and same-version responses yield nil.
+// The server wraps payloads in its {data,...} envelope; bare payloads
+// are still accepted (tests, older servers).
 func (u *Updater) Check(ctx context.Context) (*UpdateInfo, error) {
 	if err := requireHTTPSBase(u.serverURL); err != nil {
 		return nil, err
@@ -172,7 +226,7 @@ func (u *Updater) Check(ctx context.Context) (*UpdateInfo, error) {
 	}
 
 	var info UpdateInfo
-	if err := json.Unmarshal(body, &info); err != nil {
+	if err := json.Unmarshal(unwrapUpdatePayload(body), &info); err != nil {
 		return nil, fmt.Errorf("parse update info: %w", err)
 	}
 	if info.Version == "" || info.Version == u.currentVer || !IsNewer(u.currentVer, info.Version) {
@@ -181,10 +235,24 @@ func (u *Updater) Check(ctx context.Context) (*UpdateInfo, error) {
 	return &info, nil
 }
 
+// unwrapUpdatePayload extracts the inner "data" object from the server's
+// JSON envelope, tolerating bare (pre-envelope) payloads.
+func unwrapUpdatePayload(raw []byte) []byte {
+	var env struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil || len(env.Data) == 0 {
+		return raw
+	}
+	return env.Data
+}
+
 // Apply stages, verifies, and swaps to info. Refuses fail-closed on:
-// empty SHA256, signature mismatch/absent-when-configured, off-origin or
-// non-HTTPS download URL, non-newer version, path escape, fsync/rename
-// errors. On swap failure the previous binary is restored.
+// empty SHA256, missing verify key, signature absent/mismatch (_unsigned,
+// tampered, and keyed-but-unsigned all refuse_), off-origin or non-HTTPS
+// download URL, non-semver-newer version (downgrades refuse), path
+// escape, fsync/rename errors. On swap failure the previous binary is
+// restored. Verified bytes are chmod'd only after hash+signature pass.
 func (u *Updater) Apply(ctx context.Context, info *UpdateInfo) error {
 	if info == nil {
 		return fmt.Errorf("refusing nil update")
@@ -346,15 +414,11 @@ func (u *Updater) downloadBinary(ctx context.Context, rawURL, dest string) error
 		resp.StatusCode == http.StatusTemporaryRedirect || resp.StatusCode == http.StatusPermanentRedirect {
 		return fmt.Errorf("refusing redirect to %q (downloads stay on server origin)", resp.Header.Get("Location"))
 	}
-	// Server returns the binary hash/signature alongside the bytes; the
-	// client cross-checks them against the signed Check response so a
-	// byte-swap between check and download cannot slip through. Absent
-	// headers are tolerated here because Apply already enforced the
-	// Check-response hash+signature on the staged file — these headers
-	// are defense-in-depth, not the trust root.
-	if h := resp.Header.Get("X-Trace-SHA256"); h != "" {
-		_ = h
-	}
+	// The server also returns the binary hash/signature as X-Trace-SHA256 /
+	// X-Trace-Signature alongside the bytes, but this path deliberately
+	// does NOT trust them: Apply verifies the staged file against the
+	// signed Check response (the trust root), so a byte-swap between check
+	// and download cannot slip through. Absent headers are tolerated here.
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download failed: HTTP %d", resp.StatusCode)
 	}
@@ -424,10 +488,15 @@ func verifyChecksum(file, expected string) error {
 }
 
 // verifySignatureHex verifies base64 ed25519 over the raw SHA256 digest.
-// Fail-closed: when a verify key is configured, an empty signature is
-// refused; when no key is configured, every signed update is refused
-// (there is nothing to verify against — wire the offline pubkey first).
+// Fail-closed throughout: no verify key (including via
+// TRACE_UPDATE_VERIFY_KEY_HEX) refuses everything; key armed but
+// signature absent/malformed/invalid refuses; tampered bytes refuse via
+// the staged checksum gate before this runs. Unsigned, tampered, and
+// downgraded (non-newer, see Apply/IsNewer) updates never reach the swap.
 func verifySignatureHex(shaHex, sigB64 string) error {
+	if err := loadVerifyKeyFromEnv(); err != nil {
+		return fmt.Errorf("refusing: %w", err)
+	}
 	if !VerifyKeyConfigured() {
 		return fmt.Errorf("refusing: no update verify key configured (provision offline pubkey)")
 	}

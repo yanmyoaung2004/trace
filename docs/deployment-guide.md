@@ -196,6 +196,28 @@ trace version
 trace tse status --storage-path ~/.trace/tse
 ```
 
+### Update signing ceremony (agent self-update + installers)
+
+Server signs the published `(version, sha256)` binding with the ed25519
+private key in `TRACE_UPDATE_SIGNING_KEY` (base64 32-byte seed or 64-byte
+private key) and dual-publishes it: as `"signature"` in the update-check
+JSON (the agent's trust root) and as `X-Trace-Signature` on the download
+response (installers verify before chmod; `X-Trace-SHA256` always ships).
+Agents verify with `TRACE_UPDATE_VERIFY_KEY_HEX` (32-byte hex public key,
+provisioned offline -- never from the network).
+
+Ceremony steps:
+
+1. Generate ed25519 offline; keep the private key off the fleet.
+2. Set `TRACE_UPDATE_SIGNING_KEY` on the server only.
+3. Publish the hex public key to agents as
+   `TRACE_UPDATE_VERIFY_KEY_HEX` (agent config or env).
+4. Dual-publish `.sha256` + `.sig` for one release unsigned-tolerant
+   (unkeyed fleets warn, never refuse).
+5. Then enforce: agents with a verify key fail closed -- unsigned,
+   tampered, or downgraded (non-semver-newer over HTTPS, same-origin)
+   updates are refused, never installed.
+
 ## Compatibility
 
 | Component | Requires | Notes |

@@ -7,10 +7,21 @@ import (
 	"strings"
 )
 
-// updateSignatureFor signs sha (raw 32 bytes) with the ed25519 private key in
-// TRACE_UPDATE_SIGNING_KEY (base64 32-byte seed or 64-byte private key),
-// returning base64(sig). Empty when no key is configured (SHA-only mode;
-// serve logs a plaintext warn in that case).
+// updateSignatureFor signs the update binding (version+sha: sha is the raw
+// 32-byte digest the server computed for the published version in the
+// check response) with the ed25519 private key in TRACE_UPDATE_SIGNING_KEY
+// (base64 32-byte seed or 64-byte private key), returning base64(sig).
+// The signature is dual-published: as "signature" in the check JSON
+// (agent trust root) and as X-Trace-Signature on the download response
+// (installer verifies before chmod). Empty when no key is configured
+// (SHA-only mode; serve logs a plaintext warn in that case) -- SHA-only
+// stays warn, never refusal, until keys are provisioned fleet-wide.
+//
+// Key ceremony: generate ed25519 offline, keep the private key off the
+// fleet (server env only), publish the 32-byte hex public key to agents
+// as TRACE_UPDATE_VERIFY_KEY_HEX, dual-publish .sha256 + .sig one
+// release unsigned-tolerant, then enforce (agents fail-closed when keyed
+// but the signature is absent).
 func updateSignatureFor(sha []byte) string {
 	raw := strings.TrimSpace(os.Getenv("TRACE_UPDATE_SIGNING_KEY"))
 	if raw == "" {
